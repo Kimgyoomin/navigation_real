@@ -86,10 +86,10 @@ def generate_launch_description():
         executable="odometry_node",
         name="genz_odometry",
         output="screen",
-        remapping=[("pointcloud_topic", LaunchConfiguration("topic"))],
+        remappings=[("pointcloud_topic", LaunchConfiguration("topic"))],
         parameters=[
             {
-                "config_file": LaunchConfiguration("odometry_config_file"),
+                "config_file": LaunchConfiguration("config_file"),
                 "odom_frame": LaunchConfiguration("odom_frame"),
                 "base_frame": LaunchConfiguration("base_frame"),
                 "publish_odom_tf": True,
