@@ -19,15 +19,15 @@ def generate_launch_description():
     current_pkg = FindPackageShare("genz_icp")
 
     declared_arguments = [
-        DeclareLaunchArgument("topic", default_value="/points_raw"),
+        DeclareLaunchArgument("topic", default_value="/livox/lidar"),
         DeclareLaunchArgument("bagfile", default_value=""),
         DeclareLaunchArgument("config_file", default_value="localization_corridor.yaml"),
-        DeclareLaunchArgument("map_path", default_value=""),
+        DeclareLaunchArgument("map_path", default_value="/home/ams4976/ros2_ws/src/FAST_LIO_LOCALIZATION2/PCD/test.pcd"),
         DeclareLaunchArgument("map_frame", default_value="map"),
-        DeclareLaunchArgument("odom_frame", default_value="odom"),
-        DeclareLaunchArgument("base_frame", default_value="base_link"),
+        DeclareLaunchArgument("odom_frame", default_value="camera_init"),
+        DeclareLaunchArgument("base_frame", default_value="base_link"),       # livox_frame -> base_link
         DeclareLaunchArgument("publish_map_to_odom_tf", default_value="true"),
-        DeclareLaunchArgument("publish_map_to_base_tf", default_value="false"),
+        DeclareLaunchArgument("publish_map_to_base_tf", default_value="true"),
         DeclareLaunchArgument("visualize", default_value="true"),
         DeclareLaunchArgument("require_initial_pose", default_value="true"),
         DeclareLaunchArgument("use_initial_pose_from_params", default_value="false"),
