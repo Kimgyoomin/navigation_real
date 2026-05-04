@@ -116,17 +116,41 @@ def generate_launch_description():
     # TF target:
     #   map
     #    └── camera_init
-    #         └── body          # GenZ local odometry / LiDAR body pose
+    #         └── livox_frame   # GenZ odometry / current scan pose
     #              └── base_link
-    #                   └── livox_frame
     #
-    # body(FRD) -> base_link(FLU)
+    # livox_frame(FRD) -> base_link(FLU)
     # If base_link -> livox_frame is [x, y, z] with Rx(pi),
-    # then body -> base_link is [-x, y, z] with Rx(pi), assuming body ~= livox.
+    # then livox_frame -> base_link is [-x, y, z] with Rx(pi).
     # -------------------------------------------------------------------------
-    body_to_base_link = static_transform_node(
-        name="body_to_base_link",
-        frame_id="body",
+    # body_to_base_link = static_transform_node(
+    #     name="body_to_base_link",
+    #     frame_id="body",
+    #     child_frame_id="base_link",
+    #     x=PythonExpression(["-(", base_to_livox_x, ")"]),
+    #     y=base_to_livox_y,
+    #     z=base_to_livox_z,
+    #     roll=PI,
+    #     pitch="0.0",
+    #     yaw="0.0",
+    # )
+
+    # base_link_to_livox_frame = static_transform_node(
+    #     name="base_link_to_livox_frame",
+    #     frame_id="base_link",
+    #     child_frame_id="livox_frame",
+    #     x=base_to_livox_x,
+    #     y=base_to_livox_y,
+    #     z=base_to_livox_z,
+    #     roll=PI,
+    #     pitch="0.0",
+    #     yaw="0.0",
+    #     condition=IfCondition(publish_livox_tf),
+    # )
+
+    livox_frame_to_base_link = static_transform_node(
+        name="livox_frame_to_base_link",
+        frame_id="livox_frame",
         child_frame_id="base_link",
         x=PythonExpression(["-(", base_to_livox_x, ")"]),
         y=base_to_livox_y,
@@ -134,19 +158,6 @@ def generate_launch_description():
         roll=PI,
         pitch="0.0",
         yaw="0.0",
-    )
-
-    base_link_to_livox_frame = static_transform_node(
-        name="base_link_to_livox_frame",
-        frame_id="base_link",
-        child_frame_id="livox_frame",
-        x=base_to_livox_x,
-        y=base_to_livox_y,
-        z=base_to_livox_z,
-        roll=PI,
-        pitch="0.0",
-        yaw="0.0",
-        condition=IfCondition(publish_livox_tf),
     )
 
     # -------------------------------------------------------------------------
@@ -232,8 +243,9 @@ def generate_launch_description():
     return LaunchDescription(
         declared_arguments
         + [
-            body_to_base_link,
-            base_link_to_livox_frame,
+            # body_to_base_link,
+            # base_link_to_livox_frame,
+            livox_frame_to_base_link,
             map_server,
             planner_server,
             controller_server,

@@ -25,7 +25,7 @@ def generate_launch_description():
         DeclareLaunchArgument("map_path", default_value="/home/ams4976/ros2_ws/src/FAST_LIO_LOCALIZATION2/PCD/test.pcd"),
         DeclareLaunchArgument("map_frame", default_value="map"),
         DeclareLaunchArgument("odom_frame", default_value="camera_init"),
-        DeclareLaunchArgument("base_frame", default_value="body"),       # livox_frame -> body
+        DeclareLaunchArgument("base_frame", default_value="livox_frame"),
         DeclareLaunchArgument("publish_map_to_odom_tf", default_value="true"),
         DeclareLaunchArgument("publish_map_to_base_tf", default_value="false"),
         DeclareLaunchArgument("visualize", default_value="true"),
