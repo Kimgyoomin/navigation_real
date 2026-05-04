@@ -25,9 +25,9 @@ def generate_launch_description():
         DeclareLaunchArgument("map_path", default_value="/home/ams4976/ros2_ws/src/FAST_LIO_LOCALIZATION2/PCD/test.pcd"),
         DeclareLaunchArgument("map_frame", default_value="map"),
         DeclareLaunchArgument("odom_frame", default_value="camera_init"),
-        DeclareLaunchArgument("base_frame", default_value="base_link"),       # livox_frame -> base_link
+        DeclareLaunchArgument("base_frame", default_value="body"),       # livox_frame -> body
         DeclareLaunchArgument("publish_map_to_odom_tf", default_value="true"),
-        DeclareLaunchArgument("publish_map_to_base_tf", default_value="true"),
+        DeclareLaunchArgument("publish_map_to_base_tf", default_value="false"),
         DeclareLaunchArgument("visualize", default_value="true"),
         DeclareLaunchArgument("require_initial_pose", default_value="true"),
         DeclareLaunchArgument("use_initial_pose_from_params", default_value="false"),
@@ -81,6 +81,23 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("visualize")),
     )
 
+    odometry_node = Node(
+        package="genz_icp",
+        executable="odometry_node",
+        name="genz_odometry",
+        output="screen",
+        remapping=[("pointcloud_topic", LaunchConfiguration("topic"))],
+        parameters=[
+            {
+                "config_file": LaunchConfiguration("odometry_config_file"),
+                "odom_frame": LaunchConfiguration("odom_frame"),
+                "base_frame": LaunchConfiguration("base_frame"),
+                "publish_odom_tf": True,
+                "visualize": False,
+            }
+        ],
+    )
+
     bag_play = ExecuteProcess(
         cmd=["ros2", "bag", "play", LaunchConfiguration("bagfile")],
         output="screen",
@@ -89,4 +106,4 @@ def generate_launch_description():
         ),
     )
 
-    return LaunchDescription(declared_arguments + [localization_node, rviz_node, bag_play])
+    return LaunchDescription(declared_arguments + [odometry_node, localization_node, rviz_node, bag_play])
