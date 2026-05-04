@@ -1,0 +1,156 @@
+# =========================
+# Nav2 minimal params (Humble)
+# Frames: map_2d / camera_init / body
+# =========================
+
+map_server:
+  ros__parameters:
+    use_sim_time: false
+    # yaml_filename는 launch의 'map' 인자로 주입받게 두는 걸 권장 (중복/상대경로 지뢰 방지)
+    # yaml_filename: ""
+
+planner_server:
+  ros__parameters:
+    use_sim_time: false
+    expected_planner_frequency: 1.0
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "pongbot_global_planner/AstarPlanner"
+
+controller_server:
+  ros__parameters:
+    use_sim_time: false
+    controller_frequency: 20.0
+
+    # ✅ 이게 없어서 지금 너가 죽고 있음
+    controller_plugins: ["FollowPath"]
+
+    FollowPath:
+      plugin: "dwb_core::DWBLocalPlanner"
+
+      # ✅ 이게 없어서 "No critics defined for FollowPath"가 터짐
+      critics: [
+        "RotateToGoal",
+        "Oscillation",
+        "BaseObstacle",
+        "GoalAlign",
+        "PathAlign",
+        "PathDist",
+        "GoalDist"
+      ]
+
+      # 최소 튜닝(일단 살리는 목적)
+      BaseObstacle.scale: 0.02
+      PathAlign.scale: 32.0
+      GoalAlign.scale: 24.0
+      PathDist.scale: 32.0
+      GoalDist.scale: 24.0
+      RotateToGoal.scale: 32.0
+
+      min_vel_x: 0.0
+      max_vel_x: 0.5
+      max_vel_theta: 1.0
+      acc_lim_x: 1.0
+      acc_lim_theta: 2.0
+
+      vx_samples: 20
+      vtheta_samples: 20
+      sim_time: 1.7
+      transform_tolerance: 0.2
+
+    # Humble에서 권장되는 구조(문서에 progress_checker_plugins/goal_checker_plugins 예시 존재)
+    progress_checker_plugins: ["progress_checker"]
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.5
+      movement_time_allowance: 10.0
+
+    goal_checker_plugins: ["goal_checker"]
+    goal_checker:
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.25
+      yaw_goal_tolerance: 0.25
+      stateful: true
+
+bt_navigator:
+  ros__parameters:
+    use_sim_time: false
+    # global_frame: map_2d
+    global_frame: map
+    robot_base_frame: body
+
+# ---- Costmaps (최소) ----
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: false
+      # global_frame: map_2d
+      global_frame: map
+      robot_base_frame: body
+      odom_frame: camera_init
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      resolution: 0.05
+      track_unknown_space: true
+
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan
+          data_type: "LaserScan"
+          marking: true
+          clearing: true
+          max_obstacle_height: 2.0
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        inflation_radius: 0.55
+        cost_scaling_factor: 3.0
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      use_sim_time: false
+      global_frame: camera_init
+      robot_base_frame: body
+      odom_frame: camera_init
+      rolling_window: true
+      width: 6.0
+      height: 6.0
+      resolution: 0.05
+      update_frequency: 10.0
+      publish_frequency: 5.0
+
+      plugins: ["obstacle_layer", "inflation_layer"]
+
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan
+          data_type: "LaserScan"
+          marking: true
+          clearing: true
+          max_obstacle_height: 2.0
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        inflation_radius: 0.55
+        cost_scaling_factor: 3.0
+
+lifecycle_manager_navigation:
+  ros__parameters:
+    use_sim_time: false
+    autostart: true
+
+    # ✅ FAST_LIO_LOCALIZATION2가 localization 담당이면 amcl은 빼는 게 맞음
+    node_names: ["map_server", "planner_server", "controller_server", "bt_navigator"]

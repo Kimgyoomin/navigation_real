@@ -1,0 +1,8 @@
+<library path="pongbot_global_planner">
+  <class
+    type="pongbot_global_planner::AstarPlanner"
+    base_class_type="nav2_core::GlobalPlanner"
+    name="pongbot_global_planner/AstarPlanner">
+    <description>Hybrid A* global planner plugin for Nav2</description>
+  </class>
+</library>

@@ -1,0 +1,7 @@
+obstacle_range: 4.0       # # If local window is 6m -> 4m (Correct with costmap_common_params.yaml)
+raytrace_range: 4.0       # obstacle raytrace distance   
+inflation_radius: 0.5     # inflation radius
+cost_scaling_factor: 3.0  # cost scaling factor (10.0 )
+
+
+footprint: [[-0.25, -0.2], [-0.25, 0.2], [0.25, 0.2], [0.25, -0.2]]

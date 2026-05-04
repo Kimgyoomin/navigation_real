@@ -1,0 +1,13 @@
+package robotlcm;
+
+struct joy_cmd
+{
+    int64_t utime;      // usec
+    int32_t seq;
+    float linear_x;
+    float linear_y;
+    float angular_z;
+
+    float axes[8];
+    boolean buttons[16];
+}

@@ -1,0 +1,9 @@
+free_thresh: 0.196
+image: 251124_gazebo_again_cleaned.pgm
+negate: 0
+occupied_thresh: 0.65
+origin:
+- -4.08926
+- -99.9202
+- 0.0
+resolution: 0.05

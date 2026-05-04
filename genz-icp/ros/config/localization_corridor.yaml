@@ -1,0 +1,18 @@
+# GenZ-ICP prebuilt-map localization starter config for indoor corridors.
+
+max_range: 40.0
+min_range: 0.5
+deskew: false
+
+voxel_size: 0.15
+desired_num_voxelized_points: 2500
+
+map_cleanup_radius: 100000.0
+planarity_threshold: 0.1
+max_points_per_voxel: 1
+
+max_num_iterations: 80
+convergence_criterion: 0.0001
+
+initial_threshold: 2.0
+min_motion_th: 0.05

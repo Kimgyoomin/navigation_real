@@ -1,0 +1,9 @@
+free_thresh: 0.196
+image: building_1f_map_nav2_yaw0.pgm
+negate: 0
+occupied_thresh: 0.65
+origin:
+- -62.5
+- -121.55000000000001
+- 0.0
+resolution: 0.05

@@ -1,0 +1,9 @@
+free_thresh: 0.196
+image: building_1f_map_flip_y.pgm
+negate: 0
+occupied_thresh: 0.65
+origin:
+- -62.470326
+- 9.196763
+- -1.379025
+resolution: 0.05
