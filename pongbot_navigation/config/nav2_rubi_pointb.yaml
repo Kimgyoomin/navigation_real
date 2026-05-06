@@ -26,8 +26,13 @@ controller_server:
       desired_linear_vel: 0.7       # pointfoot max 1.0 / 0.75 / 1.57, wheeled max 1.25 / 0.0 / 1.57  x / y / yaw
       max_linear_accel: 0.5
       lookahead_dist: 1.5
-      min_lookahead_dist: 0.3
+      min_lookahead_dist: 0.6
       max_lookahead_dist: 2.0
+      lookahead_time: 1.8
+      use_rotate_to_heading: true
+      rotate_to_haeding_angular_vel: 0.5
+      rotate_to_heading_min_angle: 0.785
+      max_angular_accle: 1.0
       use_velocity_scaled_lookahead_dist: true
 
     progress_checker:

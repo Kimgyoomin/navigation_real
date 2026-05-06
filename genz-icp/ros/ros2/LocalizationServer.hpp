@@ -37,7 +37,7 @@ private:
                        Sophus::SE3d *T_target_source);
 
   // Add 260506 for TF / timestamp
-  bool LookupTransformAtTime(const std::string &target_frae,
+  bool LookupTransformAtTime(const std::string &target_frame,
                              const std::string &source_frame,
                              const rclcpp::Time &stamp,
                              Sophus::SE3d *T_target_source);
