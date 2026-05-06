@@ -36,6 +36,12 @@ private:
                        const std::string &source_frame,
                        Sophus::SE3d *T_target_source);
 
+  // Add 260506 for TF / timestamp
+  bool LookupTransformAtTime(const std::string &target_frae,
+                             const std::string &source_frame,
+                             const rclcpp::Time &stamp,
+                             Sophus::SE3d *T_target_source);
+
   bool InitializeICPIfNeeded(const std::string &cloud_frame_id);
 
   Sophus::SE3d ConvertCloudPoseToBasePose(
@@ -97,6 +103,8 @@ private:
   bool publish_map_to_base_tf_{false};
   bool publish_debug_clouds_{true};
   bool require_initial_pose_{true};
+  // Add 260506 for TF / timestamp
+  bool use_sensor_stamp_{true};
 
   bool received_initial_pose_{false};
   bool icp_initialized_{false};

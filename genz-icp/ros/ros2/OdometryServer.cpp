@@ -62,6 +62,9 @@ OdometryServer::OdometryServer(const rclcpp::NodeOptions &options)
     odom_frame_ = declare_parameter<std::string>("odom_frame", odom_frame_);
     publish_odom_tf_ = declare_parameter<bool>("publish_odom_tf", publish_odom_tf_);
     publish_debug_clouds_ = declare_parameter<bool>("visualize", publish_debug_clouds_);
+    // Add 260506 for TF / timestamp
+    use_sensor_stamp_ = 
+        declare_parameter<bool>("use_sensor_stamp", use_sensor_stamp_);
     declare_parameter<double>("max_range", config_.max_range);
     declare_parameter<double>("min_range", config_.min_range);
     declare_parameter<bool>("deskew", config_.deskew);
@@ -202,11 +205,17 @@ void OdometryServer::RegisterFrame(const sensor_msgs::msg::PointCloud2::ConstSha
         return cloud2base * genz_pose * cloud2base.inverse();
     }();
 
+    // Modified 260506 for TF / timestamp
+    const rclcpp::Time output_stamp =
+        use_sensor_stamp_ ? rclcpp::Time(msg->header.stamp) : this->now();
+
     // Spit the current estimated pose to ROS msgs
-    PublishOdometry(pose, msg->header.stamp, cloud_frame_id);
+    // PublishOdometry(pose, msg->header.stamp, cloud_frame_id);
+    PublishOdometry(pose, output_stamp, cloud_frame_id);
     // Publishing this clouds is a bit costly, so do it only if we are debugging
     if (publish_debug_clouds_) {
-        PublishClouds(msg->header.stamp, cloud_frame_id, planar_points, non_planar_points);
+        // PublishClouds(msg->header.stamp, cloud_frame_id, planar_points, non_planar_points);
+        PublishClouds(output_stamp, cloud_frame_id, planar_points, non_planar_points);
     }
 }
 
@@ -235,6 +244,8 @@ void OdometryServer::PublishOdometry(const Sophus::SE3d &pose,
     nav_msgs::msg::Odometry odom_msg;
     odom_msg.header.stamp = stamp;
     odom_msg.header.frame_id = odom_frame_;
+    // Add 260506 for TF / timestamp
+    odom_msg.child_frame_id = base_frame_.empty() ? cloud_frame_id : base_frame_;
     odom_msg.pose.pose = tf2::sophusToPose(pose);
     odom_publisher_->publish(std::move(odom_msg));
 }

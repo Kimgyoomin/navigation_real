@@ -90,6 +90,9 @@ LocalizationServer::LocalizationServer(const rclcpp::NodeOptions &options)
   publish_debug_clouds_ = declare_parameter("visualize", publish_debug_clouds_);
   require_initial_pose_ =
       declare_parameter("require_initial_pose", require_initial_pose_);
+  // Add 250506 for TF / timestamp
+  use_sensor_stamp_ =
+      declare_parameter("use_sensor_stamp", use_sensor_stamp_);
   declare_parameter("localization_mode", true);
 
   const bool use_initial_pose_from_params =
@@ -309,6 +312,46 @@ bool LocalizationServer::LookupTransform(const std::string &target_frame,
   }
 }
 
+bool LocalizationServer::LookupTransformAtTime(
+    const std::string &target_frame,
+    const std::string &source_frame,
+    const rclcpp::Time &stamp,
+    Sophus::SE3d *T_target_source) {
+  if (target_frame.empty() || source_frame.empty()) {
+    return false;
+  }
+
+  if (target_frame == source_frame) {
+    *T_target_source = Sophus::SE3d();
+    return true;
+  }
+
+  std::string err_msg;
+  const auto timeout = rclcpp::Duration::from_seconds(0.10);
+
+  if (!tf2_buffer_->canTransform(
+          target_frame, source_frame, stamp, timeout, &err_msg)) {
+    RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 2000,
+        "Cannot transform %s <- %s at stamp %.3f. Reason=%s",
+        target_frame.c_str(),
+        source_frame.c_str(),
+        stamp.seconds(),
+        err_msg.c_str());
+    return false;
+  }
+
+  try {
+    const auto tf =
+        tf2_buffer_->lookupTransform(target_frame, source_frame, stamp, timeout);
+    *T_target_source = tf2::transformToSophus(tf);
+    return true;
+  } catch (const tf2::TransformException &ex) {
+    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "%s", ex.what());
+    return false;
+  }
+}
+
 bool LocalizationServer::InitializeICPIfNeeded(
     const std::string &cloud_frame_id) {
   if (icp_initialized_) return true;
@@ -387,17 +430,32 @@ void LocalizationServer::RegisterFrame(
 
   const std::string child_frame_id =
       base_frame_.empty() ? cloud_frame_id : base_frame_;
+  
+  // Add 260506 for TF / timestamp
+  const rclcpp::Time output_stamp =
+    use_sensor_stamp_ ? rclcpp::Time(msg->header.stamp) : this->now();
 
-  PublishLocalization(T_map_base, msg->header.stamp, child_frame_id);
+  // PublishLocalization(T_map_base, msg->header.stamp, child_frame_id);
+
+  // if (publish_map_to_odom_tf_) {
+  //   PublishMapToOdomTF(T_map_base, msg->header.stamp, child_frame_id);
+  // }
+  // if (publish_map_to_base_tf_) {
+  //   PublishMapToBaseTF(T_map_base, msg->header.stamp, child_frame_id);
+  // }
+  // if (publish_debug_clouds_) {
+  //   PublishClouds(msg->header.stamp, planar_points, non_planar_points);
+  // }
+  PublishLocalization(T_map_base, output_stamp, child_frame_id);
 
   if (publish_map_to_odom_tf_) {
-    PublishMapToOdomTF(T_map_base, msg->header.stamp, child_frame_id);
+    PublishMapToOdomTF(T_map_base, output_stamp, child_frame_id);
   }
   if (publish_map_to_base_tf_) {
-    PublishMapToBaseTF(T_map_base, msg->header.stamp, child_frame_id);
+    PublishMapToBaseTF(T_map_base, output_stamp, child_frame_id);
   }
   if (publish_debug_clouds_) {
-    PublishClouds(msg->header.stamp, planar_points, non_planar_points);
+    PublishClouds(output_stamp, planar_points, non_planar_points);
   }
 }
 
@@ -423,15 +481,45 @@ void LocalizationServer::PublishLocalization(
   odom_publisher_->publish(odom_msg);
 }
 
-void LocalizationServer::PublishMapToOdomTF(const Sophus::SE3d &T_map_base,
-                                            const rclcpp::Time &stamp,
-                                            const std::string &child_frame_id) {
+// Modified 260506 for TF / timestamp
+// void LocalizationServer::PublishMapToOdomTF(const Sophus::SE3d &T_map_base,
+//                                             const rclcpp::Time &stamp,
+//                                             const std::string &child_frame_id) {
+//   Sophus::SE3d T_odom_base;
+//   if (!LookupTransform(odom_frame_, child_frame_id, &T_odom_base)) {
+//     RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+//                          "Cannot publish map->odom. Required TF %s <- %s "
+//                          "is unavailable.",
+//                          odom_frame_.c_str(), child_frame_id.c_str());
+//     return;
+//   }
+
+//   const Sophus::SE3d T_map_odom = T_map_base * T_odom_base.inverse();
+
+//   geometry_msgs::msg::TransformStamped transform_msg;
+//   transform_msg.header.stamp = stamp;
+//   transform_msg.header.frame_id = map_frame_;
+//   transform_msg.child_frame_id = odom_frame_;
+//   transform_msg.transform = tf2::sophusToTransform(T_map_odom);
+//   tf_broadcaster_->sendTransform(transform_msg);
+// }
+
+void LocalizationServer::PublishMapToOdomTF(
+    const Sophus::SE3d &T_map_base,
+    const rclcpp::Time &stamp,
+    const std::string &child_frame_id) {
   Sophus::SE3d T_odom_base;
-  if (!LookupTransform(odom_frame_, child_frame_id, &T_odom_base)) {
-    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-                         "Cannot publish map->odom. Required TF %s <- %s "
-                         "is unavailable.",
-                         odom_frame_.c_str(), child_frame_id.c_str());
+
+  const bool got_odom_base = use_sensor_stamp_
+      ? LookupTransformAtTime(odom_frame_, child_frame_id, stamp, &T_odom_base)
+      : LookupTransform(odom_frame_, child_frame_id, &T_odom_base);
+
+  if (!got_odom_base) {
+    RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 2000,
+        "Cannot publish map->odom. Required TF %s <- %s is unavailable.",
+        odom_frame_.c_str(),
+        child_frame_id.c_str());
     return;
   }
 
