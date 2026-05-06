@@ -1,6 +1,7 @@
-
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <functional>
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
