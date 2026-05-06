@@ -10,7 +10,7 @@ planner_server:
 controller_server:
   ros__parameters:
     use_sim_time: false
-    controller_frequency: 20.0
+    controller_frequency: 10.0
     # odom_topic: "/Odometry"         # When Using fast-lio localization
     odom_topic: "/genz/odometry"      # When using genz-icp localization
     enable_stamped_cmd_vel: false

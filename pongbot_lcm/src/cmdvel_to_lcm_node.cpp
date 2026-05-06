@@ -33,7 +33,7 @@ public:
     // Publish / safety parameters
     // ------------------------------------------------------------------------
     publish_rate_hz_ = declare_parameter<double>("publish_rate_hz", 50.0);
-    deadman_timeout_s_ = declare_parameter<double>("deadman_timeout_s", 0.3);
+    deadman_timeout_s_ = declare_parameter<double>("deadman_timeout_s", 1.0);
 
     // ------------------------------------------------------------------------
     // Scaling and saturation
