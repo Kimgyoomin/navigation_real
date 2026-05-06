@@ -58,7 +58,7 @@ def generate_launch_description():
     declared_arguments = [
         DeclareLaunchArgument(
             "params_file",
-            default_value="/home/ams4976/ros2_ws/src/pongbot_navigation/config/nav2_pointb.yaml",
+            default_value="/home/ams4976/ros2_ws/src/pongbot_navigation/config/nav2_rubi_pointb.yaml",
             description="Nav2 PointB params",
         ),
         DeclareLaunchArgument(
