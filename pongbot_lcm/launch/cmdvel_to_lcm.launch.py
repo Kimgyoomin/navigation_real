@@ -18,9 +18,9 @@ def generate_launch_description():
                 "scale_linear_x": 1.0,
                 "scale_linear_y": 1.0,
                 "scale_angular_z": 1.0,
-                "max_linear_x": 0.5,
-                "max_linear_y": 0.2,
-                "max_angular_z": 0.4,
+                "max_linear_x": 1.0,
+                "max_linear_y": 0.75,
+                "max_angular_z": 1.57,
             }]
         )
     ])
