@@ -106,6 +106,9 @@ private:
   // Add 260506 for TF / timestamp
   bool use_sensor_stamp_{true};
 
+  // For extrapoleration error
+  double transform_publish_tolerance_{1.0};
+
   bool received_initial_pose_{false};
   bool icp_initialized_{false};
 

@@ -30,6 +30,7 @@ def generate_launch_description():
         DeclareLaunchArgument("map_frame", default_value="map"),
         DeclareLaunchArgument("odom_frame", default_value="camera_init"),
         DeclareLaunchArgument("base_frame", default_value="livox_frame"),
+        DeclareLaunchArgument("transform_publish_tolerance", default_value="1.0"),
 
         # Initial pose / RViz
         DeclareLaunchArgument("visualize", default_value="true"),
@@ -74,6 +75,7 @@ def generate_launch_description():
             "initial_pose_pitch": LaunchConfiguration("initial_pose_pitch"),
             "initial_pose_yaw": LaunchConfiguration("initial_pose_yaw"),
             "rviz_config": LaunchConfiguration("rviz_config"),
+            "transform_publish_tolerance": LaunchConfiguration("transform_publish_tolerance"),
         }.items(),
     )
 

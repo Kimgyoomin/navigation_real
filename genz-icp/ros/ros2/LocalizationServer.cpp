@@ -93,6 +93,9 @@ LocalizationServer::LocalizationServer(const rclcpp::NodeOptions &options)
   // Add 250506 for TF / timestamp
   use_sensor_stamp_ =
       declare_parameter("use_sensor_stamp", use_sensor_stamp_);
+  // For extrapoleration error
+  transform_publish_tolerance_ =
+      declare_parameter("transform_publish_tolerance", transform_publish_tolerance_);
   declare_parameter("localization_mode", true);
 
   const bool use_initial_pose_from_params =
@@ -526,7 +529,12 @@ void LocalizationServer::PublishMapToOdomTF(
   const Sophus::SE3d T_map_odom = T_map_base * T_odom_base.inverse();
 
   geometry_msgs::msg::TransformStamped transform_msg;
-  transform_msg.header.stamp = stamp;
+
+  // For extrapoleration error
+  const rclcpp::Time tf_stamp =
+      stamp + rclcpp::Duration::from_seconds(transform_publish_tolerance_);
+
+  transform_msg.header.stamp = tf_stamp;
   transform_msg.header.frame_id = map_frame_;
   transform_msg.child_frame_id = odom_frame_;
   transform_msg.transform = tf2::sophusToTransform(T_map_odom);

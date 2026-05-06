@@ -50,6 +50,11 @@ def generate_launch_description():
         # Localization TF policy
         DeclareLaunchArgument("publish_map_to_odom_tf", default_value="true"),
         DeclareLaunchArgument("publish_map_to_base_tf", default_value="false"),
+        DeclareLaunchArgument(
+            "transform_publish_tolerance",
+            default_value="1.0",
+            description="Post-date map->odom TF by this duration in seconds.",
+        ),
         
         # Debug / Rviz
         DeclareLaunchArgument("visualize", default_value="true"),
@@ -95,6 +100,7 @@ def generate_launch_description():
                 "initial_pose_roll": float_param("initial_pose_roll"),
                 "initial_pose_pitch": float_param("initial_pose_pitch"),
                 "initial_pose_yaw": float_param("initial_pose_yaw"),
+                "transform_publish_tolerance": float_param("transform_publish_tolerance"),
             }
         ],
     )
