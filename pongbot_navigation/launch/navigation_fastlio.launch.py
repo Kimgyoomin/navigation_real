@@ -1,47 +1,38 @@
 #!/usr/bin/env python3
-# For navigation based on GenZ-ICP
+"""
+navigation_fastlio.launch.py
+
+FAST-LIO localization 기반 Nav2-only launch file.
+
+Assumed FAST-LIO TF tree:
+  map
+   └── camera_init          # REP-105 odom-equivalent local frame
+        └── body            # FAST-LIO LiDAR-IMU body frame
+             └── base_link  # ROS/Nav2 robot center frame, FLU
+                  └── livox_frame
+
+Important:
+  This launch file does NOT publish static TF.
+  FAST-LIO localization launch must publish:
+    body -> base_link
+    base_link -> livox_frame
+
+This launch only starts:
+  map_server
+  planner_server
+  controller_server
+  smoother_server
+  behavior_server
+  bt_navigator
+  lifecycle_manager_navigation
+"""
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.descriptions import ParameterFile
 from nav2_common.launch import RewrittenYaml
-
-
-PI = "3.141592653589793"
-
-
-def static_transform_node(
-    *,
-    name,
-    frame_id,
-    child_frame_id,
-    x="0.0",
-    y="0.0",
-    z="0.0",
-    roll="0.0",
-    pitch="0.0",
-    yaw="0.0",
-    condition=None,
-):
-    return Node(
-        package="tf2_ros",
-        executable="static_transform_publisher",
-        name=name,
-        output="screen",
-        condition=condition,
-        arguments=[
-            "--x", x,
-            "--y", y,
-            "--z", z,
-            "--roll", roll,
-            "--pitch", pitch,
-            "--yaw", yaw,
-            "--frame-id", frame_id,
-            "--child-frame-id", child_frame_id,
-        ],
-    )
 
 
 def generate_launch_description():
@@ -50,51 +41,26 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
     autostart = LaunchConfiguration("autostart")
 
-    publish_livox_tf = LaunchConfiguration("publish_livox_tf")
-    base_to_livox_x = LaunchConfiguration("base_to_livox_x")
-    base_to_livox_y = LaunchConfiguration("base_to_livox_y")
-    base_to_livox_z = LaunchConfiguration("base_to_livox_z")
-
     declared_arguments = [
         DeclareLaunchArgument(
             "params_file",
-            default_value="/home/ams4976/ros2_ws/src/pongbot_navigation/config/nav2_rubi_pointb.yaml",
-            description="Nav2 PointB params",
+            default_value="/home/ams4976/ros2_ws/src/pongbot_navigation/config/nav2_rubi_fastlio_point.yaml",
+            description="Nav2 params for FAST-LIO localization mode.",
         ),
         DeclareLaunchArgument(
             "map_yaml",
             default_value="/home/ams4976/ros2_ws/src/pongbot_navigation/maps/building_1f_map_nav2_yaw0.yaml",
-            description="2D occupancy map used by Nav2 static layer",
+            description="2D occupancy map used by Nav2 static layer.",
         ),
         DeclareLaunchArgument(
             "use_sim_time",
             default_value="false",
-            description="Use simulation time",
+            description="Use simulation time.",
         ),
         DeclareLaunchArgument(
             "autostart",
             default_value="true",
-            description="Automatically activate lifecycle nodes",
-        ),
-        DeclareLaunchArgument(
-            "publish_livox_tf",
-            default_value="true",
-            description="Publish base_link -> livox_frame static TF",
-        ),
-        DeclareLaunchArgument(
-            "base_to_livox_x",
-            default_value="0.20",
-            description="base_link(FLU) -> livox_frame(FRD) x [m]",
-        ),
-        DeclareLaunchArgument(
-            "base_to_livox_y",
-            default_value="0.0",
-            description="base_link(FLU) -> livox_frame(FRD) y [m]",
-        ),
-        DeclareLaunchArgument(
-            "base_to_livox_z",
-            default_value="0.20",
-            description="base_link(FLU) -> livox_frame(FRD) z [m]",
+            description="Automatically activate lifecycle nodes.",
         ),
     ]
 
@@ -111,59 +77,9 @@ def generate_launch_description():
     )
 
     # -------------------------------------------------------------------------
-    # Static TF
-    #
-    # TF target:
-    #   map
-    #    └── camera_init
-    #         └── livox_frame   # GenZ odometry / current scan pose
-    #              └── base_link
-    #
-    # livox_frame(FRD) -> base_link(FLU)
-    # If base_link -> livox_frame is [x, y, z] with Rx(pi),
-    # then livox_frame -> base_link is [-x, y, z] with Rx(pi).
-    # -------------------------------------------------------------------------
-    # body_to_base_link = static_transform_node(
-    #     name="body_to_base_link",
-    #     frame_id="body",
-    #     child_frame_id="base_link",
-    #     x=PythonExpression(["-(", base_to_livox_x, ")"]),
-    #     y=base_to_livox_y,
-    #     z=base_to_livox_z,
-    #     roll=PI,
-    #     pitch="0.0",
-    #     yaw="0.0",
-    # )
-
-    # base_link_to_livox_frame = static_transform_node(
-    #     name="base_link_to_livox_frame",
-    #     frame_id="base_link",
-    #     child_frame_id="livox_frame",
-    #     x=base_to_livox_x,
-    #     y=base_to_livox_y,
-    #     z=base_to_livox_z,
-    #     roll=PI,
-    #     pitch="0.0",
-    #     yaw="0.0",
-    #     condition=IfCondition(publish_livox_tf),
-    # )
-
-    livox_frame_to_base_link = static_transform_node(
-        name="livox_frame_to_base_link",
-        frame_id="livox_frame",
-        child_frame_id="base_link",
-        x=PythonExpression(["-(", base_to_livox_x, ")"]),
-        y=base_to_livox_y,
-        z=base_to_livox_z,
-        roll=PI,
-        pitch="0.0",
-        yaw="0.0",
-    )
-
-    # -------------------------------------------------------------------------
     # Nav2 map server
     #
-    # This is not localization. It only publishes the 2D OccupancyGrid /map
+    # This is not localization. It publishes the 2D OccupancyGrid /map
     # required by the Nav2 global costmap static layer.
     # -------------------------------------------------------------------------
     map_server = Node(
@@ -243,9 +159,6 @@ def generate_launch_description():
     return LaunchDescription(
         declared_arguments
         + [
-            # body_to_base_link,
-            # base_link_to_livox_frame,
-            livox_frame_to_base_link,
             map_server,
             planner_server,
             controller_server,
