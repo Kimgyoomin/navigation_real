@@ -19,15 +19,44 @@ def generate_launch_description():
     current_pkg = FindPackageShare("genz_icp")
 
     declared_arguments = [
+        # Input
         DeclareLaunchArgument("topic", default_value="/livox/lidar"),
+        
+        # Time policy
+        DeclareLaunchArgument(
+            "use_sim_time",
+            default_value="false",
+            description="Use /clock. Set true only for rosbag/simulation replay.",
+        ),
+        DeclareLaunchArgument(
+            "use_sensor_stamp",
+            default_value="true",
+            description=(
+                "If true, publish odom/TF/localization outputs using PointCloud2 header.stamp. "
+                "If false, publish using node now()."
+            ),
+        ),
+
+        # GenZ-ICP config
         DeclareLaunchArgument("bagfile", default_value=""),
         DeclareLaunchArgument("config_file", default_value="localization_corridor.yaml"),
         DeclareLaunchArgument("map_path", default_value="/home/ams4976/ros2_ws/src/FAST_LIO_LOCALIZATION2/PCD/test.pcd"),
+
+        # Frame policy
         DeclareLaunchArgument("map_frame", default_value="map"),
         DeclareLaunchArgument("odom_frame", default_value="camera_init"),
         DeclareLaunchArgument("base_frame", default_value="livox_frame"),
+
+        # Localization TF policy
         DeclareLaunchArgument("publish_map_to_odom_tf", default_value="true"),
         DeclareLaunchArgument("publish_map_to_base_tf", default_value="false"),
+        DeclareLaunchArgument(
+            "transform_publish_tolerance",
+            default_value="1.0",
+            description="Post-date map->odom TF by this duration in seconds.",
+        ),
+        
+        # Debug / Rviz
         DeclareLaunchArgument("visualize", default_value="true"),
         DeclareLaunchArgument("require_initial_pose", default_value="true"),
         DeclareLaunchArgument("use_initial_pose_from_params", default_value="false"),
@@ -52,7 +81,9 @@ def generate_launch_description():
         output="screen",
         remappings=[("pointcloud_topic", LaunchConfiguration("topic"))],
         parameters=[
-            {
+            {   
+                "use_sim_time": bool_param("use_sim_time"),
+                "use_sensor_stamp": bool_param("use_sensor_stamp"),
                 "config_file": LaunchConfiguration("config_file"),
                 "map_path": LaunchConfiguration("map_path"),
                 "map_frame": LaunchConfiguration("map_frame"),
@@ -69,6 +100,7 @@ def generate_launch_description():
                 "initial_pose_roll": float_param("initial_pose_roll"),
                 "initial_pose_pitch": float_param("initial_pose_pitch"),
                 "initial_pose_yaw": float_param("initial_pose_yaw"),
+                "transform_publish_tolerance": float_param("transform_publish_tolerance"),
             }
         ],
     )
@@ -78,6 +110,7 @@ def generate_launch_description():
         executable="rviz2",
         output={"both": "log"},
         arguments=["-d", LaunchConfiguration("rviz_config")],
+        parameters=[{"use_sim_time": bool_param("use_sim_time")}],
         condition=IfCondition(LaunchConfiguration("visualize")),
     )
 
@@ -88,7 +121,9 @@ def generate_launch_description():
         output="screen",
         remappings=[("pointcloud_topic", LaunchConfiguration("topic"))],
         parameters=[
-            {
+            {   
+                "use_sim_time": bool_param("use_sim_time"),
+                "use_sensor_stamp": bool_param("use_sensor_stamp"),
                 "config_file": LaunchConfiguration("config_file"),
                 "odom_frame": LaunchConfiguration("odom_frame"),
                 "base_frame": LaunchConfiguration("base_frame"),

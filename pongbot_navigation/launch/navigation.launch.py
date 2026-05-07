@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+# For navigation based on GenZ-ICP
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition

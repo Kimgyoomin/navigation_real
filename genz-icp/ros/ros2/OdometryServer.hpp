@@ -70,6 +70,8 @@ private:
     std::unique_ptr<tf2_ros::TransformListener> tf2_listener_;
     bool publish_odom_tf_;
     bool publish_debug_clouds_;
+    // Add 260506 for tf / timestamp
+    bool use_sensor_stamp_{true};
 
     /// Data subscribers.
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud_sub_;

@@ -29,11 +29,11 @@ add_custom_command(
 
 add_custom_target(lcmtypes_gen ALL DEPENDS ${LCM_GEN_DIR}/.lcm_gen_stamp)
 
-# add_executable(cmdvel_to_lcm_node src/cmdvel_to_lcm_node.cpp)
-# add_dependencies(cmdvel_to_lcm_node lcmtypes_gen)
-# target_include_directories(cmdvel_to_lcm_node PRIVATE ${LCM_INCLUDE_DIRS} ${LCM_GEN_DIR})
-# ament_target_dependencies(cmdvel_to_lcm_node rclcpp geometry_msgs)
-# target_link_libraries(cmdvel_to_lcm_node ${LCM_LIBRARIES})
+add_executable(cmdvel_to_lcm_node src/cmdvel_to_lcm_node.cpp)
+add_dependencies(cmdvel_to_lcm_node lcmtypes_gen)
+target_include_directories(cmdvel_to_lcm_node PRIVATE ${LCM_INCLUDE_DIRS} ${LCM_GEN_DIR})
+ament_target_dependencies(cmdvel_to_lcm_node rclcpp geometry_msgs)
+target_link_libraries(cmdvel_to_lcm_node ${LCM_LIBRARIES})
 
 add_executable(lcm_test_publisher src/lcm_test_publisher.cpp)
 add_dependencies(lcm_test_publisher lcmtypes_gen)
@@ -53,7 +53,7 @@ target_link_libraries(joy_lcm_node ${LCM_LIBRARIES})
 
 install(TARGETS
   joy_lcm_node
-  # cmdvel_to_lcm_node
+  cmdvel_to_lcm_node
   lcm_test_publisher
   lcm_test_listener
   DESTINATION lib/${PROJECT_NAME}
