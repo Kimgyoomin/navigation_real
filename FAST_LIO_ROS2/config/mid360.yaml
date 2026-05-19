@@ -7,7 +7,7 @@
         filter_size_map: 0.3
         cube_side_length: 1000.0
         runtime_pos_log_enable: false
-        map_file_path: "/home/ams4976/ros2_ws/src/FAST_LIO_ROS2/PCD/test.pcd"
+        map_file_path: "/home/rclab/ros2_ws/src/navigation_real/FAST_LIO_ROS2/PCD/test.pcd"
 
         common:
             # lid_topic:  "/livox/lidar_upright"

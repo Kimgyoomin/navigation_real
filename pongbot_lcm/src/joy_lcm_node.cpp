@@ -138,6 +138,17 @@ private:
     // 기존 button[9] = TORQUE OFF ← ROG[7]
     last_buttons_[9] = getButton(msg->buttons, 7);      // Pongbot Q, RUBI
 
+    // 기존 buttons[4] = Data Recording Start <- ROG[4]
+    last_buttons_[4] = getButton(msg->buttons, 4);      // Pongbot Q, RUBI
+
+    // 기존 buttons[5] = Data Recording Stop <- ROG[5]
+    last_buttons_[5] = getButton(msg->buttons, 5);      // Pongbot Q, RUBI
+
+    // 기존 buttons[3] = Navigation Mode Toggle <- ROG[0]
+    last_buttons_[3] = getButton(msg->buttons, 0);      // Pongbot Q, RUBI
+
+
+
     if (debug_raw_joy_) {
       RCLCPP_INFO_THROTTLE(
         get_logger(), *get_clock(), 500,
