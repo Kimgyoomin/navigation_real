@@ -133,7 +133,8 @@ private:
     last_buttons_[8] = getButton(msg->buttons, 2);      // RUBI
 
     // 기존 button[1] = STOP ← ROG[0]
-    last_buttons_[1] = getButton(msg->buttons, 0);      
+    // last_buttons_[1] = getButton(msg->buttons, 0);    
+    last_buttons_[3] = getButton(msg->buttons, 0);      // RUBI (Navigation)  
 
     // 기존 button[9] = TORQUE OFF ← ROG[7]
     last_buttons_[9] = getButton(msg->buttons, 7);      // Pongbot Q, RUBI
@@ -144,8 +145,7 @@ private:
     // 기존 buttons[5] = Data Recording Stop <- ROG[5]
     last_buttons_[5] = getButton(msg->buttons, 5);      // Pongbot Q, RUBI
 
-    // 기존 buttons[3] = Navigation Mode Toggle <- ROG[0]
-    last_buttons_[3] = getButton(msg->buttons, 0);      // Pongbot Q, RUBI
+    
 
 
 

@@ -29,7 +29,7 @@ add_custom_command(
 
 add_custom_target(lcmtypes_gen ALL DEPENDS ${LCM_GEN_DIR}/.lcm_gen_stamp)
 
-add_executable(cmdvel_to_lcm_node src/cmdvel_to_lcm_node.cpp)
+add_executable(cmdvel_to_lcm_node src/cmdvel_to_lcm.cpp)
 add_dependencies(cmdvel_to_lcm_node lcmtypes_gen)
 target_include_directories(cmdvel_to_lcm_node PRIVATE ${LCM_INCLUDE_DIRS} ${LCM_GEN_DIR})
 ament_target_dependencies(cmdvel_to_lcm_node rclcpp geometry_msgs)
