@@ -61,6 +61,12 @@ def generate_launch_description():
             default_value="/home/rclab/ros2_ws/src/navigation_real/pongbot_navigation/config/nav2_rubi_pointb.yaml",
             description="Nav2 PointB params",
         ),
+        # comment params_file if you want to use the ray-casting macro-action A* planner
+        # DeclareLaunchArgument(
+        #     "params_file",
+        #     default_value="/home/rclab/ros2_ws/src/navigation_real/pongbot_navigation/config/nav2_rubi_pointb_ray.yaml",
+        #     description="Nav2 PointB Ray params",
+        # ),
         DeclareLaunchArgument(
             "map_yaml",
             default_value="/home/rclab/ros2_ws/src/navigation_real/pongbot_navigation/maps/building_1f_map_nav2_yaw0.yaml",

@@ -1,0 +1,30 @@
+package robotlcm;
+
+struct rubi_status
+{
+    int64_t utime;      // usec
+    int32_t seq;
+
+    int32_t motor_count;
+
+    // motor temperature [deg C]
+    float mot_temp[6];
+    float mos_temp[6];
+
+    // thread timing [ms]
+    float main_thread_time;
+    float main_thread_process_time;
+    float main_thread_process_max_time;
+
+    float imu_thread_time;
+    float imu_thread_process_time;
+    float imu_thread_process_max_time;
+
+    float lcm_thread_time;
+    float lcm_thread_process_time;
+    float lcm_thread_process_max_time;
+
+    float rl_thread_time;
+    float rl_thread_process_time;
+    float rl_thread_process_max_time;
+}

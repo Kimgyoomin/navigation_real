@@ -5,4 +5,11 @@
     name="pongbot_global_planner/AstarPlanner">
     <description>Hybrid A* global planner plugin for Nav2</description>
   </class>
+
+  <class
+    type="pongbot_global_planner::AstarRayPlanner"
+    base_class_type="nav2_core::GlobalPlanner"
+    name="pongbot_global_planner/AstarRayPlanner">
+    <description>Ray-casting macro-action A* global planner plugin for Nav2</description>
+  </class>
 </library>

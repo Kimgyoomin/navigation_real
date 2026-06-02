@@ -1,3 +1,4 @@
+# If you want to use the ray-casting macro-action A* planner, uncomment the following and comment out the above GridBased section.
 planner_server:
   ros__parameters:
     use_sim_time: false
@@ -5,23 +6,13 @@ planner_server:
     planner_plugins: ["GridBased"]
 
     GridBased:
-      plugin: "pongbot_global_planner/AstarPlanner"
+      plugin: "pongbot_global_planner/AstarRayPlanner"
 
-# If you want to use the ray-casting macro-action A* planner, uncomment the following and comment out the above GridBased section.
-# planner_server:
-#   ros__parameters:
-#     use_sim_time: false
-#     expected_planner_frequency: 2.0
-#     planner_plugins: ["GridBased"]
-
-#     GridBased:
-#       plugin: "pongbot_global_planner/AstarRayPlanner"
-
-#       ray_angle_bins: 16
-#       max_segment_length: 1.5
-#       resample_interval: 0.25
-#       line_cost_threshold: 180
-#       cost_scale: 5.0
+      ray_angle_bins: 16
+      max_segment_length: 1.5
+      resample_interval: 0.25
+      line_cost_threshold: 180
+      cost_scale: 5.0
 
 controller_server:
   ros__parameters:
