@@ -19,7 +19,7 @@
 
 namespace pongbot_global_planner
 {
-    
+
 namespace 
 {
 
@@ -234,7 +234,7 @@ nav_msgs::msg::Path AstarRayPlanner::createPlan(
             return false;
         }
 
-        if (c >= line_cost_threshold_) {
+        if (c >= nav2_costmap_2d::LETHAL_OBSTACLE) {
             return false;
         }
 
