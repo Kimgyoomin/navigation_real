@@ -1,0 +1,40 @@
+traversability_map_filters:
+  # Based on MOrphology step/drop (OpenCV erosion/dilation)
+  - name: step_drop_morph
+    type: pongbot_traversability_filters/MorphDropFilter
+    params:
+      elevation_layer: elevation
+
+      # absolute/mask/binning output
+
+      step_h_layer: step_up_h
+      drop_h_layer: drop_h
+      step_over_layer: step_over
+      drop_over_layer: drop_over
+      output_metric_layers: true
+      output_over_mask: true
+      output_cm_bins: true
+
+      # Optional ) if needed 0 ~ 1 Regularized Layer
+      output_normalized: false
+      step_layer: step_up
+      drop_layer: drop
+
+      # binning scale
+      cm_cap: 30                # 1cm binning scale
+
+      # Kernel / Upper
+      window_radius: 0.20       # [m]
+      max_step_height: 0.10     # [m]
+      max_drop_height: 0.15     # [m]
+      use_square_kernel: true
+
+  # confidence gate(use variance of elevation_mapping)
+  - name: variance_gate
+    type: pongbot_traversability_filters/VarianceGateFilter
+    params:
+      variance_layer: uncertainty_range
+      out_layer: var_gate
+      var_max: 0.05
+
+  

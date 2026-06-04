@@ -1,0 +1,54 @@
+<!-- For Debugging / Fixing -->
+<launch>
+  <!-- Just check plugin loading -->
+  <node pkg="move_base" type="move_base" name="move_base" output="screen">
+    <param name="planner_frequency" value="1.0"/>
+    <param name="controller_frequency" value="20.0"/>
+    <param name="base_global_planner" value="pongbot_global_planner/AStarPlannerROS"/>
+
+    <!-- Plugin Parameter -->
+    <rosparam file="$(find pongbot_global_planner)/params/astar_params.yaml"
+            command="load" ns="AStarPlannerROS"/>
+  </node>
+
+
+
+  <!-- Load Map -->
+  <arg name="map_yaml" default="$(find pongbot_navigation)/maps/pongbot_map_clean.yaml"/>
+  <node pkg="map_server" type="map_server" name="map_server" args="$(arg map_yaml)">
+    <!-- <remap from="map" to="/static_map"/> -->
+  </node>
+
+  <!-- pointcloud -> LaserScan -->
+  <node pkg="pointcloud_to_laserscan" type="pointcloud_to_laserscan_node" name="cloud_to_scan">
+    <remap from="cloud_in" to="/velodyne_points"/>
+    <remap from="scan"     to="/scan"/>
+    <param name="target_frame" value="BODY"/>
+    <param name="output_frame_id" value="BODY"/>
+    <param name="min_height" value="0.05"/>
+    <param name="max_height" value="1.5"/>
+    <param name="range_min"  value="0.1"/>
+    <param name="range_max"  value="20.0"/>
+  </node>
+
+  <!-- AMCL : map<->odom TF 제공 -->
+  <node pkg="amcl" type="amcl" name="amcl" output="screen">
+    <param name="use_map_topic" value="true"/>
+    <param name="odom_frame_id" value="odom"/>
+    <param name="base_frame_id" value="BODY"/>
+    <!-- <remap from="map" to="/static_map"/> -->
+    <remap from="scan" to="/scan"/> <!-- ★ 추가 -->
+  </node>
+
+  <node pkg="move_base" type="move_base" name="move_base" output="screen">
+    <!-- move_base Global Planner set -->
+    <param name="base_global_planner" value="pongbot_global_planner/AStarPlannerROS"/>
+    <param name="planner_frequency" value="1.0"/>
+    <param name="controller_frequency" value="20.0"/>
+
+    <!-- Plugin Params (~/<PluginName>/*) -->
+    <rosparam file="$(find pongbot_global_planner)/params/astar_params.yaml" 
+              command="load" ns="AStarPlannerROS"/>
+  </node>
+
+</launch>

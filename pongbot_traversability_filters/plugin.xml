@@ -1,0 +1,13 @@
+<library path="lib/libpongbot_traversability_filters">
+  <class name="pongbot_traversability_filters/DropFilter"
+         type="pongbot_traversability_filters::DropFilter"
+         base_class_type="filters::FilterBase<grid_map::GridMap>"/>
+
+  <class name="pongbot_traversability_filters/VarianceGateFilter"
+         type="pongbot_traversability_filters::VarianceGateFilter"
+         base_class_type="filters::FilterBase<grid_map::GridMap>"/>
+         
+  <class name="pongbot_traversability_filters/MorphDropFilter"
+         type="pongbot_traversability_filters::MorphDropFilter"
+         base_class_type="filters::FilterBase<grid_map::GridMap>"/>
+</library>

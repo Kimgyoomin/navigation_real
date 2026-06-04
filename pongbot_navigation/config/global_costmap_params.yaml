@@ -1,0 +1,20 @@
+global_costmap:
+  # global_frame: map
+  global_frame: map_2d
+  # robot_base_frame: BODY
+  # robot_base_frame: base_footprint
+  robot_base_frame: body
+  update_frequency: 1.0         # The frequency in Hz for the map to be updated.
+  publish_frequency: 1.0        # The frequency in Hz for the map to be publish display information.
+  resolution: 0.05              # 5cm resolution
+  static_map: true              # Use static map
+  rolling_window: false         # For the robot to be center, move
+  transform_tolerance: 0.5      # As same as AMCL transform_tolerance, 0.5 -> 1.0 여유마진 주기
+
+  plugins:
+    - {name: static_map, type: "costmap_2d::StaticLayer"}
+    - {name: inflation, type: "costmap_2d::InflationLayer"}
+
+  inflation:
+    inflation_radius: 0.80
+    cost_scaling_factor: 2.0

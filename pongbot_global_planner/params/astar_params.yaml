@@ -1,0 +1,15 @@
+AStarPlannerROS:
+  # 2D A* parameter
+  allow_unknown: false              # NO_INFORMATION(255) restriction?
+  use_octile_heuristic: true        # true = Octile, fals = Euclidean
+  lethal_cost: 253                  # >= 253(INSCRIBED) cell is banned
+  tie_breaker: 1.001                # f = g + h * 1.001 (Tie Breaker)
+
+
+  cost_weight_alpha: 6.0
+  weight_h: 1.05
+
+  # For Hybrid A* (For now, not used)
+  step_size:  0.2
+  yaw_disc:   0.0872666 # 5deg
+  goal_tol:   0.07

@@ -1,0 +1,8 @@
+package robotlcm;
+
+struct robot_data_t
+{
+    float statusword[12];
+    float jointstates[12];
+    float gps[3];
+}

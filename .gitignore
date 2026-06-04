@@ -1,0 +1,26 @@
+# catkin artifacts
+build/
+devel/
+install/
+log/
+logs/
+.catkin_tools/
+
+# ROS recordings
+*.bag
+*.db3
+*.mcap
+
+# Python
+__pycache__/
+*.pyc
+
+# editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# temporary/log
+*.tmp
+*.log

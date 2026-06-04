@@ -1,0 +1,25 @@
+# Parameters are loaded under:
+#   ~/move_base/AStarRayPlannerROS/*
+#
+# nav_real_ray.launch:
+#   <rosparam file="$(find pongbot_global_planner)/params/astar_ray_params.yaml"
+#             command="load" ns="AStarRayPlannerROS"/>
+
+# Base 2D A* compatibility
+allow_unknown: false
+use_octile_heuristic: true
+lethal_cost: 253
+tie_breaker: 1.001
+
+# Cost / heuristic gains
+cost_weight_alpha: 5.0
+weight_h: 1.05
+
+# Ray-casting macro-action A*
+ray_angle_bins: 16
+max_segment_length: 1.5
+resample_interval: 0.25
+line_cost_threshold: 220
+
+# Debug
+print_timing: true

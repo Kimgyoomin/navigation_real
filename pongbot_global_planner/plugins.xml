@@ -1,0 +1,12 @@
+<library path="lib/libpongbot_global_planner">
+    <class name="pongbot_global_planner/AStarPlannerROS"
+           type="pongbot_global_planner::AStarPlannerROS"
+           base_class_type="nav_core::BaseGlobalPlanner"/>
+
+    <class
+        name="pongbot_global_planner/AStarRayPlannerROS"
+        type="pongbot_global_planner::AStarRayPlannerROS"
+        base_class_type="nav_core::BaseGlobalPlanner">
+        <description>Ray-casting macro-action A* global planner for move_base</description>
+    </class>
+</library>

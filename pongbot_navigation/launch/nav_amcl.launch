@@ -1,0 +1,56 @@
+<!-- Integrated Launcher for navigation -->
+<!-- It will bring up map, AMCL, sensor, move_base, costmap/local planner, Our A* planner -->
+<launch>
+  <!-- Load Map (static global map)-->
+  <arg name="map_yaml" default="$(find pongbot_navigation)/maps/pongbot_map_clean.yaml"/>
+  <node pkg="map_server" type="map_server" name="map_server" args="$(arg map_yaml)">
+    <!-- <remap from="map" to="/static_map"/> -->
+  </node>
+
+  <!-- For base_footprintf -> BODY -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="basefoot_to_body"
+        args="0 0 -0.48 0 0 0 BODY base_footprint"/>
+
+  <!-- pointcloud -> LaserScan -->
+  <node pkg="pointcloud_to_laserscan" type="pointcloud_to_laserscan_node" name="cloud_to_scan" output="screen">
+    <remap from="cloud" to="/velodyne_points"/>
+    <remap from="cloud_in" to="/velodyne_points"/>
+    <remap from="scan"     to="/scan"/>
+    <param name="target_frame" value="BODY"/>
+    <param name="output_frame_id" value="BODY"/>
+    <param name="min_height" value="0.05"/>
+    <param name="max_height" value="1.5"/>
+    <param name="range_min"  value="0.1"/>
+    <param name="range_max"  value="20.0"/>
+  </node>
+
+  <!-- AMCL : map<->odom TF 제공 -->
+  <node pkg="amcl" type="amcl" name="amcl" output="screen">
+    <param name="use_map_topic" value="true"/>
+    <param name="odom_frame_id" value="odom"/>
+    <!-- <param name="base_frame_id" value="BODY"/> -->
+    <param name="base_frame_id" value="base_footprint"/>
+    <param name="transform_tolerance" value="0.5"/> <!-- 0.3 ~ 0.5-->
+    <!-- <remap from="map" to="/static_map"/> -->
+    <remap from="scan" to="/scan"/> <!-- ★ 추가 -->
+  </node>
+
+  <!-- move_base  Use our Algorithm A*!!! let plugin to load within move_base-->
+  <node pkg="move_base" type="move_base" name="move_base" output="screen">
+    <param name="planner_frequency"  value="0.0"/>
+    <param name="controller_frequency" value="20.0"/>
+    <param name="base_global_planner" value="pongbot_global_planner/AStarPlannerROS"/>
+    <param name="base_local_planner" value="teb_local_planner/TebLocalPlannerROS"/>
+
+    <!-- Plugin Parameter / would be read as (~/<PluginName>/*)-->
+    <rosparam file="$(find pongbot_global_planner)/params/astar_params.yaml" 
+                command="load" ns="AStarPlannerROS"/>
+
+    <!-- Navigation Stack Parameter -->
+    <rosparam file="$(find pongbot_navigation)/config/costmap_common_params.yaml" command="load"/>
+    <rosparam file="$(find pongbot_navigation)/config/teb_local_planner_params.yaml" command="load"/>
+    <rosparam file="$(find pongbot_navigation)/config/global_costmap_params.yaml" command="load"/>
+    <rosparam file="$(find pongbot_navigation)/config/local_costmap_params.yaml" command="load"/>
+  </node>
+
+</launch>

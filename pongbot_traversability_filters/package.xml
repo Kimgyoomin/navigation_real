@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>pongbot_traversability_filters</name>
+  <version>0.0.0</version>
+  <description>The pongbot_traversability_filters package</description>
+
+  <maintainer email="kimgyoomin1999@gmail.com">kim</maintainer>
+
+  <license>BSD</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>filters</build_depend>
+  <build_depend>grid_map_core</build_depend>
+  <build_depend>grid_map_filters</build_depend>
+  <build_depend>grid_map_msgs</build_depend>
+  <build_depend>grid_map_ros</build_depend>
+  <build_depend>pluginlib</build_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>grid_map_cv</build_depend>
+  <build_depend>opencv2</build_depend>
+
+  <build_export_depend>filters</build_export_depend>
+  <build_export_depend>grid_map_core</build_export_depend>
+  <build_export_depend>grid_map_filters</build_export_depend>
+  <build_export_depend>grid_map_msgs</build_export_depend>
+  <build_export_depend>grid_map_ros</build_export_depend>
+  <build_export_depend>pluginlib</build_export_depend>
+  <build_export_depend>roscpp</build_export_depend>
+  <build_export_depend>grid_map_cv</build_export_depend>
+
+  <exec_depend>filters</exec_depend>
+  <exec_depend>grid_map_core</exec_depend>
+  <exec_depend>grid_map_filters</exec_depend>
+  <exec_depend>grid_map_msgs</exec_depend>
+  <exec_depend>grid_map_ros</exec_depend>
+  <exec_depend>pluginlib</exec_depend>
+  <exec_depend>roscpp</exec_depend>
+  <exec_depend>grid_map_cv</exec_depend>
+  <exec_depend>opencv2</exec_depend>
+
+
+  <!-- The export tag contains other, unspecified, tags -->
+  <export>
+    <filters plugin="${prefix}/plugin.xml"/>
+  </export>
+</package>

@@ -1,0 +1,143 @@
+<launch>
+    <!-- =============================================
+                            args
+    ============================================== -->
+    <arg name="use_rviz" value="true"/>
+
+    <!-- =============================================
+        2D Occupancy Map (navigation global map)
+    ============================================== -->
+    <!-- <arg name="map_2d_yaml" -->
+    <arg name="map_yaml"
+         default="/home/rclab/catkin_nav_ws/src/FAST_LIO_LOCALIZATION/map/building_1f_map.yaml"/>
+    
+    <!-- 3D PCD (debug visualization only ; DO NOT PUBLISH to /map)-->
+    <arg name="pcd_map" default=""/>
+
+    <!-- Frames -->
+    <arg name="map_frame" default="map"/>
+    <arg name="nav_map_frame" default="map_2d"/>            <!-- global planning frame -->
+    <arg name="local_odom_frame" default="camera_init"/>    <!-- local continuous frame / Set as /odom -->
+    <arg name="robot_base_frame" default="body"/>           <!-- Robot Center frame / Check whether the name is BODY -->
+
+    <!-- map -> map_2d alignment (tune these) -->
+    <arg name="align_x" default="0.15"/>
+    <arg name="align_y" default="-0.2"/>
+    <arg name="align_z" default="-0.10"/>
+    <arg name="align_roll" default="0.0"/>
+    <arg name="align_pitch" default="0.0"/>
+    <arg name="align_yaw" default="-0.02"/>
+
+    <!-- =================================================
+       Localization bringup (Fast-Lio Localization stack)
+    ====================================================== -->
+    <!-- 여기에다가 추가해서 그냥 재현성을 높이는게 나을 듯 (한 번에 실행할 수 있도록 )-->
+    <include file="$(find fast_lio_localization)/launch/localization_velodyne_nav.launch">
+        <!-- <arg name="rviz" value="false"/> -->
+        <arg name="rviz" value="false"/>
+    </include>   
+
+    <!-- =================================================
+                2D Map Server (Occupancy Grid Map)
+        - /map_2d topic으로 내보내고, frame_id도 /map_2d
+    ====================================================== -->
+    <!-- <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_2d_yaml)"> -->
+    <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_yaml)">
+        <param name="frame_id" value="$(arg nav_map_frame)"/>
+        <!-- <remap from="map" to="map_2d"/> -->
+    </node>
+
+    <!-- map -> map_2d alignment (static) -->
+    <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_map2d" output="screen"
+          args="$(arg align_x) $(arg align_y) $(arg align_z) $(arg align_roll) $(arg align_pitch) $(arg align_yaw) $(arg map_frame) $(arg nav_map_frame)" />
+
+    <!-- body -> velodyne alignment (static) -->
+    <node pkg="tf2_ros" type="static_transform_publisher" name="body_to_velodyne" 
+          args="0.297 0 0.1536 0 0 0 $(arg robot_base_frame) velodyne"    />
+
+    <!-- =================================================
+        Optional: 3D PCD publish for RViz (debug only)
+        - IMPORTANT : publish to /laser_map, NOT /map
+    ====================================================== -->
+    <group unless="$(eval arg('pcd_map') == '')">
+        <node pkg="pcl_ros" type="pcd_to_pointcloud" name="pcd_map_publisher" output="screen"
+              args="$(arg pcd_map) 5 _frame_id:=$(arg map_frame) cloud_pcd:=/laser_map"/> 
+    </group>
+
+    <!-- =========================================================
+       PointCloud -> LaserScan (for costmap obstacle layer)
+       - target_frame/output_frame_id are robot base frame (body)
+       ========================================================= -->
+    <node pkg="pointcloud_to_laserscan" type="pointcloud_to_laserscan_node" name="cloud_to_scan" output="screen">
+        <remap from="cloud"    to="/velodyne_points"/>
+        <remap from="cloud_in" to="/velodyne_points"/>
+        <remap from="scan"     to="/scan"/>
+
+        <param name="target_frame" value="$(arg robot_base_frame)"/>
+        <param name="output_frame_id" value="$(arg robot_base_frame)"/>
+
+        <param name="min_height" value="0.05"/>
+        <param name="max_height" value="1.5"/>
+        <param name="range_min"  value="0.1"/>
+        <param name="range_max"  value="20.0"/>
+    </node>
+
+
+    <!-- =========================================================
+       move_base: A* global + DWA local
+       - global frame: map_2d
+       - local frame : camera_init  (because /Odometry is camera_init->body)
+       - robot base  : body
+       ========================================================= -->
+    <node pkg="move_base" type="move_base" name="move_base" output="screen">
+        <param name="planner_frequency" value="2.0"/>
+        <param name="controller_frequency" value="10.0"/>
+
+        <param name="base_global_planner" value="pongbot_global_planner/AStarPlannerROS"/>
+        <!-- DWA로 변경 -->
+        <param name="base_local_planner"  value="dwa_local_planner/DWAPlannerROS"/>
+
+        <!-- A* plugin params -->
+        <rosparam file="$(find pongbot_global_planner)/params/astar_params.yaml"
+                command="load" ns="AStarPlannerROS"/>
+
+        <!-- Costmap params -->
+        <rosparam file="$(find pongbot_navigation)/config/costmap_common_params.yaml" command="load"/>
+        <rosparam file="$(find pongbot_navigation)/config/global_costmap_params.yaml" command="load"/>
+        <rosparam file="$(find pongbot_navigation)/config/local_costmap_params.yaml" command="load"/>
+
+        <!-- DWA params 로드: 네가 가진 base_local_planner_params.yaml 사용 -->
+        <rosparam file="$(find pongbot_navigation)/config/base_local_planner_params.yaml" command="load"/>
+
+        <!-- Force frame contracts (override YAML if needed) -->
+        <param name="global_costmap/global_frame" value="$(arg nav_map_frame)"/>
+        <param name="global_costmap/robot_base_frame" value="$(arg robot_base_frame)"/>
+
+        <param name="local_costmap/global_frame" value="$(arg local_odom_frame)"/>
+        <param name="local_costmap/robot_base_frame" value="$(arg robot_base_frame)"/>
+
+        <!-- DWA는 보통 odom frame / odom topic을 여기서 잡는다 -->
+        <param name="DWAPlannerROS/odom_topic" value="/Odometry"/>
+        <param name="DWAPlannerROS/odom_frame" value="$(arg local_odom_frame)"/>
+    </node>
+
+
+    <!-- =========================================================
+        RViz (optional)
+        - IMPORTANT: RViz Fixed Frame을 map_2d로 두는 것을 권장
+        ========================================================= -->
+    <group if="$(arg use_rviz)">
+        <node pkg="rviz" type="rviz" name="rviz" output="screen"
+        args="-d $(find pongbot_navigation)/rviz_cfg/global_nav_localization.rviz"/>
+    </group>
+
+    <!-- =========================================================
+                cmd_vel -> LCM bridge (single PC debug)
+                multi pc라면.. udpm을 udpm://239.1.1.1:32000?ttl=1 로 수정
+        ========================================================= -->
+    <node pkg="pongbot_lcm" type="ros_cmd_vel_to_lcm" name="ros_cmd_vel_to_lcm" output="screen">
+        <param name="cmd_vel_topic" value="/cmd_vel"/>
+        <param name="lcm_channel" value="CMD_VEL"/>
+        <param name="lcm_url" value="udpm://239.255.76.67:7667?ttl=1"/>
+    </node>
+</launch>

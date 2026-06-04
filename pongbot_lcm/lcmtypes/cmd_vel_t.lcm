@@ -1,0 +1,10 @@
+package robotlcm;
+
+struct cmd_vel_t
+{
+    int64_t utime;      // usec
+    int32_t seq;
+    float linear_x;
+    float linear_y;
+    float angular_z;
+}
