@@ -24,3 +24,8 @@ __pycache__/
 # temporary/log
 *.tmp
 *.log
+
+# Large gazebo/simulation archives
+gazebo_maps/**/*.tar.xz
+gazebo_maps/*.tar.xz
+*.tar.xz
