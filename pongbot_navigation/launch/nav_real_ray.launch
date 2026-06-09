@@ -91,7 +91,7 @@
        - robot base  : body
     ========================================================= -->
     <node pkg="move_base" type="move_base" name="move_base" output="screen">
-        <param name="planner_frequency" value="2.0"/>
+        <param name="planner_frequency" value="0.5"/>
         <param name="controller_frequency" value="10.0"/>
 
         <!-- Ray-casting macro-action A* global planner -->

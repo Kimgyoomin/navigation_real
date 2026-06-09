@@ -1,0 +1,119 @@
+#pragma once
+
+#include <nav_core/base_global_planner.h>
+#include <costmap_2d/costmap_2d_ros.h>
+#include <geometry_msgs/PoseStamped.h>
+#include <nav_msgs/Path.h>
+#include <ros/ros.h>
+#include <ros/time.h>
+
+#include <string>
+#include <vector>
+
+namespace pongbot_global_planner
+{
+
+class AStarSparsePlannerROS : public nav_core::BaseGlobalPlanner
+{
+public:
+  AStarSparsePlannerROS();
+  AStarSparsePlannerROS(std::string name, costmap_2d::Costmap2DROS* costmap_ros);
+
+  void initialize(std::string name, costmap_2d::Costmap2DROS* costmap_ros) override;
+
+  bool makePlan(
+    const geometry_msgs::PoseStamped& start,
+    const geometry_msgs::PoseStamped& goal,
+    std::vector<geometry_msgs::PoseStamped>& plan) override;
+
+private:
+  bool initialized_ = false;
+  costmap_2d::Costmap2DROS* costmap_ros_ = nullptr;
+
+  ros::Publisher plan_pub_;
+  ros::Publisher plan_time_pub_;
+
+  // Dense A* parameters
+  bool allow_unknown_ = false;
+  bool use_octile_heuristic_ = true;
+  unsigned char lethal_cost_ = 253;
+  double tie_breaker_ = 1.001;
+  double cost_weight_alpha_ = 5.0;
+  double weight_h_ = 1.05;
+  bool prevent_diagonal_corner_cutting_ = true;
+  bool print_timing_ = true;
+
+  // Collision-aware RDP simplification parameters
+  double simplification_epsilon_ = 0.30;   // [m]
+  double max_segment_length_ = 1.0;        // [m]
+  double min_segment_length_ = 0.05;       // [m]
+  int line_cost_threshold_ = 220;
+  int max_rdp_depth_ = 20;
+
+  inline bool isCellFree(
+    const costmap_2d::Costmap2D& cm,
+    unsigned int mx,
+    unsigned int my) const;
+
+  inline bool isCellSafeForLine(
+    const costmap_2d::Costmap2D& cm,
+    unsigned int mx,
+    unsigned int my) const;
+
+  inline double heuristic(
+    int x0,
+    int y0,
+    int x1,
+    int y1,
+    double resolution) const;
+
+  static inline double yawBetween(
+    double x0,
+    double y0,
+    double x1,
+    double y1);
+
+  bool snapToFree(
+    const costmap_2d::Costmap2D& cm,
+    unsigned& mx,
+    unsigned& my) const;
+
+  bool lineSegmentValid(
+    const costmap_2d::Costmap2D& cm,
+    unsigned int x0,
+    unsigned int y0,
+    unsigned int x1,
+    unsigned int y1) const;
+
+  double pointLineDistanceWorld(
+    const costmap_2d::Costmap2D& cm,
+    unsigned int point_idx,
+    unsigned int line_start_idx,
+    unsigned int line_end_idx) const;
+
+  bool runDenseAstar(
+    const costmap_2d::Costmap2D& cm,
+    unsigned int sx,
+    unsigned int sy,
+    unsigned int gx,
+    unsigned int gy,
+    std::vector<unsigned int>& dense_indices) const;
+
+  void simplifyRDPRecursive(
+    const costmap_2d::Costmap2D& cm,
+    const std::vector<unsigned int>& dense_indices,
+    std::size_t start_pos,
+    std::size_t end_pos,
+    int depth,
+    std::vector<std::size_t>& keep_positions) const;
+
+  bool searchSparseAstar(
+    const costmap_2d::Costmap2D& cm_copy,
+    const geometry_msgs::PoseStamped& start,
+    const geometry_msgs::PoseStamped& goal,
+    std::vector<geometry_msgs::PoseStamped>& plan,
+    const std::string& frame,
+    const ros::Time& stamp);
+};
+
+}  // namespace pongbot_global_planner

@@ -22,6 +22,7 @@ Panels:
         - /MarkerArray1/Namespaces1
         - /Map1
         - /Path2
+        - /Path3
       Splitter Ratio: 0.6382352709770203
     Tree Height: 765
   - Class: rviz/Selection
@@ -263,7 +264,7 @@ Visualization Manager:
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
-        - Alpha: 0.6000000238418579
+        - Alpha: 0.20000000298023224
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
             Max Value: 10
@@ -448,6 +449,30 @@ Visualization Manager:
             {}
       Update Interval: 0
       Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 25; 255; 0
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Billboards
+      Line Width: 0.20000000298023224
+      Name: Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Queue Size: 10
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic: /move_base/AStarSparsePlannerROS/plan
+      Unreliable: false
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 0; 0; 0
@@ -475,7 +500,7 @@ Visualization Manager:
   Value: true
   Views:
     Current:
-      Angle: -1.6699999570846558
+      Angle: -3.0750036239624023
       Class: rviz/TopDownOrtho
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
@@ -485,10 +510,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Scale: 76.89966583251953
+      Scale: 14.6966552734375
       Target Frame: body
-      X: 0.23231858015060425
-      Y: 0.09929129481315613
+      X: 25.939800262451172
+      Y: -11.06356143951416
     Saved: ~
 Window Geometry:
   Displays:

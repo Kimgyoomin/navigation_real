@@ -26,6 +26,7 @@ include_directories(
 add_library(pongbot_global_planner
   src/astar_planner.cpp
   src/astar_ray_planner.cpp
+  src/astar_sparse_planner.cpp
 )
 target_link_libraries(pongbot_global_planner ${catkin_LIBRARIES})
 add_dependencies(pongbot_global_planner ${catkin_EXPORTED_TARGETS})

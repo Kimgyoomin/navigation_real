@@ -9,4 +9,11 @@
         base_class_type="nav_core::BaseGlobalPlanner">
         <description>Ray-casting macro-action A* global planner for move_base</description>
     </class>
+
+    <class
+        name="pongbot_global_planner/AStarSparsePlannerROS"
+        type="pongbot_global_planner::AStarSparsePlannerROS"
+        base_class_type="nav_core::BaseGlobalPlanner">
+        <description>Dense A* with collision-aware RDP sparse global path output</description>
+    </class>
 </library>
