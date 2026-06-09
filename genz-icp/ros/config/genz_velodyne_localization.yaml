@@ -1,0 +1,29 @@
+# ROS1 GenZ prebuilt-map localization wrapper config.
+# Target TF:
+#   map -> camera_init -> velodyne
+
+pointcloud_topic: /velodyne_points
+
+# Change this path to your actual prebuilt PCD map.
+map_path: /home/rclab/catkin_nav_ws/src/navigation_real/FAST_LIO/PCD/scans_down.pcd
+
+map_frame: map
+odom_frame: camera_init
+base_frame: velodyne
+
+publish_map_to_odom_tf: true
+publish_map_to_base_tf: false
+
+use_sensor_stamp: true
+require_initial_pose: true
+use_initial_pose_from_params: false
+
+# Optional initial pose. Used only when use_initial_pose_from_params=true.
+initial_pose_x: 0.0
+initial_pose_y: 0.0
+initial_pose_z: 0.0
+initial_pose_roll: 0.0
+initial_pose_pitch: 0.0
+initial_pose_yaw: 0.0
+
+visualize: true

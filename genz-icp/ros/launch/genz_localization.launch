@@ -1,0 +1,15 @@
+<launch>
+  <arg name="use_sim_time" default="false"/>
+
+  <param name="/use_sim_time" value="$(arg use_sim_time)"/>
+
+  <node pkg="genz_icp" type="odometry_node" name="genz_odometry" output="screen">
+    <!-- ROS wrapper params: topic/frame/timestamp/TF policy -->
+    <rosparam file="$(find genz_icp)/config/genz_velodyne_odometry.yaml"
+              command="load"/>
+
+    <!-- GenZ-ICP core algorithm params -->
+    <rosparam file="$(find genz_icp)/config/localization_corridor.yaml"
+              command="load"/>
+  </node>
+</launch>

@@ -1,0 +1,12 @@
+# ROS1 GenZ odometry wrapper config.
+# Target TF:
+#   camera_init -> velodyne
+
+pointcloud_topic: /velodyne_points
+
+odom_frame: camera_init
+base_frame: velodyne
+
+publish_odom_tf: true
+use_sensor_stamp: true
+visualize: false
