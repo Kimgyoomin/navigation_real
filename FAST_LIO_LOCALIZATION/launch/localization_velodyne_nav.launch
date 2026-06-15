@@ -24,10 +24,10 @@
           args="$(arg map) 5 _frame_id:=map cloud_pcd:=/laser_map" />
 
     <arg name="map_2d" default="/home/rclab/catkin_nav_ws/src/navigation_real/FAST_LIO_LOCALIZATION/map/building_1f_map.yaml"/>
-    <!-- <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_2d)">
+    <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_2d)">
       <param name="frame_id" value="map"/>
       <remap from="map" to="map_2d"/>
-    </node> -->
+    </node>
 
     <!-- 20260114 pongbot global navigation을 위해 끔 -->
     <!-- <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_2d)">

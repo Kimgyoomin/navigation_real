@@ -1,0 +1,140 @@
+<launch>
+  <!-- =========================================================
+       General args
+  ========================================================= -->
+  <arg name="use_rviz" default="true"/>
+  <arg name="use_lcm_bridge" default="false"/>
+
+  <!-- fastlio or genz -->
+  <arg name="localization_mode" default="fastlio"/>
+
+  <!-- 2D map -->
+  <arg name="map_yaml"
+       default="/home/rclab/catkin_nav_ws/src/navigation_real/FAST_LIO_LOCALIZATION/map/building_1f_map_changed.yaml"/>
+
+  <!-- Navigation frames.
+       For FAST-LIO:
+         global_frame:=map_2d or map
+         local_odom_frame:=camera_init
+         robot_base_frame:=body
+
+       For GenZ-ICP:
+         global_frame:=map or map_2d
+         local_odom_frame:=camera_init
+         robot_base_frame:=velodyne
+  -->
+  <arg name="global_frame" default="map"/>
+  <arg name="local_odom_frame" default="camera_init"/>
+  <arg name="robot_base_frame" default="body"/>
+  <arg name="odom_topic" default="/Odometry"/>
+
+  <!-- Optional map -> map_2d alignment.
+       If global_frame=map_2d, enable this static transform.
+       If global_frame=map, disable it.
+  -->
+  <arg name="use_map_2d" default="false"/>
+  <arg name="map_frame" default="map"/>
+  <arg name="map_2d_frame" default="map_2d"/>
+
+  <arg name="align_x" default="0.15"/>
+  <arg name="align_y" default="-0.2"/>
+  <arg name="align_z" default="-0.10"/>
+  <arg name="align_roll" default="0.0"/>
+  <arg name="align_pitch" default="0.0"/>
+  <arg name="align_yaw" default="-0.02"/>
+
+  <!-- =========================================================
+       Map server
+  ========================================================= -->
+  <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_yaml)">
+    <param name="frame_id" value="$(arg global_frame)"/>
+    <remap from="map" to="/map_2d"/>
+    <remap from="map_metadata" to="/map_2d_metadata"/>
+  </node>
+
+  <!-- Optional map -> map_2d static alignment -->
+  <group if="$(arg use_map_2d)">
+    <node pkg="tf2_ros" type="static_transform_publisher"
+          name="map_to_map2d"
+          output="screen"
+          args="$(arg align_x) $(arg align_y) $(arg align_z) $(arg align_roll) $(arg align_pitch) $(arg align_yaw) $(arg map_frame) $(arg map_2d_frame)"/>
+  </group>
+
+  <!-- =========================================================
+       PointCloud -> LaserScan for local costmap obstacle layer
+       Topic name may need change depending on localization/sensor stack.
+  ========================================================= -->
+  <node pkg="pointcloud_to_laserscan" type="pointcloud_to_laserscan_node"
+        name="cloud_to_scan" output="screen">
+    <remap from="cloud"    to="/velodyne_points"/>
+    <remap from="cloud_in" to="/velodyne_points"/>
+    <remap from="scan"     to="/scan"/>
+
+    <param name="target_frame" value="$(arg robot_base_frame)"/>
+    <param name="output_frame_id" value="$(arg robot_base_frame)"/>
+
+    <param name="min_height" value="0.05"/>
+    <param name="max_height" value="1.5"/>
+    <param name="range_min"  value="0.1"/>
+    <param name="range_max"  value="20.0"/>
+  </node>
+
+  <!-- =========================================================
+       move_base: Basic A* + DWA
+  ========================================================= -->
+  <node pkg="move_base" type="move_base" name="move_base" output="screen">
+    <!-- Keep replanning modest to reduce path jitter -->
+    <param name="planner_frequency" value="0.5"/>
+    <param name="controller_frequency" value="10.0"/>
+
+    <!-- Basic A* global planner -->
+    <param name="base_global_planner" value="pongbot_global_planner/AStarPlannerROS"/>
+
+    <!-- DWA local planner -->
+    <param name="base_local_planner" value="dwa_local_planner/DWAPlannerROS"/>
+
+    <!-- Planner params -->
+    <rosparam file="$(find pongbot_global_planner)/params/astar_params.yaml"
+              command="load"
+              ns="AStarPlannerROS"/>
+
+    <!-- Costmap params -->
+    <rosparam file="$(find pongbot_navigation)/config/costmap_common_params.yaml" command="load"/>
+    <rosparam file="$(find pongbot_navigation)/config/global_costmap_params.yaml" command="load"/>
+    <rosparam file="$(find pongbot_navigation)/config/local_costmap_params.yaml" command="load"/>
+
+    <!-- DWA params -->
+    <rosparam file="$(find pongbot_navigation)/config/base_local_planner_params.yaml" command="load"/>
+
+    <!-- Force frame contract -->
+    <param name="global_costmap/global_frame" value="$(arg global_frame)"/>
+    <param name="global_costmap/robot_base_frame" value="$(arg robot_base_frame)"/>
+
+    <param name="local_costmap/global_frame" value="$(arg local_odom_frame)"/>
+    <param name="local_costmap/robot_base_frame" value="$(arg robot_base_frame)"/>
+
+    <param name="DWAPlannerROS/odom_topic" value="$(arg odom_topic)"/>
+    <param name="DWAPlannerROS/odom_frame" value="$(arg local_odom_frame)"/>
+  </node>
+
+  <!-- =========================================================
+       RViz
+  ========================================================= -->
+  <group if="$(arg use_rviz)">
+    <node pkg="rviz" type="rviz" name="rviz" output="screen"
+          args="-d $(find pongbot_navigation)/rviz_cfg/global_nav_localization.rviz"/>
+  </group>
+
+  <!-- =========================================================
+       Optional cmd_vel -> LCM bridge
+       Keep OFF during planner/localization debug.
+  ========================================================= -->
+  <group if="$(arg use_lcm_bridge)">
+    <node pkg="pongbot_lcm" type="ros_cmd_vel_to_lcm"
+          name="ros_cmd_vel_to_lcm" output="screen">
+      <param name="cmd_vel_topic" value="/cmd_vel"/>
+      <param name="lcm_channel" value="CMD_VEL"/>
+      <param name="lcm_url" value="udpm://239.255.76.67:7667?ttl=1"/>
+    </node>
+  </group>
+</launch>
