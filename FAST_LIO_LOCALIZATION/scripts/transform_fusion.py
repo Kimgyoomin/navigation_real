@@ -39,6 +39,12 @@ def transform_fusion():
         else:
             T_map_to_odom = np.eye(4)
 
+        # Publish map -> camera_init slightly into the future
+        # 약간 미래를 찍어서 tf 외삽에러가 안 나오도록 조치
+        # This gives move_base/DWA a small TF timing margin
+        # Don't set this too large; 0.02 ~ 0.10s  is the intended range
+        tf_stamp = rospy.Time.now() + rospy.Duration(0.05)
+
         br.sendTransform(tf.transformations.translation_from_matrix(T_map_to_odom),
                          tf.transformations.quaternion_from_matrix(T_map_to_odom),
                          rospy.Time.now(),

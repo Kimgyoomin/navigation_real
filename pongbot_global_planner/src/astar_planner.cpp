@@ -193,7 +193,8 @@ bool AStarPlannerROS::makePlan(const geometry_msgs::PoseStamped& start,
     }
 
     // 여기서 stamp를 만든다
-    const ros::Time stamp = ros::Time::now();
+    // const ros::Time stamp = ros::Time::now();
+    const ros::Time stamp = ros::Time(0);
 
     // Start to check time (Walltime)
     // const ros::WallTime t0 = ros::WallTime::now();       // To change WallTime to chrono

@@ -396,7 +396,8 @@ bool AStarRayPlannerROS::makePlan(
     local_copy = *cm;
   }
 
-  const ros::Time stamp = ros::Time::now();
+  // const ros::Time stamp = ros::Time::now();
+  const ros::Time stamp = ros::Time(0);
 
   const auto t0 = std::chrono::steady_clock::now();
 
