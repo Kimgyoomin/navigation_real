@@ -7,6 +7,7 @@ Panels:
         - /Global Options1
         - /local_map1/Autocompute Value Bounds1
         - /Odometry1/Shape1
+        - /Map1
         - /Path1
         - /Path1/Offset1
       Splitter Ratio: 0.5
@@ -216,7 +217,7 @@ Visualization Manager:
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
-    - Alpha: 0.699999988079071
+    - Alpha: 0.30000001192092896
       Class: rviz/Map
       Color Scheme: map
       Draw Behind: false
@@ -278,7 +279,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 58.19852066040039
+      Distance: 28.0771541595459
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -286,17 +287,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 17.628969192504883
-        Y: -8.257699012756348
-        Z: -3.6746788024902344
+        X: 45.55060958862305
+        Y: -35.73524475097656
+        Z: -3.7316057682037354
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.5647963285446167
+      Pitch: 1.5697963237762451
       Target Frame: odom
-      Yaw: 1.5881764888763428
+      Yaw: 1.638175368309021
     Saved: ~
 Window Geometry:
   Displays:
