@@ -18,6 +18,7 @@
 
 #include <string>
 #include <vector>
+#include <mutex>
 
 namespace genz_icp_ros
 {
@@ -82,6 +83,7 @@ private:
     ros::Publisher non_planar_points_publisher_;
 
     ros::Timer static_map_timer_;
+    ros::Timer tf_publish_timer_;
 
     tf2_ros::TransformBroadcaster tf_broadcaster_;
     tf2_ros::Buffer tf2_buffer_;
@@ -105,12 +107,20 @@ private:
     bool publish_debug_clouds_{true};
     bool require_initial_pose_{true};
     bool use_sensor_stamp_{true};
+    double tf_future_tolerance_{0.03};
+    double tf_publish_rate_{50.0};
+
+    mutable std::mutex latest_tf_mutex_;
+    bool has_latest_map_to_odom_tf_{false};
+    geometry_msgs::TransformStamped latest_map_to_odom_tf_;
 
     bool received_initial_pose_{false};
     bool icp_initialized_{false};
     bool has_pending_initial_pose_{false};
 
     Sophus::SE3d pending_initial_pose_map_base_;
+
+    void PublishLatestMapToOdomTF(const ros::TimerEvent &);
 };
 
 }  // namespace genz_icp_ros

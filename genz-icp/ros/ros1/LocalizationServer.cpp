@@ -150,6 +150,7 @@ LocalizationServer::LocalizationServer(
 
     bool use_initial_pose_from_params = false;
     pnh_.param("use_initial_pose_from_params", use_initial_pose_from_params, false);
+    pnh_.param("tf_future_tolerance", tf_future_tolerance_, 0.03);
 
     double initial_pose_x = 0.0;
     double initial_pose_y = 0.0;
@@ -185,6 +186,8 @@ LocalizationServer::LocalizationServer(
     pnh_.param("min_motion_th", config_.min_motion_th, config_.min_motion_th);
     pnh_.param("max_num_iterations", config_.max_num_iterations, config_.max_num_iterations);
     pnh_.param("convergence_criterion", config_.convergence_criterion, config_.convergence_criterion);
+
+    pnh_.param("tf_publish_rate", tf_publish_rate_, 50.0);  
 
     if (config_.max_range < config_.min_range) {
         ROS_WARN("[GenZ Localization] max_range is smaller than min_range. Setting min_range to 0.0");
@@ -307,6 +310,23 @@ LocalizationServer::LocalizationServer(
     }
 
     tf2_buffer_.setUsingDedicatedThread(true);
+
+    // High-rate TF republisher.
+    // GenZ-ICP registration may run slower than the local planner control loop.
+    // This timer republishes the latest map->odom transform with a fresh timestamp.
+    if (publish_map_to_odom_tf_ && tf_publish_rate_ > 0.0) {
+        tf_publish_timer_ =
+            nh_.createTimer(
+                ros::Duration(1.0 / tf_publish_rate_),
+                &LocalizationServer::PublishLatestMapToOdomTF,
+                this);
+
+        ROS_INFO(
+            "[GenZ Localization] High-rate map->odom TF republisher enabled: "
+            "rate=%.2f Hz, future_tolerance=%.3f s",
+            tf_publish_rate_,
+            tf_future_tolerance_);
+    }
 
     ROS_INFO_STREAM(
         "[GenZ Localization] ROS1 localization node initialized. "
@@ -587,10 +607,17 @@ void LocalizationServer::PublishMapToOdomTF(
     const Sophus::SE3d T_map_odom = T_map_base * T_odom_base.inverse();
 
     geometry_msgs::TransformStamped transform_msg;
-    transform_msg.header.stamp = stamp;
+    // transform_msg.header.stamp = stamp;
+    transform_msg.header.stamp = ros::Time::now() + ros::Duration(tf_future_tolerance_);
     transform_msg.header.frame_id = map_frame_;
     transform_msg.child_frame_id = odom_frame_;
     transform_msg.transform = tf2::sophusToTransform(T_map_odom);
+
+    {
+        std::lock_guard<std::mutex> lock(latest_tf_mutex_);
+        latest_map_to_odom_tf_ = transform_msg;
+        has_latest_map_to_odom_tf_ = true;
+    }
 
     tf_broadcaster_.sendTransform(transform_msg);
 }
@@ -601,7 +628,8 @@ void LocalizationServer::PublishMapToBaseTF(
     const std::string &child_frame_id)
 {
     geometry_msgs::TransformStamped transform_msg;
-    transform_msg.header.stamp = stamp;
+    // transform_msg.header.stamp = stamp;
+    transform_msg.header.stamp = stamp + ros::Duration(tf_future_tolerance_);
     transform_msg.header.frame_id = map_frame_;
     transform_msg.child_frame_id = child_frame_id;
     transform_msg.transform = tf2::sophusToTransform(T_map_base);
@@ -641,6 +669,26 @@ void LocalizationServer::PublishStaticMap(const ros::TimerEvent &)
 
     map_publisher_.publish(
         *EigenToPointCloud2(localization_.LocalMap(), map_header));
+}
+
+void LocalizationServer::PublishLatestMapToOdomTF(const ros::TimerEvent &)
+{
+    geometry_msgs::TransformStamped tf_msg;
+
+    {
+        std::lock_guard<std::mutex> lock(latest_tf_mutex_);
+        if (!has_latest_map_to_odom_tf_) {
+            return;
+        }
+
+        tf_msg = latest_map_to_odom_tf_;
+    }
+
+    // Republish with fresh timestamp so move_base/DWA can transform
+    // the global plan using a current/future-dated TF.
+    tf_msg.header.stamp = ros::Time::now() + ros::Duration(tf_future_tolerance_);
+
+    tf_broadcaster_.sendTransform(tf_msg);
 }
 
 }  // namespace genz_icp_ros
