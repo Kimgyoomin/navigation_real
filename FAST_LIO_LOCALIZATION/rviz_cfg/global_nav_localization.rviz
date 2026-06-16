@@ -356,7 +356,7 @@ Visualization Manager:
       Radius: 0.029999999329447746
       Shaft Diameter: 0.4000000059604645
       Shaft Length: 0.4000000059604645
-      Topic: /path
+      Topic: /move_base/AStarSparsePlannerROS/plan
       Unreliable: false
       Value: true
     - Class: rviz/MarkerArray
@@ -417,7 +417,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/ThirdPersonFollower
-      Distance: 129.9152374267578
+      Distance: 81.15443420410156
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -425,17 +425,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -29.213886260986328
-        Y: 2.4845633506774902
+        X: 30.875511169433594
+        Y: 23.890047073364258
         Z: 0
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.8197970390319824
+      Pitch: 1.4897964000701904
       Target Frame: body
-      Yaw: 2.568556547164917
+      Yaw: 3.1335577964782715
     Saved: ~
 Window Geometry:
   Displays:

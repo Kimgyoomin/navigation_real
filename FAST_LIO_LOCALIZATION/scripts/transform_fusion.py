@@ -43,11 +43,12 @@ def transform_fusion():
         # 약간 미래를 찍어서 tf 외삽에러가 안 나오도록 조치
         # This gives move_base/DWA a small TF timing margin
         # Don't set this too large; 0.02 ~ 0.10s  is the intended range
-        tf_stamp = rospy.Time.now() + rospy.Duration(0.05)
+        tf_stamp = rospy.Time.now() + rospy.Duration(0.03)
 
         br.sendTransform(tf.transformations.translation_from_matrix(T_map_to_odom),
                          tf.transformations.quaternion_from_matrix(T_map_to_odom),
-                         rospy.Time.now(),
+                        #  rospy.Time.now(),
+                         tf_stamp,
                          'camera_init', 'map')
         if cur_odom is not None:
             # 发布全局定位的odometry
