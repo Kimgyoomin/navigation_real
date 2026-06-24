@@ -1,0 +1,5 @@
+<launch>
+    <node pkg="pongbot_heightmap_cupy" type="pongbot_heightmap_node" name="pongbot_heightmap" output="screen" />
+        <rosparam command="load" file="$(find pongbot_heightmap_cupy)/config/core/core_param.yaml"/>
+        <rosparam command="load" file="$(find pongbot_heightmap_cupy)/config/core/topic_setup.yaml"/>
+</launch>

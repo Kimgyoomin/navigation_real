@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>pongbot_heightmap_cupy</name>
+  <version>0.0.1</version>
+  <description>The pongbot heightmap node package</description>
+
+  <maintainer email="densee250@gmail.com">ysj</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  
+  <depend>roscpp</depend>
+  <depend>rospy</depend>
+  <depend>tf</depend>
+  <depend>tf_conversions</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>grid_map_msgs</depend>
+  <depend>grid_map_ros</depend>
+  <depend>image_transport</depend>
+  <depend>pcl_ros</depend>
+  <depend>pybind11_catkin</depend>
+  <depend>pongbot_heightmap_msgs</depend>
+
+</package>

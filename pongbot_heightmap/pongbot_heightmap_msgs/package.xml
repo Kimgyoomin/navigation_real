@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>pongbot_heightmap_msgs</name>
+  <version>1.0.0</version>
+  <description>HeightMap message type.</description>
+
+  <maintainer email="densee250@gmail.com">ysj</maintainer>
+  <license>TODO</license>
+  <url type="website">TODO</url>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <depend>message_generation</depend>
+  <depend>std_msgs</depend>
+  <depend>roscpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>message_runtime</depend>
+</package>

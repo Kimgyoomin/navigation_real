@@ -1,0 +1,25 @@
+#### Plugins ########
+plugin_config_file: '$(rospack find pongbot_heightmap_cupy)/config/core/plugin_config.yaml'
+
+subscribers:
+  # front_cam:
+  #  topic_name: '/FrontCamera/camera/depth/color/points' 
+  #  data_type: pointcloud
+
+  back_cam:
+   topic_name: '/BackCamera/camera/depth/color/points'
+   data_type: pointcloud
+
+publishers:
+  height_map_raw:
+    layers: ['elevation', 'traversability', 'variance','rgb']
+    basic_layers: ['elevation']
+    fps: 5.0
+  height_map_recordable:
+   layers: ['elevation', 'traversability']
+   basic_layers: ['elevation', 'traversability']
+   fps: 2.0
+  height_map_filter:
+    layers: ['min_filter', 'smooth', 'inpaint', 'elevation']
+    basic_layers: ['min_filter']
+    fps: 3.0

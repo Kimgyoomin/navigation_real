@@ -1,0 +1,5 @@
+struct feasibility_layer_t 
+{
+   float center[3];
+   int8_t map[120][120];
+}

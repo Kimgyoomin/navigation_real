@@ -1,0 +1,20 @@
+#### Basic parameters ########
+resolution: 0.04                                # resolution in m.
+map_length: 4.0                                 # map's size in m.
+sensor_noise_factor: 0.05                       # point's noise is sensor_noise_factor*z^2 (z is distance from sensor).
+mahalanobis_thresh: 2.0                         # points outside this distance is outlier.
+
+
+#### Frame ####
+map_frame: 'odom'                               # The map frame where the odometry source uses.
+base_frame: 'BODY'                              # The robot's base frame. This frame will be a center of the map.
+corrected_map_frame: 'odom'
+
+#### fps ####
+update_frame_fps: 200.0                         # YSJ TEST 20.0
+update_map_fps:  100.0                          # YSJ TEST 10.0
+publish_ROS_fps: 10.0                           # 50.0 
+publish_LCM_fps: 100.0                          # 50.0
+
+#### Default Plugins ########
+#plugin_config_file: '$(rospack find elevation_mapping_cupy)/config/core/plugin_config.yaml'

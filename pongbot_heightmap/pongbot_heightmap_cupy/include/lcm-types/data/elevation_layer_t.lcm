@@ -1,0 +1,6 @@
+struct elevation_layer_t 
+{
+   float map_frame[3];
+   float base_frame[3];
+   int16_t map[120][120];
+}

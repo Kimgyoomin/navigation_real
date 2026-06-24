@@ -1,0 +1,20 @@
+<!-- <launch>
+    <node pkg="pongbot_heightmap_cupy" type="pongbot_heightmap_node" name="pongbot_heightmap" output="screen" />
+        <rosparam command="load" file="$(find pongbot_heightmap_cupy)/config/core/core_param.yaml"/>
+        <rosparam command="load" file="$(find pongbot_heightmap_cupy)/config/core/topic_setup.yaml"/>
+</launch> -->
+<launch>
+  <!-- Load global params first.
+       HeightMapNode currently reads several params as /absolute params.
+  -->
+  <rosparam command="load"
+            file="$(find pongbot_heightmap_cupy)/config/core/core_param.yaml"/>
+
+  <rosparam command="load"
+            file="$(find pongbot_heightmap_cupy)/config/core/topic_setup_back_only.yaml"/>
+
+  <node pkg="pongbot_heightmap_cupy"
+        type="pongbot_heightmap_node"
+        name="pongbot_heightmap"
+        output="screen"/>
+</launch>
