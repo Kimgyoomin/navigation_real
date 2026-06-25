@@ -142,6 +142,8 @@ HeightMapNode::HeightMapNode(ros::NodeHandle& nh):
     // traversabilityPub_      = nh_.advertise<pongbot_heightmap_msgs::HeightMap>("traversability", 1);
     normalPub_              = nh_.advertise<visualization_msgs::MarkerArray>("normal", 1);
     feasibilityPub_         = nh_.advertise<pongbot_heightmap_msgs::HeightMap>("feasibility", 1);
+    // elevationGridPub_
+    elevationGridPub_       = nh_.advertise<grid_map_msgs::GridMap>("/legged_terrain/elevation_grid", 1);
     
 }
 
@@ -323,11 +325,27 @@ void HeightMapNode::updateHeightMap(const ros::TimerEvent&)
     auto new_filter_map         = std::make_shared<HeightMapWrapper::RowMatrixXf>(map_.map_n_, map_.map_n_);
     auto new_feasibility        = std::make_shared<HeightMapWrapper::RowMatrixXf>(map_.map_n_, map_.map_n_);
     auto new_map_position       = std::make_shared<HeightMapWrapper::RowMatrixXf>(1, 3);
+    auto new_is_valid       = std::make_shared<HeightMapWrapper::RowMatrixXf>(map_.map_n_, map_.map_n_);
+    auto new_variance       = std::make_shared<HeightMapWrapper::RowMatrixXf>(map_.map_n_, map_.map_n_);
+    auto new_traversability = std::make_shared<HeightMapWrapper::RowMatrixXf>(map_.map_n_, map_.map_n_);
+    auto new_normal_x       = std::make_shared<HeightMapWrapper::RowMatrixXf>(map_.map_n_, map_.map_n_);
+    auto new_normal_y       = std::make_shared<HeightMapWrapper::RowMatrixXf>(map_.map_n_, map_.map_n_);
+    auto new_normal_z       = std::make_shared<HeightMapWrapper::RowMatrixXf>(map_.map_n_, map_.map_n_);
 
     map_.get_position(*new_map_position);
+    // 현재는 updateHeightMap에서 elevation, filter_map, feasiblity만 가져옴
+    // 여기에다가 추가하고 싶은 layer를 추가하면 됨
     map_.get_layer_data("elevation", *new_elevation);
     map_.get_layer_data("filter_map", *new_filter_map);
     map_.get_layer_data("feasibility", *new_feasibility);
+
+    // 
+    map_.get_layer_data("is_valid", *new_is_valid);
+    map_.get_layer_data("variance", *new_variance);
+    map_.get_layer_data("traversability", *new_traversability);
+    map_.get_layer_data("normal_x", *new_normal_x);
+    map_.get_layer_data("normal_y", *new_normal_y);
+    map_.get_layer_data("normal_z", *new_normal_z);
     
     if (!isValid(*new_elevation) || !isValid(*new_feasibility)) 
     {
@@ -337,10 +355,18 @@ void HeightMapNode::updateHeightMap(const ros::TimerEvent&)
     {
     std::lock_guard<std::mutex> lock(mapMutex_);       
 
+    // mutex 저장
     map_pose_ptr                = new_map_position;
     elevation_ptr               = new_elevation;
     filter_map_ptr              = new_filter_map;
     feasibility_ptr             = new_feasibility;
+
+    is_valid_ptr        = new_is_valid;
+    variance_ptr        = new_variance;
+    traversability_ptr  = new_traversability;
+    normal_x_ptr        = new_normal_x;
+    normal_y_ptr        = new_normal_y;
+    normal_z_ptr        = new_normal_z;
 
     // map_.get_position(base_position);
     // map_.get_layer_data("elevation", elevation);
@@ -361,6 +387,8 @@ void HeightMapNode::updateHeightMap(const ros::TimerEvent&)
 }
 
 void HeightMapNode::publishMapROS(const ros::TimerEvent&) 
+// publishMapROS를 통해 mutex에서 map points를 복사하고, custom HeightMap topic을 publish함
+// pointer들을 추가, publishElevationGridMap() 호출
 {
     // auto t_start    = std::chrono::high_resolution_clock::now();
     // std::chrono::duration<double, std::milli> retime = t_start - t_prev_ros;
@@ -373,12 +401,26 @@ void HeightMapNode::publishMapROS(const ros::TimerEvent&)
     std::shared_ptr<HeightMapWrapper::RowMatrixXf> ros_feasibility_ptr;
     std::shared_ptr<HeightMapWrapper::RowMatrixXf> ros_esdf_ptr;
 
+    std::shared_ptr<HeightMapWrapper::RowMatrixXf> ros_is_valid_ptr;
+    std::shared_ptr<HeightMapWrapper::RowMatrixXf> ros_variance_ptr;
+    std::shared_ptr<HeightMapWrapper::RowMatrixXf> ros_traversability_ptr;
+    std::shared_ptr<HeightMapWrapper::RowMatrixXf> ros_normal_x_ptr;
+    std::shared_ptr<HeightMapWrapper::RowMatrixXf> ros_normal_y_ptr;
+    std::shared_ptr<HeightMapWrapper::RowMatrixXf> ros_normal_z_ptr;
+
     {
         std::lock_guard<std::mutex> lock(mapMutex_);
         ros_map_pose_ptr            = map_pose_ptr;
         ros_elevation_ptr           = elevation_ptr;
         ros_filter_map_ptr          = filter_map_ptr;
         ros_feasibility_ptr         = feasibility_ptr;
+
+        ros_is_valid_ptr       = is_valid_ptr;
+        ros_variance_ptr       = variance_ptr;
+        ros_traversability_ptr = traversability_ptr;
+        ros_normal_x_ptr       = normal_x_ptr;
+        ros_normal_y_ptr       = normal_y_ptr;
+        ros_normal_z_ptr       = normal_z_ptr;
     }
 
 
@@ -389,6 +431,27 @@ void HeightMapNode::publishMapROS(const ros::TimerEvent&)
         publishDataAsPoints(*ros_map_pose_ptr, "feasibility", *ros_filter_map_ptr, *ros_feasibility_ptr, feasibilityPub_, 0.2f);
     }
 
+    if (ros_map_pose_ptr &&
+        ros_elevation_ptr &&
+        ros_filter_map_ptr &&
+        ros_is_valid_ptr &&
+        ros_variance_ptr &&
+        ros_traversability_ptr &&
+        ros_normal_x_ptr &&
+        ros_normal_y_ptr &&
+        ros_normal_z_ptr)
+    {
+        publishElevationGridMap(
+            *ros_map_pose_ptr,
+            *ros_elevation_ptr,
+            *ros_filter_map_ptr,
+            *ros_is_valid_ptr,
+            *ros_variance_ptr,
+            *ros_traversability_ptr,
+            *ros_normal_x_ptr,
+            *ros_normal_y_ptr,
+            *ros_normal_z_ptr);
+    }
     // publishDataAsPoints(pos, "elevation",  elev, elev, pointPub_);
     // publishDataAsPoints(pos, "feasibility", feas, feas, feasibilityPub_, 0.2f);
 
@@ -507,6 +570,122 @@ void HeightMapNode::publishDataAsPoints(const HeightMapWrapper::RowMatrixXf& pos
     }
 
     pub.publish(msg);
+}
+
+// publishElevationGridMap은 내부 dense matrix를 GridMap으로 Publish함
+// invalid cell은 is_valid=0, elevation/filter_map은 NAN으로 남음
+// support patch PCA에서 원하는 구조라고 함? (260624)
+void HeightMapNode::publishElevationGridMap(
+    const HeightMapWrapper::RowMatrixXf& map_position,
+    const HeightMapWrapper::RowMatrixXf& elevation,
+    const HeightMapWrapper::RowMatrixXf& filter_map,
+    const HeightMapWrapper::RowMatrixXf& is_valid,
+    const HeightMapWrapper::RowMatrixXf& variance,
+    const HeightMapWrapper::RowMatrixXf& traversability,
+    const HeightMapWrapper::RowMatrixXf& normal_x,
+    const HeightMapWrapper::RowMatrixXf& normal_y,
+    const HeightMapWrapper::RowMatrixXf& normal_z)
+{
+    if (!elevationGridPub_) {
+        return;
+    }
+
+    const int rows = map_.map_n_;
+    const int cols = map_.map_n_;
+
+    if (rows <= 0 || cols <= 0) {
+        return;
+    }
+
+    grid_map::GridMap grid_map;
+
+    grid_map.setFrameId(mapFrameId_);
+
+    const double length_x = map_.map_length_;
+    const double length_y = map_.map_length_;
+
+    const grid_map::Length length(length_x, length_y);
+    const grid_map::Position center(map_position(0, 0), map_position(0, 1));
+
+    grid_map.setGeometry(length, map_.resolution_, center);
+
+    grid_map.add("elevation");
+    grid_map.add("filter_map");
+    grid_map.add("is_valid");
+    grid_map.add("variance");
+    grid_map.add("traversability");
+    grid_map.add("normal_x");
+    grid_map.add("normal_y");
+    grid_map.add("normal_z");
+
+    // Initialize all layers.
+    grid_map["elevation"].setConstant(std::numeric_limits<float>::quiet_NaN());
+    grid_map["filter_map"].setConstant(std::numeric_limits<float>::quiet_NaN());
+    grid_map["variance"].setConstant(std::numeric_limits<float>::quiet_NaN());
+    grid_map["traversability"].setConstant(std::numeric_limits<float>::quiet_NaN());
+    grid_map["normal_x"].setConstant(std::numeric_limits<float>::quiet_NaN());
+    grid_map["normal_y"].setConstant(std::numeric_limits<float>::quiet_NaN());
+    grid_map["normal_z"].setConstant(std::numeric_limits<float>::quiet_NaN());
+    grid_map["is_valid"].setConstant(0.0f);
+
+    for (int r = 0; r < rows; ++r)
+    {
+        for (int c = 0; c < cols; ++c)
+        {
+            const float x = getCellPosition(r, map_position(0, 0), map_.resolution_, map_.map_length_);
+            const float y = getCellPosition(c, map_position(0, 1), map_.resolution_, map_.map_length_);
+
+            grid_map::Index index;
+            if (!grid_map.getIndex(grid_map::Position(x, y), index)) {
+                continue;
+            }
+
+            const float valid_value = is_valid(r, c);
+            const bool valid =
+                std::isfinite(valid_value) && valid_value > 0.5f;
+
+            grid_map.at("is_valid", index) = valid ? 1.0f : 0.0f;
+
+            if (!valid) {
+                continue;
+            }
+
+            if (std::isfinite(elevation(r, c))) {
+                grid_map.at("elevation", index) = elevation(r, c);
+            }
+
+            if (std::isfinite(filter_map(r, c))) {
+                grid_map.at("filter_map", index) = filter_map(r, c);
+            }
+
+            if (std::isfinite(variance(r, c))) {
+                grid_map.at("variance", index) = variance(r, c);
+            }
+
+            if (std::isfinite(traversability(r, c))) {
+                grid_map.at("traversability", index) = traversability(r, c);
+            }
+
+            if (std::isfinite(normal_x(r, c))) {
+                grid_map.at("normal_x", index) = normal_x(r, c);
+            }
+
+            if (std::isfinite(normal_y(r, c))) {
+                grid_map.at("normal_y", index) = normal_y(r, c);
+            }
+
+            if (std::isfinite(normal_z(r, c))) {
+                grid_map.at("normal_z", index) = normal_z(r, c);
+            }
+        }
+    }
+
+    grid_map.setTimestamp(ros::Time::now().toNSec());
+
+    grid_map_msgs::GridMap msg;
+    grid_map::GridMapRosConverter::toMessage(grid_map, msg);
+
+    elevationGridPub_.publish(msg);
 }
 
 void HeightMapNode::publishNormalArrow(const HeightMapWrapper::RowMatrixXf& normal_x,

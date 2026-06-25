@@ -86,6 +86,17 @@ class HeightMapNode
                                 const HeightMapWrapper::RowMatrixXf& normal_z,
                                 const HeightMapWrapper::RowMatrixXf& elevation);
 
+        void publishElevationGridMap(
+                                const HeightMapWrapper::RowMatrixXf& map_position,
+                                const HeightMapWrapper::RowMatrixXf& elevation,
+                                const HeightMapWrapper::RowMatrixXf& filter_map,
+                                const HeightMapWrapper::RowMatrixXf& is_valid,
+                                const HeightMapWrapper::RowMatrixXf& variance,
+                                const HeightMapWrapper::RowMatrixXf& traversability,
+                                const HeightMapWrapper::RowMatrixXf& normal_x,
+                                const HeightMapWrapper::RowMatrixXf& normal_y,
+                                const HeightMapWrapper::RowMatrixXf& normal_z);
+
 
         visualization_msgs::Marker vectorToArrowMarker(const Eigen::Vector3f& start, const Eigen::Vector3f& end, const int id);
         float getCellPosition(const int idx, const float center, const float resolution, const float map_length);             
@@ -96,6 +107,7 @@ class HeightMapNode
 
         ros::Publisher pointPub_, filterPub_, traversabilityPub_, validPub_;
         ros::Publisher normalPub_, esdfPub_, feasibilityPub_;
+        ros::Publisher elevationGridPub_;
 
         std::vector<ros::Subscriber> pointcloudSubs_;
         tf::TransformListener transformListener_;
@@ -127,6 +139,13 @@ class HeightMapNode
         std::shared_ptr<HeightMapWrapper::RowMatrixXf> feasibility_ptr;
         std::shared_ptr<HeightMapWrapper::RowMatrixXf> map_pose_ptr;
         std::shared_ptr<HeightMapWrapper::RowMatrixXf> base_pose_ptr;
+
+        std::shared_ptr<HeightMapWrapper::RowMatrixXf> is_valid_ptr;
+        std::shared_ptr<HeightMapWrapper::RowMatrixXf> variance_ptr;
+        std::shared_ptr<HeightMapWrapper::RowMatrixXf> traversability_ptr;
+        std::shared_ptr<HeightMapWrapper::RowMatrixXf> normal_x_ptr;
+        std::shared_ptr<HeightMapWrapper::RowMatrixXf> normal_y_ptr;
+        std::shared_ptr<HeightMapWrapper::RowMatrixXf> normal_z_ptr;
 
         // layer data
         std::vector<std::string> layers;    
