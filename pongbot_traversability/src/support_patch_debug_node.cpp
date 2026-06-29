@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cstdio>
 #include <string>
 #include <vector>
 #include <utility>
@@ -9,6 +11,7 @@
 #include <geometry_msgs/TransformStamped.h>
 #include <visualization_msgs/MarkerArray.h>
 
+#include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
@@ -125,6 +128,8 @@ private:
     {
         grid_map::GridMap map;
         grid_map::GridMapRosConverter::fromMessage(*msg, map);
+        const std::string grid_frame =
+            map.getFrameId().empty() ? terrain_frame_ : map.getFrameId();
 
         if (!evaluator_.checkLayers(map)) {
             ROS_WARN_THROTTLE(
@@ -139,7 +144,7 @@ private:
         try {
             tf_msg =
                 tf_buffer_.lookupTransform(
-                    terrain_frame_,
+                    grid_frame,
                     body_frame_,
                     ros::Time(0),
                     ros::Duration(0.05));
@@ -147,7 +152,7 @@ private:
             ROS_WARN_THROTTLE(
                 1.0,
                 "[support_patch_debug] TF lookup failed %s <- %s: %s",
-                terrain_frame_.c_str(),
+                grid_frame.c_str(),
                 body_frame_.c_str(),
                 ex.what());
             return;
@@ -158,9 +163,9 @@ private:
         const double body_yaw = tf2::getYaw(tf_msg.transform.rotation);
 
         visualization_msgs::MarkerArray markers;
-        int marker_id = 0;
+        int marker_id = 1;
 
-        addDeleteAllMarker(markers);
+        addDeleteAllMarker(markers, grid_frame);
 
         double body_risk = 0.0;
 
@@ -168,6 +173,7 @@ private:
             addEnvelopeMarker(
                 markers,
                 marker_id++,
+                grid_frame,
                 limb,
                 body_x,
                 body_y,
@@ -190,33 +196,42 @@ private:
             addPatchMarker(
                 markers,
                 marker_id++,
+                grid_frame,
                 best_patch,
                 best_risk);
 
             addNormalMarker(
                 markers,
                 marker_id++,
+                grid_frame,
                 best_risk);
 
             addTextMarker(
                 markers,
                 marker_id++,
+                grid_frame,
                 best_patch,
                 best_risk);
         }
 
         ROS_INFO_THROTTLE(
             1.0,
-            "[support_patch_debug] body_risk=%.3f",
+            "[support_patch_debug] frame=%s body=(%.2f, %.2f, %.2f deg) body_risk=%.3f",
+            grid_frame.c_str(),
+            body_x,
+            body_y,
+            body_yaw * 180.0 / M_PI,
             body_risk);
 
         marker_pub_.publish(markers);
     }
 
-    void addDeleteAllMarker(visualization_msgs::MarkerArray& markers) const
+    void addDeleteAllMarker(
+        visualization_msgs::MarkerArray& markers,
+        const std::string& frame_id) const
     {
         visualization_msgs::Marker marker;
-        marker.header.frame_id = terrain_frame_;
+        marker.header.frame_id = frame_id;
         marker.header.stamp = ros::Time::now();
         marker.ns = "support_patch_debug";
         marker.id = 0;
@@ -224,6 +239,7 @@ private:
 
         markers.markers.push_back(marker);
     }
+
 
     std_msgs::ColorRGBA colorFromRisk(const pt::PatchRisk& risk) const
     {
@@ -250,13 +266,14 @@ private:
     void addEnvelopeMarker(
         visualization_msgs::MarkerArray& markers,
         const int id,
+        const std::string& frame_id,
         const pt::LimbEnvelope& limb,
         const double body_x,
         const double body_y,
         const double body_yaw) const
     {
         visualization_msgs::Marker marker;
-        marker.header.frame_id = terrain_frame_;
+        marker.header.frame_id = frame_id;
         marker.header.stamp = ros::Time::now();
         marker.ns = "support_patch_debug";
         marker.id = id;
@@ -300,11 +317,12 @@ private:
     void addPatchMarker(
         visualization_msgs::MarkerArray& markers,
         const int id,
+        const std::string& frame_id,
         const pt::Patch& patch,
         const pt::PatchRisk& risk) const
     {
         visualization_msgs::Marker marker;
-        marker.header.frame_id = terrain_frame_;
+        marker.header.frame_id = frame_id;
         marker.header.stamp = ros::Time::now();
         marker.ns = "support_patch_debug";
         marker.id = id;
@@ -332,6 +350,7 @@ private:
     void addNormalMarker(
         visualization_msgs::MarkerArray& markers,
         const int id,
+        const std::string& frame_id,
         const pt::PatchRisk& risk) const
     {
         if (!risk.valid) {
@@ -339,7 +358,7 @@ private:
         }
 
         visualization_msgs::Marker marker;
-        marker.header.frame_id = terrain_frame_;
+        marker.header.frame_id = frame_id;
         marker.header.stamp = ros::Time::now();
         marker.ns = "support_patch_debug";
         marker.id = id;
@@ -374,11 +393,12 @@ private:
     void addTextMarker(
         visualization_msgs::MarkerArray& markers,
         const int id,
+        const std::string& frame_id,
         const pt::Patch& patch,
         const pt::PatchRisk& risk) const
     {
         visualization_msgs::Marker marker;
-        marker.header.frame_id = terrain_frame_;
+        marker.header.frame_id = frame_id;
         marker.header.stamp = ros::Time::now();
         marker.ns = "support_patch_debug";
         marker.id = id;

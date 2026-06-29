@@ -67,6 +67,8 @@ void SupportPatchEvaluator::evaluateLimb(
     Patch& best_patch,
     PatchRisk& best_risk) const
 {
+    bool found_valid_patch = false;
+
     best_risk.total_cost = std::numeric_limits<double>::infinity();
     best_risk.valid = false;
 
@@ -89,17 +91,19 @@ void SupportPatchEvaluator::evaluateLimb(
 
             const PatchRisk risk = evaluatePatch(map, analysis_patch);
 
-            if (risk.total_cost < best_risk.total_cost) {
+            if (!risk.valid) {
+                continue;
+            }
+
+            if (!found_valid_patch || risk.total_cost < best_risk.total_cost) {
+                found_valid_patch = true;
                 best_patch = patch;
                 best_risk = risk;
             }
         }
     }
 
-    if (!std::isfinite(best_risk.total_cost)) {
-        best_risk.total_cost = 1.0;
-        best_risk.valid = false;
-
+    if (!found_valid_patch) {
         const std::pair<double, double> p =
             transformBodyPointToTerrain(
                 body_x,
@@ -114,6 +118,14 @@ void SupportPatchEvaluator::evaluateLimb(
         best_patch.yaw = body_yaw;
         best_patch.length = patch_length_;
         best_patch.width = patch_width_;
+
+        Patch analysis_patch = best_patch;
+        analysis_patch.length = analysis_length_;
+        analysis_patch.width = analysis_width_;
+
+        best_risk = evaluatePatch(map, analysis_patch);
+        best_risk.valid = false;
+        best_risk.total_cost = 1.0;
     }
 }
 
