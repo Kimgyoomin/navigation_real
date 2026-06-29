@@ -1,0 +1,10 @@
+<launch>
+  <node pkg="pongbot_traversability"
+        type="support_patch_debug_node"
+        name="support_patch_debug_node"
+        output="screen">
+
+    <rosparam file="$(find pongbot_traversability)/config/support_patch_debug.yaml"
+              command="load"/>
+  </node>
+</launch>

@@ -1,0 +1,47 @@
+terrain_topic: /legged_terrain/elevation_grid
+
+terrain_frame: odom
+body_frame: BODY
+
+height_layer: filter_map
+valid_layer: is_valid
+variance_layer: variance
+
+# Candidate support patch sampling inside each reachable region.
+candidate_stride_x: 0.05
+candidate_stride_y: 0.05
+
+# Contact patch size. This is the approximate foot contact region.
+patch_length: 0.12
+patch_width: 0.10
+
+# Analysis window for PCA / plane fitting.
+# Larger than the contact patch to gather enough cells.
+analysis_length: 0.24
+analysis_width: 0.18
+
+# Quadruped nominal reachability envelopes in BODY frame.
+# Format: [x_min, x_max, y_min, y_max]
+limbs:
+  FL: [0.18, 0.35, 0.10, 0.22]
+  FR: [0.18, 0.35, -0.22, -0.10]
+  RL: [-0.35, -0.18, 0.10, 0.22]
+  RR: [-0.35, -0.18, -0.22, -0.10]
+
+risk:
+  min_valid_cells: 8
+  max_unknown_ratio: 0.60
+  max_height_range: 0.08
+  max_slope_deg: 20.0
+  max_roughness: 0.03
+  max_variance: 0.10
+
+weights:
+  unknown: 1.0
+  step: 1.0
+  slope: 1.0
+  roughness: 0.7
+  variance: 0.4
+
+visualization:
+  marker_topic: /legged_terrain/support_patch_markers
