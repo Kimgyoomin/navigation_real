@@ -1,12 +1,6 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(pongbot_traversability)
 
-## Compile as C++11, supported in ROS Kinetic and newer
-# add_compile_options(-std=c++11)
-
-## Find catkin macros and libraries
-## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
-## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   std_msgs
@@ -23,6 +17,8 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 catkin_package(
+  INCLUDE_DIRS include
+  LIBRARIES support_patch_evaluator
   CATKIN_DEPENDS
     roscpp
     std_msgs
@@ -43,20 +39,45 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
 )
 
+add_library(support_patch_evaluator
+  src/support_patch_evaluator.cpp
+)
+
+target_compile_features(support_patch_evaluator PUBLIC cxx_std_14)
+
+add_dependencies(support_patch_evaluator
+  ${catkin_EXPORTED_TARGETS}
+)
+
+target_link_libraries(support_patch_evaluator
+  ${catkin_LIBRARIES}
+)
+
 add_executable(support_patch_debug_node
   src/support_patch_debug_node.cpp
 )
 
-target_compile_features(support_patch_debug_node PUBLIC cxx_std_17)
+target_compile_features(support_patch_debug_node PUBLIC cxx_std_14)
 
 add_dependencies(support_patch_debug_node
   ${catkin_EXPORTED_TARGETS}
 )
 
 target_link_libraries(support_patch_debug_node
+  support_patch_evaluator
   ${catkin_LIBRARIES}
+)
+
+install(TARGETS support_patch_evaluator support_patch_debug_node
+  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
 install(DIRECTORY launch config
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+)
+
+install(DIRECTORY include/${PROJECT_NAME}/
+  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
 )

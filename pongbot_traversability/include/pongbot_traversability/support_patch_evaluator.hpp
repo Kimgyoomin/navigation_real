@@ -1,8 +1,11 @@
 #pragma once
 
+#include <algorithm>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include <Eigen/Dense>
 #include <grid_map_core/GridMap.hpp>
 
 #include "pongbot_traversability/support_patch_types.hpp"

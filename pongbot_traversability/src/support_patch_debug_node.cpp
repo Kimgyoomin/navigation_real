@@ -1,69 +1,26 @@
-#include <algorithm>
-#include <cmath>
-#include <limits>
-#include <map>
 #include <string>
 #include <vector>
-
-#include <Eigen/Dense>
+#include <utility>
+#include <cmath>
 
 #include <ros/ros.h>
-#include <visualization_msgs/MarkerArray.h>
+#include <std_msgs/ColorRGBA.h>
 #include <geometry_msgs/Point.h>
 #include <geometry_msgs/TransformStamped.h>
+#include <visualization_msgs/MarkerArray.h>
 
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2/utils.h>
 
-#include <grid_map_core/GridMap.hpp>
-#include <grid_map_core/iterators/GridMapIterator.hpp>
 #include <grid_map_ros/GridMapRosConverter.hpp>
 #include <grid_map_msgs/GridMap.h>
 
-struct LimbEnvelope
-{
-    std::string name;
-    double x_min{0.0};
-    double x_max{0.0};
-    double y_min{0.0};
-    double y_max{0.0};
-};
+#include "pongbot_traversability/support_patch_types.hpp"
+#include "pongbot_traversability/support_patch_evaluator.hpp"
 
-struct Patch
-{
-    std::string limb_name;
-    double cx{0.0};
-    double cy{0.0};
-    double yaw{0.0};
-    double length{0.0};
-    double width{0.0};
-};
-
-struct PatchRisk
-{
-    bool valid{false};
-
-    int expected_cells{0};
-    int valid_cells{0};
-
-    double unknown_ratio{1.0};
-    double height_range{0.0};
-    double slope_deg{0.0};
-    double roughness{0.0};
-    double mean_variance{0.0};
-
-    double total_cost{1.0};
-
-    Eigen::Vector3d centroid{Eigen::Vector3d::Zero()};
-    Eigen::Vector3d normal{Eigen::Vector3d::UnitZ()};
-};
-template <typename T>
-T clampValue(const T value, const T low, const T high)
-{
-    return std::max(low, std::min(value, high));
-}
+namespace pt = pongbot_traversability;
 
 class SupportPatchDebugNode
 {
@@ -75,6 +32,13 @@ public:
     {
         loadParams();
 
+        evaluator_.setLayers(height_layer_, valid_layer_, variance_layer_);
+        evaluator_.setPatchSize(patch_length_, patch_width_);
+        evaluator_.setAnalysisWindow(analysis_length_, analysis_width_);
+        evaluator_.setCandidateStride(candidate_stride_x_, candidate_stride_y_);
+        evaluator_.setRiskLimits(risk_limits_);
+        evaluator_.setRiskWeights(risk_weights_);
+
         marker_pub_ =
             nh_.advertise<visualization_msgs::MarkerArray>(marker_topic_, 1);
 
@@ -85,10 +49,11 @@ public:
                 &SupportPatchDebugNode::gridCallback,
                 this);
 
-        ROS_INFO("[support_patch_debug] topic=%s frame=%s body=%s",
+        ROS_INFO("[support_patch_debug] terrain_topic=%s terrain_frame=%s body_frame=%s marker_topic=%s",
                  terrain_topic_.c_str(),
                  terrain_frame_.c_str(),
-                 body_frame_.c_str());
+                 body_frame_.c_str(),
+                 marker_topic_.c_str());
     }
 
 private:
@@ -110,40 +75,43 @@ private:
         pnh_.param<double>("analysis_length", analysis_length_, 0.24);
         pnh_.param<double>("analysis_width", analysis_width_, 0.18);
 
-        pnh_.param<int>("risk/min_valid_cells", min_valid_cells_, 8);
-        pnh_.param<double>("risk/max_unknown_ratio", max_unknown_ratio_, 0.60);
-        pnh_.param<double>("risk/max_height_range", max_height_range_, 0.08);
-        pnh_.param<double>("risk/max_slope_deg", max_slope_deg_, 20.0);
-        pnh_.param<double>("risk/max_roughness", max_roughness_, 0.03);
-        pnh_.param<double>("risk/max_variance", max_variance_, 0.10);
+        pnh_.param<int>("risk/min_valid_cells", risk_limits_.min_valid_cells, 8);
+        pnh_.param<double>("risk/max_unknown_ratio", risk_limits_.max_unknown_ratio, 0.60);
+        pnh_.param<double>("risk/max_height_range", risk_limits_.max_height_range, 0.08);
+        pnh_.param<double>("risk/max_slope_deg", risk_limits_.max_slope_deg, 20.0);
+        pnh_.param<double>("risk/max_roughness", risk_limits_.max_roughness, 0.03);
+        pnh_.param<double>("risk/max_variance", risk_limits_.max_variance, 0.10);
 
-        pnh_.param<double>("weights/unknown", w_unknown_, 1.0);
-        pnh_.param<double>("weights/step", w_step_, 1.0);
-        pnh_.param<double>("weights/slope", w_slope_, 1.0);
-        pnh_.param<double>("weights/roughness", w_roughness_, 0.7);
-        pnh_.param<double>("weights/variance", w_variance_, 0.4);
+        pnh_.param<double>("weights/unknown", risk_weights_.unknown, 1.0);
+        pnh_.param<double>("weights/step", risk_weights_.step, 1.0);
+        pnh_.param<double>("weights/slope", risk_weights_.slope, 1.0);
+        pnh_.param<double>("weights/roughness", risk_weights_.roughness, 0.7);
+        pnh_.param<double>("weights/variance", risk_weights_.variance, 0.4);
 
         pnh_.param<std::string>("visualization/marker_topic",
                                 marker_topic_,
                                 "/legged_terrain/support_patch_markers");
 
-        loadLimb("FL", {0.18, 0.35, 0.10, 0.22});
-        loadLimb("FR", {0.18, 0.35, -0.22, -0.10});
-        loadLimb("RL", {-0.35, -0.18, 0.10, 0.22});
-        loadLimb("RR", {-0.35, -0.18, -0.22, -0.10});
+        loadLimb("FL", 0.18, 0.35, 0.10, 0.22);
+        loadLimb("FR", 0.18, 0.35, -0.22, -0.10);
+        loadLimb("RL", -0.35, -0.18, 0.10, 0.22);
+        loadLimb("RR", -0.35, -0.18, -0.22, -0.10);
     }
 
     void loadLimb(
         const std::string& name,
-        const std::vector<double>& defaults)
+        const double default_x_min,
+        const double default_x_max,
+        const double default_y_min,
+        const double default_y_max)
     {
         std::vector<double> v;
         if (!pnh_.getParam("limbs/" + name, v) || v.size() != 4) {
-            v = defaults;
+            v = {default_x_min, default_x_max, default_y_min, default_y_max};
             ROS_WARN("[support_patch_debug] Using default envelope for %s", name.c_str());
         }
 
-        LimbEnvelope limb;
+        pt::LimbEnvelope limb;
         limb.name = name;
         limb.x_min = v[0];
         limb.x_max = v[1];
@@ -158,7 +126,12 @@ private:
         grid_map::GridMap map;
         grid_map::GridMapRosConverter::fromMessage(*msg, map);
 
-        if (!checkLayers(map)) {
+        if (!evaluator_.checkLayers(map)) {
+            ROS_WARN_THROTTLE(
+                1.0,
+                "[support_patch_debug] Missing required layers. height=%s valid=%s",
+                height_layer_.c_str(),
+                valid_layer_.c_str());
             return;
         }
 
@@ -187,9 +160,9 @@ private:
         visualization_msgs::MarkerArray markers;
         int marker_id = 0;
 
-        clearOldMarkers(markers);
+        addDeleteAllMarker(markers);
 
-        std::vector<PatchRisk> best_risks;
+        double body_risk = 0.0;
 
         for (const auto& limb : limbs_) {
             addEnvelopeMarker(
@@ -200,9 +173,10 @@ private:
                 body_y,
                 body_yaw);
 
-            Patch best_patch;
-            PatchRisk best_risk;
-            evaluateLimb(
+            pt::Patch best_patch;
+            pt::PatchRisk best_risk;
+
+            evaluator_.evaluateLimb(
                 map,
                 limb,
                 body_x,
@@ -211,7 +185,7 @@ private:
                 best_patch,
                 best_risk);
 
-            best_risks.push_back(best_risk);
+            body_risk = std::max(body_risk, best_risk.total_cost);
 
             addPatchMarker(
                 markers,
@@ -222,370 +196,80 @@ private:
             addNormalMarker(
                 markers,
                 marker_id++,
+                best_risk);
+
+            addTextMarker(
+                markers,
+                marker_id++,
                 best_patch,
                 best_risk);
         }
 
+        ROS_INFO_THROTTLE(
+            1.0,
+            "[support_patch_debug] body_risk=%.3f",
+            body_risk);
+
         marker_pub_.publish(markers);
     }
 
-    bool checkLayers(const grid_map::GridMap& map) const
+    void addDeleteAllMarker(visualization_msgs::MarkerArray& markers) const
     {
-        if (!map.exists(height_layer_)) {
-            ROS_WARN_THROTTLE(
-                1.0,
-                "[support_patch_debug] Missing height layer: %s",
-                height_layer_.c_str());
-            return false;
-        }
+        visualization_msgs::Marker marker;
+        marker.header.frame_id = terrain_frame_;
+        marker.header.stamp = ros::Time::now();
+        marker.ns = "support_patch_debug";
+        marker.id = 0;
+        marker.action = visualization_msgs::Marker::DELETEALL;
 
-        if (!map.exists(valid_layer_)) {
-            ROS_WARN_THROTTLE(
-                1.0,
-                "[support_patch_debug] Missing valid layer: %s",
-                valid_layer_.c_str());
-            return false;
-        }
-
-        return true;
+        markers.markers.push_back(marker);
     }
 
-    void evaluateLimb(
-        const grid_map::GridMap& map,
-        const LimbEnvelope& limb,
-        const double body_x,
-        const double body_y,
-        const double body_yaw,
-        Patch& best_patch,
-        PatchRisk& best_risk) const
+    std_msgs::ColorRGBA colorFromRisk(const pt::PatchRisk& risk) const
     {
-        best_risk.total_cost = std::numeric_limits<double>::infinity();
-        best_risk.valid = false;
-
-        for (double bx = limb.x_min; bx <= limb.x_max + 1e-6; bx += candidate_stride_x_) {
-            for (double by = limb.y_min; by <= limb.y_max + 1e-6; by += candidate_stride_y_) {
-                const std::pair<double, double> p =
-                    transformBodyPointToTerrain(body_x, body_y, body_yaw, bx, by);
-
-                const double cx = p.first;
-                const double cy = p.second;
-
-                Patch patch;
-                patch.limb_name = limb.name;
-                patch.cx = cx;
-                patch.cy = cy;
-                patch.yaw = body_yaw;
-                patch.length = patch_length_;
-                patch.width = patch_width_;
-
-                Patch analysis_patch = patch;
-                analysis_patch.length = analysis_length_;
-                analysis_patch.width = analysis_width_;
-
-                PatchRisk risk = evaluatePatch(map, analysis_patch);
-
-                if (risk.total_cost < best_risk.total_cost) {
-                    best_patch = patch;
-                    best_risk = risk;
-                }
-            }
-        }
-
-        if (!std::isfinite(best_risk.total_cost)) {
-            best_risk.total_cost = 1.0;
-            best_risk.valid = false;
-
-            best_patch.limb_name = limb.name;
-            const auto [cx, cy] =
-                transformBodyPointToTerrain(
-                    body_x,
-                    body_y,
-                    body_yaw,
-                    0.5 * (limb.x_min + limb.x_max),
-                    0.5 * (limb.y_min + limb.y_max));
-            best_patch.cx = cx;
-            best_patch.cy = cy;
-            best_patch.yaw = body_yaw;
-            best_patch.length = patch_length_;
-            best_patch.width = patch_width_;
-        }
-    }
-
-    PatchRisk evaluatePatch(
-        const grid_map::GridMap& map,
-        const Patch& patch) const
-    {
-        PatchRisk risk;
-
-        std::vector<Eigen::Vector3d> points;
-        std::vector<double> variances;
-
-        double z_min = std::numeric_limits<double>::infinity();
-        double z_max = -std::numeric_limits<double>::infinity();
-
-        for (grid_map::GridMapIterator it(map); !it.isPastEnd(); ++it) {
-            grid_map::Position pos;
-            map.getPosition(*it, pos);
-
-            if (!insideOrientedRect(
-                    pos.x(),
-                    pos.y(),
-                    patch.cx,
-                    patch.cy,
-                    patch.yaw,
-                    patch.length,
-                    patch.width)) {
-                continue;
-            }
-
-            risk.expected_cells++;
-
-            const float valid_value = map.at(valid_layer_, *it);
-            const bool is_valid =
-                std::isfinite(valid_value) && valid_value > 0.5f;
-
-            if (!is_valid) {
-                continue;
-            }
-
-            const float z = map.at(height_layer_, *it);
-            if (!std::isfinite(z)) {
-                continue;
-            }
-
-            risk.valid_cells++;
-
-            points.emplace_back(pos.x(), pos.y(), static_cast<double>(z));
-
-            z_min = std::min(z_min, static_cast<double>(z));
-            z_max = std::max(z_max, static_cast<double>(z));
-
-            if (map.exists(variance_layer_)) {
-                const float var = map.at(variance_layer_, *it);
-                if (std::isfinite(var)) {
-                    variances.push_back(static_cast<double>(var));
-                }
-            }
-        }
-
-        if (risk.expected_cells <= 0) {
-            risk.unknown_ratio = 1.0;
-            risk.total_cost = 1.0;
-            risk.valid = false;
-            return risk;
-        }
-
-        risk.unknown_ratio =
-            1.0 -
-            static_cast<double>(risk.valid_cells) /
-            static_cast<double>(risk.expected_cells);
-
-        if (risk.valid_cells < min_valid_cells_ ||
-            risk.unknown_ratio > max_unknown_ratio_) {
-            risk.total_cost = 1.0;
-            risk.valid = false;
-            return risk;
-        }
-
-        risk.height_range = z_max - z_min;
-
-        computePCA(points, risk);
-
-        if (!variances.empty()) {
-            double sum = 0.0;
-            for (const auto v : variances) {
-                sum += v;
-            }
-            risk.mean_variance = sum / static_cast<double>(variances.size());
-        } else {
-            risk.mean_variance = 0.0;
-        }
-
-        risk.total_cost = computeRiskCost(risk);
-        risk.valid = true;
-
-        return risk;
-    }
-
-    void computePCA(
-        const std::vector<Eigen::Vector3d>& points,
-        PatchRisk& risk) const
-    {
-        Eigen::Vector3d mean = Eigen::Vector3d::Zero();
-
-        for (const auto& p : points) {
-            mean += p;
-        }
-        mean /= static_cast<double>(points.size());
-
-        Eigen::Matrix3d cov = Eigen::Matrix3d::Zero();
-
-        for (const auto& p : points) {
-            const Eigen::Vector3d d = p - mean;
-            cov += d * d.transpose();
-        }
-        cov /= static_cast<double>(points.size());
-
-        Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> solver(cov);
-
-        Eigen::Vector3d normal = solver.eigenvectors().col(0);
-        if (normal.z() < 0.0) {
-            normal = -normal;
-        }
-
-        risk.centroid = mean;
-        risk.normal = normal;
-
-        const double nz =
-            clampValue(normal.z(), -1.0, 1.0);
-
-        risk.slope_deg =
-            std::acos(nz) * 180.0 / M_PI;
-
-        risk.roughness =
-            std::sqrt(std::max(0.0, solver.eigenvalues()(0)));
-    }
-
-    double computeRiskCost(const PatchRisk& risk) const
-    {
-        const double unknown_cost =
-            clampValue(risk.unknown_ratio, 0.0, 1.0);
-
-        const double step_cost =
-            clampValue(risk.height_range / max_height_range_, 0.0, 1.0);
-
-        const double slope_cost =
-            clampValue(risk.slope_deg / max_slope_deg_, 0.0, 1.0);
-
-        const double roughness_cost =
-            clampValue(risk.roughness / max_roughness_, 0.0, 1.0);
-
-        const double variance_cost =
-            clampValue(risk.mean_variance / max_variance_, 0.0, 1.0);
-
-        const double weighted =
-            w_unknown_ * unknown_cost +
-            w_step_ * step_cost +
-            w_slope_ * slope_cost +
-            w_roughness_ * roughness_cost +
-            w_variance_ * variance_cost;
-
-        const double total_weight =
-            std::max(
-                1e-6,
-                w_unknown_ +
-                w_step_ +
-                w_slope_ +
-                w_roughness_ +
-                w_variance_);
-
-        return clampValue(weighted / total_weight, 0.0, 1.0);
-    }
-
-    std::pair<double, double> transformBodyPointToTerrain(
-        const double body_x,
-        const double body_y,
-        const double body_yaw,
-        const double local_x,
-        const double local_y) const
-    {
-        const double c = std::cos(body_yaw);
-        const double s = std::sin(body_yaw);
-
-        const double x =
-            body_x +
-            c * local_x -
-            s * local_y;
-
-        const double y =
-            body_y +
-            s * local_x +
-            c * local_y;
-
-        return {x, y};
-    }
-
-    bool insideOrientedRect(
-        const double px,
-        const double py,
-        const double cx,
-        const double cy,
-        const double yaw,
-        const double length,
-        const double width) const
-    {
-        const double dx = px - cx;
-        const double dy = py - cy;
-
-        const double c = std::cos(yaw);
-        const double s = std::sin(yaw);
-
-        const double local_x =  c * dx + s * dy;
-        const double local_y = -s * dx + c * dy;
-
-        return std::abs(local_x) <= 0.5 * length &&
-               std::abs(local_y) <= 0.5 * width;
-    }
-
-    void clearOldMarkers(visualization_msgs::MarkerArray& markers) const
-    {
-        visualization_msgs::Marker m;
-        m.header.frame_id = terrain_frame_;
-        m.header.stamp = ros::Time::now();
-        m.ns = "support_patch_debug";
-        m.id = 0;
-        m.action = visualization_msgs::Marker::DELETEALL;
-
-        markers.markers.push_back(m);
-    }
-
-    std_msgs::ColorRGBA colorFromRisk(
-        const PatchRisk& risk) const
-    {
-        std_msgs::ColorRGBA c;
+        std_msgs::ColorRGBA color;
 
         if (!risk.valid) {
-            c.r = 0.4;
-            c.g = 0.4;
-            c.b = 0.4;
-            c.a = 0.7;
-            return c;
+            color.r = 0.45;
+            color.g = 0.45;
+            color.b = 0.45;
+            color.a = 0.75;
+            return color;
         }
 
-        const double x =
-            clampValue(risk.total_cost, 0.0, 1.0);
+        const double x = clampValue(risk.total_cost, 0.0, 1.0);
 
-        c.r = x;
-        c.g = 1.0 - x;
-        c.b = 0.0;
-        c.a = 0.75;
+        color.r = x;
+        color.g = 1.0 - x;
+        color.b = 0.0;
+        color.a = 0.75;
 
-        return c;
+        return color;
     }
 
     void addEnvelopeMarker(
         visualization_msgs::MarkerArray& markers,
         const int id,
-        const LimbEnvelope& limb,
+        const pt::LimbEnvelope& limb,
         const double body_x,
         const double body_y,
         const double body_yaw) const
     {
-        visualization_msgs::Marker m;
-        m.header.frame_id = terrain_frame_;
-        m.header.stamp = ros::Time::now();
-        m.ns = "support_patch_debug";
-        m.id = id;
-        m.type = visualization_msgs::Marker::LINE_STRIP;
-        m.action = visualization_msgs::Marker::ADD;
+        visualization_msgs::Marker marker;
+        marker.header.frame_id = terrain_frame_;
+        marker.header.stamp = ros::Time::now();
+        marker.ns = "support_patch_debug";
+        marker.id = id;
+        marker.type = visualization_msgs::Marker::LINE_STRIP;
+        marker.action = visualization_msgs::Marker::ADD;
 
-        m.scale.x = 0.01;
-        m.color.r = 0.1;
-        m.color.g = 0.4;
-        m.color.b = 1.0;
-        m.color.a = 0.8;
+        marker.scale.x = 0.01;
+        marker.color.r = 0.1;
+        marker.color.g = 0.4;
+        marker.color.b = 1.0;
+        marker.color.a = 0.8;
 
-        std::vector<std::pair<double, double>> corners_body = {
+        const std::vector<std::pair<double, double>> corners_body = {
             {limb.x_min, limb.y_min},
             {limb.x_max, limb.y_min},
             {limb.x_max, limb.y_max},
@@ -594,82 +278,82 @@ private:
         };
 
         for (const auto& p_body : corners_body) {
-            const auto [x, y] =
-                transformBodyPointToTerrain(
+            const std::pair<double, double> p =
+                evaluator_.transformBodyPointToTerrain(
                     body_x,
                     body_y,
                     body_yaw,
                     p_body.first,
                     p_body.second);
 
-            geometry_msgs::Point p;
-            p.x = x;
-            p.y = y;
-            p.z = 0.05;
-            m.points.push_back(p);
+            geometry_msgs::Point point;
+            point.x = p.first;
+            point.y = p.second;
+            point.z = 0.05;
+
+            marker.points.push_back(point);
         }
 
-        markers.markers.push_back(m);
+        markers.markers.push_back(marker);
     }
 
     void addPatchMarker(
         visualization_msgs::MarkerArray& markers,
         const int id,
-        const Patch& patch,
-        const PatchRisk& risk) const
+        const pt::Patch& patch,
+        const pt::PatchRisk& risk) const
     {
-        visualization_msgs::Marker m;
-        m.header.frame_id = terrain_frame_;
-        m.header.stamp = ros::Time::now();
-        m.ns = "support_patch_debug";
-        m.id = id;
-        m.type = visualization_msgs::Marker::CUBE;
-        m.action = visualization_msgs::Marker::ADD;
+        visualization_msgs::Marker marker;
+        marker.header.frame_id = terrain_frame_;
+        marker.header.stamp = ros::Time::now();
+        marker.ns = "support_patch_debug";
+        marker.id = id;
+        marker.type = visualization_msgs::Marker::CUBE;
+        marker.action = visualization_msgs::Marker::ADD;
 
-        m.pose.position.x = patch.cx;
-        m.pose.position.y = patch.cy;
-        m.pose.position.z =
+        marker.pose.position.x = patch.cx;
+        marker.pose.position.y = patch.cy;
+        marker.pose.position.z =
             risk.valid ? risk.centroid.z() + 0.02 : 0.05;
 
         tf2::Quaternion q;
         q.setRPY(0.0, 0.0, patch.yaw);
-        m.pose.orientation = tf2::toMsg(q);
+        marker.pose.orientation = tf2::toMsg(q);
 
-        m.scale.x = patch.length;
-        m.scale.y = patch.width;
-        m.scale.z = 0.02;
+        marker.scale.x = patch.length;
+        marker.scale.y = patch.width;
+        marker.scale.z = 0.02;
 
-        m.color = colorFromRisk(risk);
+        marker.color = colorFromRisk(risk);
 
-        markers.markers.push_back(m);
+        markers.markers.push_back(marker);
     }
 
     void addNormalMarker(
         visualization_msgs::MarkerArray& markers,
         const int id,
-        const Patch& patch,
-        const PatchRisk& risk) const
+        const pt::PatchRisk& risk) const
     {
         if (!risk.valid) {
             return;
         }
 
-        visualization_msgs::Marker m;
-        m.header.frame_id = terrain_frame_;
-        m.header.stamp = ros::Time::now();
-        m.ns = "support_patch_debug";
-        m.id = id;
-        m.type = visualization_msgs::Marker::ARROW;
-        m.action = visualization_msgs::Marker::ADD;
+        visualization_msgs::Marker marker;
+        marker.header.frame_id = terrain_frame_;
+        marker.header.stamp = ros::Time::now();
+        marker.ns = "support_patch_debug";
+        marker.id = id;
+        marker.type = visualization_msgs::Marker::ARROW;
+        marker.action = visualization_msgs::Marker::ADD;
 
-        m.scale.x = 0.01;
-        m.scale.y = 0.02;
-        m.scale.z = 0.03;
+        marker.scale.x = 0.01;
+        marker.scale.y = 0.02;
+        marker.scale.z = 0.03;
 
-        m.color.r = 1.0;
-        m.color.g = 1.0;
-        m.color.b = 1.0;
-        m.color.a = 0.9;
+        marker.color.r = 1.0;
+        marker.color.g = 1.0;
+        marker.color.b = 1.0;
+        marker.color.a = 0.9;
 
         geometry_msgs::Point p0;
         p0.x = risk.centroid.x();
@@ -681,10 +365,58 @@ private:
         p1.y = risk.centroid.y() + 0.15 * risk.normal.y();
         p1.z = risk.centroid.z() + 0.03 + 0.15 * risk.normal.z();
 
-        m.points.push_back(p0);
-        m.points.push_back(p1);
+        marker.points.push_back(p0);
+        marker.points.push_back(p1);
 
-        markers.markers.push_back(m);
+        markers.markers.push_back(marker);
+    }
+
+    void addTextMarker(
+        visualization_msgs::MarkerArray& markers,
+        const int id,
+        const pt::Patch& patch,
+        const pt::PatchRisk& risk) const
+    {
+        visualization_msgs::Marker marker;
+        marker.header.frame_id = terrain_frame_;
+        marker.header.stamp = ros::Time::now();
+        marker.ns = "support_patch_debug";
+        marker.id = id;
+        marker.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
+        marker.action = visualization_msgs::Marker::ADD;
+
+        marker.pose.position.x = patch.cx;
+        marker.pose.position.y = patch.cy;
+        marker.pose.position.z =
+            risk.valid ? risk.centroid.z() + 0.12 : 0.15;
+
+        marker.scale.z = 0.06;
+
+        marker.color.r = 1.0;
+        marker.color.g = 1.0;
+        marker.color.b = 1.0;
+        marker.color.a = 0.9;
+
+        char buffer[256];
+        std::snprintf(
+            buffer,
+            sizeof(buffer),
+            "%s\nc=%.2f\nv=%d/%d\ns=%.1f",
+            patch.limb_name.c_str(),
+            risk.total_cost,
+            risk.valid_cells,
+            risk.expected_cells,
+            risk.slope_deg);
+
+        marker.text = buffer;
+
+        markers.markers.push_back(marker);
+    }
+
+    template <typename T>
+    static T clampValue(const T value, const T low, const T high)
+    {
+        return std::max(low, std::min(value, high));
     }
 
 private:
@@ -697,6 +429,8 @@ private:
     tf2_ros::Buffer tf_buffer_;
     tf2_ros::TransformListener tf_listener_;
 
+    pt::SupportPatchEvaluator evaluator_;
+
     std::string terrain_topic_;
     std::string terrain_frame_;
     std::string body_frame_;
@@ -707,7 +441,7 @@ private:
 
     std::string marker_topic_;
 
-    std::vector<LimbEnvelope> limbs_;
+    std::vector<pt::LimbEnvelope> limbs_;
 
     double candidate_stride_x_{0.05};
     double candidate_stride_y_{0.05};
@@ -718,19 +452,8 @@ private:
     double analysis_length_{0.24};
     double analysis_width_{0.18};
 
-    int min_valid_cells_{8};
-
-    double max_unknown_ratio_{0.60};
-    double max_height_range_{0.08};
-    double max_slope_deg_{20.0};
-    double max_roughness_{0.03};
-    double max_variance_{0.10};
-
-    double w_unknown_{1.0};
-    double w_step_{1.0};
-    double w_slope_{1.0};
-    double w_roughness_{0.7};
-    double w_variance_{0.4};
+    pt::PatchRiskLimits risk_limits_;
+    pt::PatchRiskWeights risk_weights_;
 };
 
 int main(int argc, char** argv)
