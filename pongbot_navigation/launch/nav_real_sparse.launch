@@ -78,9 +78,9 @@
         <param name="target_frame" value="$(arg robot_base_frame)"/>
         <param name="output_frame_id" value="$(arg robot_base_frame)"/>
 
-        <param name="min_height" value="0.05"/>
-        <param name="max_height" value="1.5"/>
-        <param name="range_min"  value="0.1"/>
+        <param name="min_height" value="-0.05"/>
+        <param name="max_height" value="1.8"/>
+        <param name="range_min"  value="0.05"/>
         <param name="range_max"  value="20.0"/>
     </node>
 
