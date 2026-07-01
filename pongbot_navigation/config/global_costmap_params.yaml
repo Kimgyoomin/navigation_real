@@ -13,8 +13,9 @@ global_costmap:
 
   plugins:
     - {name: static_map, type: "costmap_2d::StaticLayer"}
-    - {name: inflation, type: "costmap_2d::InflationLayer"}
     - {name: obstacles, type: "costmap_2d::ObstacleLayer"}
+    - {name: inflation, type: "costmap_2d::InflationLayer"}
+    
 
   inflation:
     inflation_radius: 0.80
