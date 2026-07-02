@@ -33,5 +33,5 @@ local_costmap:
       expected_update_rate: 0.0
 
   inflation:
-    inflation_radius: 0.40
-    cost_scaling_factor: 4.0
+    inflation_radius: 0.25
+    cost_scaling_factor: 6.0

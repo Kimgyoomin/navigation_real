@@ -1,6 +1,6 @@
 DWAPlannerROS:
   # Velocity Limits (TEB와 유사하게 낮춤)
-  max_vel_x: 0.8
+  max_vel_x: 0.5
   min_vel_x: 0.0            # 후진 금지에 가깝게(필요시 -0.02로 아주 약한 후진 허용)
   max_vel_theta: 2.0
   min_vel_theta: -2.5       # 회전은 양/음 모두 허용
@@ -30,11 +30,11 @@ DWAPlannerROS:
   angular_sim_granularity: 0.025
 
   # Costs (path/goal/obstacle 밸런스)
-  path_distance_bias: 16.0
+  path_distance_bias: 8.0
   goal_distance_bias: 18.0
-  occdist_scale: 0.05             # 0.02는 장애물 회피가 약해서 벽 붙거나, 반대로 costmap 노이즈면 흔들릴 수 있음(0.03~0.1 튜닝)
-  forward_point_distance: 0.6     # 앞쪽 어느 지점을 바라보느냐?? / 작으면 각속도 반응 예민, 컨트롤러 흔들리기 쉬움
-  stop_time_buffer: 0.2
+  occdist_scale: 0.02             # 0.02는 장애물 회피가 약해서 벽 붙거나, 반대로 costmap 노이즈면 흔들릴 수 있음(0.03~0.1 튜닝)
+  forward_point_distance: 0.2     # 앞쪽 어느 지점을 바라보느냐?? / 작으면 각속도 반응 예민, 컨트롤러 흔들리기 쉬움
+  stop_time_buffer: 0.05
   prune_plan: true
   transform_tolerance: 0.3
 
