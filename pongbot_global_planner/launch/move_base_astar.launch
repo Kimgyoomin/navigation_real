@@ -27,7 +27,7 @@
     <param name="output_frame_id" value="BODY"/>
     <param name="min_height" value="0.05"/>
     <param name="max_height" value="1.5"/>
-    <param name="range_min"  value="0.1"/>
+    <param name="range_min"  value="0.05"/>
     <param name="range_max"  value="20.0"/>
   </node>
 
