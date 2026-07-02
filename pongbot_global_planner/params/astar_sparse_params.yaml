@@ -3,24 +3,24 @@ allow_unknown: false
 use_octile_heuristic: true
 lethal_cost: 253
 tie_breaker: 1.001
-cost_weight_alpha: 5.0
-weight_h: 1.05
+cost_weight_alpha: 15.0   # inflated obstacle 주변 cost를 더 강하게 반영
+weight_h: 1.0
 prevent_diagonal_corner_cutting: true
 
 # Collision-aware RDP simplification
 # Larger epsilon removes more sawtooth.
 # Smaller epsilon preserves dense path shape more.
-simplification_epsilon: 0.30
+simplification_epsilon: 0.15
 
 # Final output spacing.
 # After RDP, long segments are resampled to this max length.
-max_segment_length: 1.0
+max_segment_length: 0.7
 min_segment_length: 0.05
 
 # Segment collision/margin check.
 # Debug: 252
 # Safer real value: 180~220
-line_cost_threshold: 220
+line_cost_threshold: 160
 
 # Safety bound for recursion.
 max_rdp_depth: 20
