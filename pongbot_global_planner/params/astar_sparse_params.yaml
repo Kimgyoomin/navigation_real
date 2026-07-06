@@ -4,13 +4,13 @@ use_octile_heuristic: true
 lethal_cost: 253
 tie_breaker: 1.001
 cost_weight_alpha: 15.0   # inflated obstacle 주변 cost를 더 강하게 반영
-weight_h: 1.0
+weight_h: 1.0             # heuristic greediness를 줄여, costmap cost를 더 보게 함 1.05 -> 1.0
 prevent_diagonal_corner_cutting: true
 
 # Collision-aware RDP simplification
 # Larger epsilon removes more sawtooth.
 # Smaller epsilon preserves dense path shape more.
-simplification_epsilon: 0.15
+simplification_epsilon: 0.15      # RDP가 path를 너무 단순화하지 않게 함 (줄이면 / 0.3 -> 0.15)
 
 # Final output spacing.
 # After RDP, long segments are resampled to this max length.
@@ -24,5 +24,13 @@ line_cost_threshold: 160
 
 # Safety bound for recursion.
 max_rdp_depth: 20
+
+# Local Splice / reference path reuse
+# Local splice / reference path reuse
+enable_local_splice: true
+reference_goal_tolerance: 0.30
+local_splice_horizon: 4.0
+local_splice_min_rejoin_dist: 1.0
+local_splice_cost_threshold: 160
 
 print_timing: true

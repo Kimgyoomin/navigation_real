@@ -33,6 +33,47 @@ private:
   ros::Publisher plan_pub_;
   ros::Publisher plan_time_pub_;
 
+  // For LOCAL - GLOBAL graph integration
+   bool enable_local_splice_ = true;
+  bool has_reference_plan_ = false;
+
+  double reference_goal_tolerance_ = 0.30;       // [m]
+  double local_splice_horizon_ = 4.0;            // [m]
+  double local_splice_min_rejoin_dist_ = 1.0;    // [m]
+  int local_splice_cost_threshold_ = 160;
+
+  std::vector<geometry_msgs::PoseStamped> reference_plan_;
+
+  static double poseDistance2D(
+    const geometry_msgs::PoseStamped& a,
+    const geometry_msgs::PoseStamped& b);
+
+  bool goalChangedFromReference(
+    const geometry_msgs::PoseStamped& goal) const;
+
+  std::size_t findClosestPlanIndex(
+    const std::vector<geometry_msgs::PoseStamped>& plan,
+    const geometry_msgs::PoseStamped& pose) const;
+
+  bool poseSafeByCost(
+    const costmap_2d::Costmap2D& cm,
+    const geometry_msgs::PoseStamped& pose,
+    int cost_threshold) const;
+
+  bool planSegmentSafeByCost(
+    const costmap_2d::Costmap2D& cm,
+    const geometry_msgs::PoseStamped& a,
+    const geometry_msgs::PoseStamped& b,
+    int cost_threshold) const;
+
+  bool tryMakeLocalSplicePlan(
+    const costmap_2d::Costmap2D& cm,
+    const geometry_msgs::PoseStamped& start,
+    const geometry_msgs::PoseStamped& goal,
+    const std::string& frame,
+    const ros::Time& stamp,
+    std::vector<geometry_msgs::PoseStamped>& plan);
+
   // Dense A* parameters
   bool allow_unknown_ = false;
   bool use_octile_heuristic_ = true;

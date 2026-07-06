@@ -15,14 +15,14 @@ TebLocalPlannerROS:
 
 
   # -------------- Kinematics ---------------
-  max_vel_x: 0.35
+  max_vel_x: 0.5
   max_vel_theta: 1.5
   acc_lim_x: 0.3
   acc_lim_theta: 1.5
 
   # holonomic condition
-  max_vel_y: 0.2
-  acc_lim_y: 0.3
+  max_vel_y: 0.0
+  acc_lim_y: 0.0
 
   max_vel_x_backwards: 0.02
   

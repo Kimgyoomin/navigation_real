@@ -130,6 +130,9 @@
         <!-- DWA odometry source -->
         <param name="DWAPlannerROS/odom_topic" value="$(arg odom_topic)"/>
         <param name="DWAPlannerROS/odom_frame" value="$(arg local_odom_frame)"/>
+
+        <param name="recovery_behavior_enabled" value="false"/>
+        <param name="clearing_rotation_allowed" value="false"/>
     </node>
 
     <!-- =========================================================

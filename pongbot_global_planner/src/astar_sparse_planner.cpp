@@ -82,6 +82,16 @@ void AStarSparsePlannerROS::initialize(
   pnh.param("min_segment_length", min_segment_length_, 0.05);
   pnh.param("line_cost_threshold", line_cost_threshold_, 220);
   pnh.param("max_rdp_depth", max_rdp_depth_, 20);
+  pnh.param("enable_local_splice", enable_local_splice_, true);
+  pnh.param("reference_goal_tolerance", reference_goal_tolerance_, 0.30);
+  pnh.param("local_splice_horizon", local_splice_horizon_, 4.0);
+  pnh.param("local_splice_min_rejoin_dist", local_splice_min_rejoin_dist_, 1.0);
+  pnh.param("local_splice_cost_threshold", local_splice_cost_threshold_, 160);
+
+  reference_goal_tolerance_ = std::max(0.05, reference_goal_tolerance_);
+  local_splice_horizon_ = std::max(0.5, local_splice_horizon_);
+  local_splice_min_rejoin_dist_ = std::max(0.1, local_splice_min_rejoin_dist_);
+  local_splice_cost_threshold_ = std::max(1, std::min(252, local_splice_cost_threshold_));
 
   simplification_epsilon_ = std::max(0.01, simplification_epsilon_);
   max_segment_length_ = std::max(0.10, max_segment_length_);
@@ -104,7 +114,10 @@ void AStarSparsePlannerROS::initialize(
     << " w_h=" << weight_h_
     << " epsilon=" << simplification_epsilon_
     << " max_segment=" << max_segment_length_
-    << " line_cost_threshold=" << line_cost_threshold_);
+    << " line_cost_threshold=" << line_cost_threshold_
+    << " local_splice=" << enable_local_splice_
+    << " local_splice_horizon=" << local_splice_horizon_
+    << " local_splice_threshold=" << local_splice_cost_threshold_);
 }
 
 inline bool AStarSparsePlannerROS::isCellFree(
@@ -571,6 +584,43 @@ bool AStarSparsePlannerROS::makePlan(
 
   const auto t0 = std::chrono::steady_clock::now();
 
+  // LOCAL - GLOBAL Graph 통합을 위해 추가 260706
+  const bool goal_changed = goalChangedFromReference(goal);
+
+  if (enable_local_splice_ && has_reference_plan_ && !goal_changed) {
+    if (tryMakeLocalSplicePlan(local_copy, start, goal, frame, stamp, plan)) {
+      const double ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - t0).count();
+
+      std_msgs::Float64 dt;
+      dt.data = ms;
+      plan_time_pub_.publish(dt);
+
+      for (auto& p : plan) {
+        p.header.stamp = stamp;
+        p.header.frame_id = frame;
+      }
+
+      nav_msgs::Path path_msg;
+      path_msg.header.stamp = stamp;
+      path_msg.header.frame_id = frame;
+      path_msg.poses = plan;
+      plan_pub_.publish(path_msg);
+
+      if (print_timing_) {
+        ROS_INFO_STREAM_NAMED(
+          "pongbot_astar_sparse",
+          "\033[1;32m"
+          << "[Sparse A* Local Splice] planning_time = "
+          << std::fixed << std::setprecision(3) << ms << " ms"
+          << "  (poses=" << plan.size() << ")"
+          << "\033[0m");
+      }
+
+      return true;
+    }
+  }
+
   const bool ok = searchSparseAstar(local_copy, start, goal, plan, frame, stamp);
 
   const double ms = std::chrono::duration<double, std::milli>(
@@ -596,6 +646,10 @@ bool AStarSparsePlannerROS::makePlan(
       p.header.frame_id = frame;
     }
 
+    // Local - Global Graph insertion
+    reference_plan_ = plan;
+    has_reference_plan_ = true;
+
     nav_msgs::Path path_msg;
     path_msg.header.stamp = stamp;
     path_msg.header.frame_id = frame;
@@ -606,6 +660,268 @@ bool AStarSparsePlannerROS::makePlan(
   }
 
   return ok;
+}
+
+// PoseDistance 2D / Local - Graph insertion
+double AStarSparsePlannerROS::poseDistance2D(
+  const geometry_msgs::PoseStamped& a,
+  const geometry_msgs::PoseStamped& b)
+{
+  const double dx = a.pose.position.x - b.pose.position.x;
+  const double dy = a.pose.position.y - b.pose.position.y;
+  return std::hypot(dx, dy);
+}
+
+// find Closest Plan Index
+std::size_t AStarSparsePlannerROS::findClosestPlanIndex(
+  const std::vector<geometry_msgs::PoseStamped>& plan,
+  const geometry_msgs::PoseStamped& pose) const
+{
+  std::size_t best_idx = 0;
+  double best_dist = std::numeric_limits<double>::infinity();
+
+  for (std::size_t i = 0; i < plan.size(); ++i) {
+    const double d = poseDistance2D(plan[i], pose);
+    if (d < best_dist) {
+      best_dist = d;
+      best_idx = i;
+    }
+  }
+
+  return best_idx;
+}
+
+// poseSafeByCost
+bool AStarSparsePlannerROS::poseSafeByCost(
+  const costmap_2d::Costmap2D& cm,
+  const geometry_msgs::PoseStamped& pose,
+  const int cost_threshold) const
+{
+  unsigned int mx, my;
+  if (!cm.worldToMap(pose.pose.position.x, pose.pose.position.y, mx, my)) {
+    return false;
+  }
+
+  const unsigned char c = cm.getCost(mx, my);
+
+  if (c == costmap_2d::NO_INFORMATION) {
+    return allow_unknown_;
+  }
+
+  if (c >= lethal_cost_) {
+    return false;
+  }
+
+  return static_cast<int>(c) <= cost_threshold;
+}
+
+// plan Segment Safe by Cost
+bool AStarSparsePlannerROS::planSegmentSafeByCost(
+  const costmap_2d::Costmap2D& cm,
+  const geometry_msgs::PoseStamped& a,
+  const geometry_msgs::PoseStamped& b,
+  const int cost_threshold) const
+{
+  const double ax = a.pose.position.x;
+  const double ay = a.pose.position.y;
+  const double bx = b.pose.position.x;
+  const double by = b.pose.position.y;
+
+  const double dx = bx - ax;
+  const double dy = by - ay;
+  const double dist = std::hypot(dx, dy);
+
+  if (dist < 1e-9) {
+    return true;
+  }
+
+  const double resolution = cm.getResolution();
+  const double step = std::max(0.5 * resolution, 0.01);
+  const int steps = std::max(1, static_cast<int>(std::ceil(dist / step)));
+
+  for (int i = 0; i <= steps; ++i) {
+    const double t = static_cast<double>(i) / static_cast<double>(steps);
+    const double wx = ax + t * dx;
+    const double wy = ay + t * dy;
+
+    unsigned int mx, my;
+    if (!cm.worldToMap(wx, wy, mx, my)) {
+      return false;
+    }
+
+    const unsigned char c = cm.getCost(mx, my);
+
+    if (c == costmap_2d::NO_INFORMATION) {
+      if (!allow_unknown_) {
+        return false;
+      }
+      continue;
+    }
+
+    if (c >= lethal_cost_) {
+      return false;
+    }
+
+    if (static_cast<int>(c) > cost_threshold) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// try Make Local Splice Plan
+bool AStarSparsePlannerROS::tryMakeLocalSplicePlan(
+  const costmap_2d::Costmap2D& cm,
+  const geometry_msgs::PoseStamped& start,
+  const geometry_msgs::PoseStamped& goal,
+  const std::string& frame,
+  const ros::Time& stamp,
+  std::vector<geometry_msgs::PoseStamped>& plan)
+{
+  if (!has_reference_plan_ || reference_plan_.size() < 2) {
+    return false;
+  }
+
+  const std::size_t closest_idx =
+    findClosestPlanIndex(reference_plan_, start);
+
+  if (closest_idx >= reference_plan_.size() - 1) {
+    return false;
+  }
+
+  bool blocked = false;
+  std::size_t last_bad_idx = closest_idx;
+  std::size_t horizon_idx = closest_idx;
+
+  double accumulated = 0.0;
+  geometry_msgs::PoseStamped prev = start;
+  prev.header.frame_id = frame;
+  prev.header.stamp = stamp;
+
+  for (std::size_t i = closest_idx; i < reference_plan_.size(); ++i) {
+    geometry_msgs::PoseStamped cur = reference_plan_[i];
+    cur.header.frame_id = frame;
+    cur.header.stamp = stamp;
+
+    const double seg_len = poseDistance2D(prev, cur);
+    accumulated += seg_len;
+
+    if (accumulated > local_splice_horizon_) {
+      horizon_idx = i;
+      break;
+    }
+
+    if (!planSegmentSafeByCost(cm, prev, cur, local_splice_cost_threshold_)) {
+      blocked = true;
+      last_bad_idx = i;
+    }
+
+    prev = cur;
+    horizon_idx = i;
+  }
+
+  if (!blocked) {
+    plan.clear();
+
+    geometry_msgs::PoseStamped start_pose = start;
+    start_pose.header.frame_id = frame;
+    start_pose.header.stamp = stamp;
+    plan.push_back(start_pose);
+
+    for (std::size_t i = closest_idx + 1; i < reference_plan_.size(); ++i) {
+      geometry_msgs::PoseStamped p = reference_plan_[i];
+      p.header.frame_id = frame;
+      p.header.stamp = stamp;
+      plan.push_back(p);
+    }
+
+    return plan.size() >= 2;
+  }
+
+  std::size_t rejoin_idx = last_bad_idx + 1;
+  if (rejoin_idx >= reference_plan_.size()) {
+    return false;
+  }
+
+  double rejoin_dist = 0.0;
+  for (std::size_t i = closest_idx + 1; i <= rejoin_idx && i < reference_plan_.size(); ++i) {
+    rejoin_dist += poseDistance2D(reference_plan_[i - 1], reference_plan_[i]);
+  }
+
+  while (rejoin_idx < reference_plan_.size()) {
+    geometry_msgs::PoseStamped candidate = reference_plan_[rejoin_idx];
+    candidate.header.frame_id = frame;
+    candidate.header.stamp = stamp;
+
+    const bool far_enough = rejoin_dist >= local_splice_min_rejoin_dist_;
+    const bool within_horizon = rejoin_idx <= horizon_idx;
+    const bool safe = poseSafeByCost(cm, candidate, local_splice_cost_threshold_);
+
+    if (far_enough && within_horizon && safe) {
+      break;
+    }
+
+    if (rejoin_idx + 1 >= reference_plan_.size()) {
+      return false;
+    }
+
+    rejoin_dist += poseDistance2D(reference_plan_[rejoin_idx], reference_plan_[rejoin_idx + 1]);
+    ++rejoin_idx;
+  }
+
+  if (rejoin_idx >= reference_plan_.size() || rejoin_idx > horizon_idx) {
+    return false;
+  }
+
+  geometry_msgs::PoseStamped rejoin_goal = reference_plan_[rejoin_idx];
+  rejoin_goal.header.frame_id = frame;
+  rejoin_goal.header.stamp = stamp;
+
+  std::vector<geometry_msgs::PoseStamped> detour;
+  if (!searchSparseAstar(cm, start, rejoin_goal, detour, frame, stamp)) {
+    ROS_WARN("[AStarSparsePlannerROS] local splice detour planning failed");
+    return false;
+  }
+
+  if (detour.empty()) {
+    return false;
+  }
+
+  plan.clear();
+  plan.reserve(detour.size() + reference_plan_.size() - rejoin_idx);
+
+  for (const auto& p_in : detour) {
+    geometry_msgs::PoseStamped p = p_in;
+    p.header.frame_id = frame;
+    p.header.stamp = stamp;
+    plan.push_back(p);
+  }
+
+  for (std::size_t i = rejoin_idx + 1; i < reference_plan_.size(); ++i) {
+    geometry_msgs::PoseStamped p = reference_plan_[i];
+    p.header.frame_id = frame;
+    p.header.stamp = stamp;
+    plan.push_back(p);
+  }
+
+  if (plan.size() >= 2) {
+    for (std::size_t i = 0; i + 1 < plan.size(); ++i) {
+      const auto& a = plan[i].pose.position;
+      const auto& b = plan[i + 1].pose.position;
+      const double yaw = yawBetween(a.x, a.y, b.x, b.y);
+      plan[i].pose.orientation = tf::createQuaternionMsgFromYaw(yaw);
+    }
+    plan.back().pose.orientation = goal.pose.orientation;
+  }
+
+  ROS_INFO_STREAM(
+    "[AStarSparsePlannerROS] local splice success. rejoin_idx="
+    << rejoin_idx
+    << " detour_points=" << detour.size()
+    << " fused_points=" << plan.size());
+
+  return plan.size() >= 2;
 }
 
 bool AStarSparsePlannerROS::searchSparseAstar(
