@@ -50,6 +50,12 @@ private:
   double reference_goal_tolerance_ = 0.30;       // [m]
   double local_splice_horizon_ = 4.0;            // [m]
   double local_splice_min_rejoin_dist_ = 1.0;    // [m]
+
+  // 기존 reference path가 위험했는지 민감하게 감지
+  int local_splice_trigger_cost_threshold_ = 120; // local_splice_cost_threshold를 local_splice_trigger_cost_threshold로 변경
+  // 새 detour path를 만들 때, 진짜 금지할 영역
+  int local_splice_planning_cost_threshold_ = 180;
+
   int local_splice_cost_threshold_ = 160;
 
   std::vector<geometry_msgs::PoseStamped> reference_plan_;
@@ -98,7 +104,7 @@ private:
   double simplification_epsilon_ = 0.30;   // [m]
   double max_segment_length_ = 1.0;        // [m]
   double min_segment_length_ = 0.05;       // [m]
-  int line_cost_threshold_ = 220;
+  int line_cost_threshold_ = 220;          // RDP shortcut이 지나면 안되는 영역
   int max_rdp_depth_ = 20;
 
   inline bool isCellFree(

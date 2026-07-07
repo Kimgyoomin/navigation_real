@@ -86,7 +86,7 @@ void AStarSparsePlannerROS::initialize(
   pnh.param("reference_goal_tolerance", reference_goal_tolerance_, 0.30);
   pnh.param("local_splice_horizon", local_splice_horizon_, 4.0);
   pnh.param("local_splice_min_rejoin_dist", local_splice_min_rejoin_dist_, 1.0);
-  pnh.param("local_splice_cost_threshold", local_splice_cost_threshold_, 160);
+  pnh.param("local_splice_cost_threshold", local_splice_cost_threshold_, 120);
   pnh.param("local_splice_use_roi", local_splice_use_roi_, true);
   pnh.param("local_splice_roi_margin", local_splice_roi_margin_, 2.0);
 
