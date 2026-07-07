@@ -34,7 +34,17 @@ private:
   ros::Publisher plan_time_pub_;
 
   // For LOCAL - GLOBAL graph integration
-   bool enable_local_splice_ = true;
+  bool local_splice_use_roi_ = true;
+  double local_splice_roi_margin_ = 2.0;  // [m]
+
+  bool makeCroppedCostmap(
+    const costmap_2d::Costmap2D& src,
+    const geometry_msgs::PoseStamped& start,
+    const geometry_msgs::PoseStamped& goal,
+    double margin,
+    costmap_2d::Costmap2D& dst) const;
+
+  bool enable_local_splice_ = true;
   bool has_reference_plan_ = false;
 
   double reference_goal_tolerance_ = 0.30;       // [m]
@@ -155,6 +165,27 @@ private:
     std::vector<geometry_msgs::PoseStamped>& plan,
     const std::string& frame,
     const ros::Time& stamp);
+
+  bool local_splice_use_soft_cost_trigger_ = true;
+  bool local_splice_debug_collision_check_ = false;
+
+  int local_splice_planning_cost_threshold_ = 180;
+
+  bool isHardCollisionCost(unsigned char c) const;
+
+  bool planSegmentBlockedForReplan(
+    const costmap_2d::Costmap2D& cm,
+    const geometry_msgs::PoseStamped& a,
+    const geometry_msgs::PoseStamped& b,
+    int soft_cost_threshold,
+    int& max_cost,
+    bool& hard_collision,
+    double& first_bad_wx,
+    double& first_bad_wy) const;
+
+  void applySoftCostThresholdAsObstacle(
+    costmap_2d::Costmap2D& cm,
+    int cost_threshold) const;
 };
 
 }  // namespace pongbot_global_planner
