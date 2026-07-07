@@ -80,7 +80,7 @@ void AStarSparsePlannerROS::initialize(
   pnh.param("simplification_epsilon", simplification_epsilon_, 0.30);
   pnh.param("max_segment_length", max_segment_length_, 1.0);
   pnh.param("min_segment_length", min_segment_length_, 0.05);
-  pnh.param("line_cost_threshold", line_cost_threshold_, 220);
+  pnh.param("line_cost_threshold", line_cost_threshold_, 150);
   pnh.param("max_rdp_depth", max_rdp_depth_, 20);
   pnh.param("enable_local_splice", enable_local_splice_, true);
   pnh.param("reference_goal_tolerance", reference_goal_tolerance_, 0.30);
@@ -97,7 +97,7 @@ void AStarSparsePlannerROS::initialize(
             local_splice_debug_collision_check_, false);
   pnh.param("local_splice_planning_cost_threshold",
             local_splice_planning_cost_threshold_,
-            180);
+            150);
 
   local_splice_planning_cost_threshold_ =
     std::max(1, std::min(252, local_splice_planning_cost_threshold_));

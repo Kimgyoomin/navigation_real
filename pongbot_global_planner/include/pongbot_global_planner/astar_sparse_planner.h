@@ -175,8 +175,6 @@ private:
   bool local_splice_use_soft_cost_trigger_ = true;
   bool local_splice_debug_collision_check_ = false;
 
-  int local_splice_planning_cost_threshold_ = 180;
-
   bool isHardCollisionCost(unsigned char c) const;
 
   bool planSegmentBlockedForReplan(

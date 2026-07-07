@@ -2,8 +2,8 @@ DWAPlannerROS:
   # Velocity Limits (TEB와 유사하게 낮춤)
   max_vel_x: 0.5
   min_vel_x: 0.0            # 후진 금지에 가깝게(필요시 -0.02로 아주 약한 후진 허용)
-  max_vel_theta: 2.0
-  min_vel_theta: -2.5       # 회전은 양/음 모두 허용
+  max_vel_theta: 1.0
+  min_vel_theta: -1.0       # 회전은 양/음 모두 허용
 
   max_vel_y: 0.0
   min_vel_y: 0.0
@@ -17,8 +17,8 @@ DWAPlannerROS:
   min_in_place_vel_theta: 0.4   # 너무 낮으면 못 돌고, 너무 높으면 휙 돎(0.3~0.6에서 시작)
 
   # Acc limits (TEB와 비슷하게 낮춤)
-  acc_lim_x: 2.0
-  acc_lim_th: 2.0
+  acc_lim_x: 0.5
+  acc_lim_th: 1.0
   acc_lim_y: 0.0
 
   # Simulation
