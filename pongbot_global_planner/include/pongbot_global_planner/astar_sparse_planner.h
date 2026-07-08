@@ -33,9 +33,7 @@ private:
   ros::Publisher plan_pub_;
   ros::Publisher plan_time_pub_;
 
-  // For LOCAL - GLOBAL graph integration
-  bool local_splice_use_roi_ = true;
-  double local_splice_roi_margin_ = 2.0;  // [m]
+  
 
   bool makeCroppedCostmap(
     const costmap_2d::Costmap2D& src,
@@ -44,19 +42,9 @@ private:
     double margin,
     costmap_2d::Costmap2D& dst) const;
 
-  bool enable_local_splice_ = true;
+  
   bool has_reference_plan_ = false;
-
-  double reference_goal_tolerance_ = 0.30;       // [m]
-  double local_splice_horizon_ = 4.0;            // [m]
-  double local_splice_min_rejoin_dist_ = 1.0;    // [m]
-
-  // 기존 reference path가 위험했는지 민감하게 감지
-  int local_splice_trigger_cost_threshold_ = 120; // local_splice_cost_threshold를 local_splice_trigger_cost_threshold로 변경
-  // 새 detour path를 만들 때, 진짜 금지할 영역
-  int local_splice_planning_cost_threshold_ = 180;
-
-  int local_splice_cost_threshold_ = 160;
+ 
 
   std::vector<geometry_msgs::PoseStamped> reference_plan_;
 
@@ -105,6 +93,27 @@ private:
   double max_segment_length_ = 1.0;        // [m]
   double min_segment_length_ = 0.05;       // [m]
   int line_cost_threshold_ = 220;          // RDP shortcut이 지나면 안되는 영역
+
+  // Local Splice / reference path reuse
+  bool enable_local_splice_ = true;
+  double reference_goal_tolerance_ = 0.30;       // [m]
+  double local_splice_horizon_ = 4.0;            // [m]
+  double local_splice_min_rejoin_dist_ = 1.0;    // [m]
+
+  // Trigger : 기존 reference path가 위험했는지 감지
+  int local_splice_trigger_cost_threshold_ = 120;
+
+  // Planning : 새 detour A*에서 cost > threshold를 obstacle로 간주
+  // 새 detour path를 만들 때, 진짜 금지할 영역
+  int local_splice_planning_cost_threshold_ = 180; 
+
+  bool local_splice_use_soft_cost_trigger_ = true;
+  bool local_splice_debug_collision_check_ = false;
+
+  // For LOCAL - GLOBAL graph integration
+  bool local_splice_use_roi_ = true;
+  double local_splice_roi_margin_ = 3.0;  // [m]
+
   int max_rdp_depth_ = 20;
 
   inline bool isCellFree(
@@ -172,8 +181,7 @@ private:
     const std::string& frame,
     const ros::Time& stamp);
 
-  bool local_splice_use_soft_cost_trigger_ = true;
-  bool local_splice_debug_collision_check_ = false;
+  
 
   bool isHardCollisionCost(unsigned char c) const;
 

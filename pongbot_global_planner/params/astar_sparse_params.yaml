@@ -20,22 +20,23 @@ min_segment_length: 0.05
 # Segment collision/margin check.
 # Debug: 252
 # Safer real value: 180~220
-line_cost_threshold: 150
+line_cost_threshold: 180
 
 # Safety bound for recursion.
 max_rdp_depth: 20
 
 # Local Splice / reference path reuse
-# Local splice / reference path reuse
-enable_local_splice: true
+# enable_local_splice : local region에서 graph측면에서 local planning을 하는 기능
+enable_local_splice: false
 reference_goal_tolerance: 0.30
 local_splice_horizon: 6.0
 local_splice_min_rejoin_dist: 1.2
 local_splice_cost_threshold: 120
-local_splice_planning_cost_threshold: 150
+local_splice_planning_cost_threshold: 180
 
-local_splice_use_soft_cost_trigger: true
-local_splice_debug_collision_check: false
+local_splice_use_soft_cost_trigger: false
+local_splice_debug_collision_check: true      # 디버깅용 파라미터, max_cost와 trigger theshold를 비교하여 max_cost가 trigger threshold
+# 이상이어야 collision으로 판단하여 detour 생성
 
 local_splice_use_roi: true
 local_splice_roi_margin: 3.0

@@ -98,7 +98,7 @@
          move_base: Sparse A* global planner + DWA local planner
     ========================================================= -->
     <node pkg="move_base" type="move_base" name="move_base" output="screen">
-        <param name="planner_frequency" value="1.0"/>
+        <param name="planner_frequency" value="0.0"/>            <!-- value 0.0으로 하면 global plan은 고정 -->
         <param name="controller_frequency" value="10.0"/>
 
         <!-- Sparse A* global planner -->

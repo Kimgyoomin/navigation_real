@@ -86,7 +86,7 @@ void AStarSparsePlannerROS::initialize(
   pnh.param("reference_goal_tolerance", reference_goal_tolerance_, 0.30);
   pnh.param("local_splice_horizon", local_splice_horizon_, 4.0);
   pnh.param("local_splice_min_rejoin_dist", local_splice_min_rejoin_dist_, 1.0);
-  pnh.param("local_splice_cost_threshold", local_splice_cost_threshold_, 120);
+  pnh.param("local_splice_trigger_cost_threshold", local_splice_trigger_cost_threshold_, 120);
   pnh.param("local_splice_use_roi", local_splice_use_roi_, true);
   pnh.param("local_splice_roi_margin", local_splice_roi_margin_, 2.0);
 
@@ -106,7 +106,7 @@ void AStarSparsePlannerROS::initialize(
   reference_goal_tolerance_ = std::max(0.05, reference_goal_tolerance_);
   local_splice_horizon_ = std::max(0.5, local_splice_horizon_);
   local_splice_min_rejoin_dist_ = std::max(0.1, local_splice_min_rejoin_dist_);
-  local_splice_cost_threshold_ = std::max(1, std::min(252, local_splice_cost_threshold_));
+  local_splice_trigger_cost_threshold_ = std::max(1, std::min(252, local_splice_trigger_cost_threshold_));
 
   simplification_epsilon_ = std::max(0.01, simplification_epsilon_);
   max_segment_length_ = std::max(0.10, max_segment_length_);
@@ -132,7 +132,7 @@ void AStarSparsePlannerROS::initialize(
     << " line_cost_threshold=" << line_cost_threshold_
     << " local_splice=" << enable_local_splice_
     << " local_splice_horizon=" << local_splice_horizon_
-    << " local_splice_threshold=" << local_splice_cost_threshold_
+    << " local_splice_trigger_threshold=" << local_splice_trigger_cost_threshold_
     << " local_splice_use_roi=" << local_splice_use_roi_
     << " local_splice_roi_margin=" << local_splice_roi_margin_
     << " local_splice_use_soft_cost_trigger=" << local_splice_use_soft_cost_trigger_
@@ -849,7 +849,7 @@ bool AStarSparsePlannerROS::tryMakeLocalSplicePlan(
       cm,
       prev,
       cur,
-      local_splice_cost_threshold_,
+      local_splice_trigger_cost_threshold_,
       max_cost,
       hard_collision,
       bad_wx,
@@ -867,7 +867,7 @@ bool AStarSparsePlannerROS::tryMakeLocalSplicePlan(
         << " max_cost=" << max_cost
         << " hard_collision=" << hard_collision
         << " bad=(" << bad_wx << "," << bad_wy << ")"
-        << " threshold=" << local_splice_cost_threshold_);
+        << " threshold=" << local_splice_trigger_cost_threshold_);
     } else if (local_splice_debug_collision_check_) {
       ROS_INFO_STREAM_THROTTLE(
         0.5,
@@ -875,7 +875,7 @@ bool AStarSparsePlannerROS::tryMakeLocalSplicePlan(
         << " idx=" << i
         << " accumulated=" << std::fixed << std::setprecision(2) << next_accumulated
         << " max_cost=" << max_cost
-        << " threshold=" << local_splice_cost_threshold_);
+        << " threshold=" << local_splice_trigger_cost_threshold_);
     }
 
     accumulated = next_accumulated;
@@ -918,7 +918,7 @@ bool AStarSparsePlannerROS::tryMakeLocalSplicePlan(
       << " closest_idx=" << closest_idx
       << " horizon_idx=" << horizon_idx
       << " fused_points=" << plan.size()
-      << " threshold=" << local_splice_cost_threshold_);
+      << " threshold=" << local_splice_trigger_cost_threshold_);
 
     return plan.size() >= 2;
   }
@@ -947,7 +947,7 @@ bool AStarSparsePlannerROS::tryMakeLocalSplicePlan(
       rejoin_idx <= horizon_idx;
 
     const bool safe =
-      poseSafeByCost(cm, candidate, local_splice_cost_threshold_);
+      poseSafeByCost(cm, candidate, local_splice_trigger_cost_threshold_);
 
     if (far_enough && within_horizon && safe) {
       break;
@@ -1085,7 +1085,7 @@ bool AStarSparsePlannerROS::tryMakeLocalSplicePlan(
     << " rejoin_idx=" << rejoin_idx
     << " detour_points=" << detour.size()
     << " fused_points=" << plan.size()
-    << " threshold=" << local_splice_cost_threshold_);
+    << " threshold=" << local_splice_trigger_cost_threshold_);
 
   return plan.size() >= 2;
 }

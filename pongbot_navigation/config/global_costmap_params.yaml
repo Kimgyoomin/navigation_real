@@ -13,13 +13,13 @@ global_costmap:
 
   plugins:
     - {name: static_map, type: "costmap_2d::StaticLayer"}
-    - {name: obstacles, type: "costmap_2d::ObstacleLayer"}
+    # - {name: obstacles, type: "costmap_2d::ObstacleLayer"}        # global 측면에서 obstacle을 볼 것인가??
     - {name: inflation, type: "costmap_2d::InflationLayer"}
     
 
   inflation:
-    inflation_radius: 0.50
-    cost_scaling_factor: 3.0
+    inflation_radius: 0.30
+    cost_scaling_factor: 10.0
 
   obstacles:
     observation_sources: laser

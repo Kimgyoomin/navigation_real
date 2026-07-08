@@ -9,31 +9,31 @@ DWAPlannerROS:
   min_vel_y: 0.0
 
   # Y 방향 행동 막기
-  
-  
   holonomic_robot: false
 
   # in-place 회전을 확실히 하려면 이거 꼭 넣어라
   min_in_place_vel_theta: 0.4   # 너무 낮으면 못 돌고, 너무 높으면 휙 돎(0.3~0.6에서 시작)
 
   # Acc limits (TEB와 비슷하게 낮춤)
-  acc_lim_x: 0.5
-  acc_lim_th: 1.0
+  acc_lim_x: 1.0
+  acc_lim_th: 1.2
   acc_lim_y: 0.0
 
   # Simulation
-  sim_time: 0.5            # 빠른 후보가 충돌로 탈락하는 것을 막으려면 sim_time을 막아서 time_horizon을 짧게
-  vx_samples: 40            # sample 좀 더 많이 (8 -> 20)
+  sim_time: 0.8            # 빠른 후보가 충돌로 탈락하는 것을 막으려면 sim_time을 막아서 time_horizon을 짧게
+  vx_samples: 30            # sample 좀 더 많이 (8 -> 20)
   vy_samples: 1
-  vth_samples: 40
+  vth_samples: 60
+
   sim_granularity: 0.025
   angular_sim_granularity: 0.025
 
   # Costs (path/goal/obstacle 밸런스)
-  path_distance_bias: 32.0
+  # Global Path에 얼마나 가까이에 붙을래? 란 parameter
+  path_distance_bias: 16.0
   goal_distance_bias: 12.0
-  occdist_scale: 0.01             # 0.02는 장애물 회피가 약해서 벽 붙거나, 반대로 costmap 노이즈면 흔들릴 수 있음(0.03~0.1 튜닝)
-  forward_point_distance: 0.2     # 앞쪽 어느 지점을 바라보느냐?? / 작으면 각속도 반응 예민, 컨트롤러 흔들리기 쉬움
+  occdist_scale: 0.03             # 0.02는 장애물 회피가 약해서 벽 붙거나, 반대로 costmap 노이즈면 흔들릴 수 있음(0.03~0.1 튜닝)
+  forward_point_distance: 0.3     # 앞쪽 어느 지점을 바라보느냐?? / 작으면 각속도 반응 예민, 컨트롤러 흔들리기 쉬움
 
   stop_time_buffer: 0.05
   prune_plan: true
@@ -43,3 +43,6 @@ DWAPlannerROS:
   xy_goal_tolerance: 0.20
   yaw_goal_tolerance: 0.20
   latch_xy_goal_tolerance: true
+
+  # DWA trajectory cloud publish
+  publish_traj_pc: true
