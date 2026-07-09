@@ -23,7 +23,7 @@ DWAPlannerROS:
   sim_time: 0.8            # 빠른 후보가 충돌로 탈락하는 것을 막으려면 sim_time을 막아서 time_horizon을 짧게
   vx_samples: 30            # sample 좀 더 많이 (8 -> 20)
   vy_samples: 1
-  vth_samples: 60
+  vth_samples: 70
 
   sim_granularity: 0.025
   angular_sim_granularity: 0.025
@@ -33,7 +33,7 @@ DWAPlannerROS:
   path_distance_bias: 16.0
   goal_distance_bias: 12.0
   occdist_scale: 0.03             # 0.02는 장애물 회피가 약해서 벽 붙거나, 반대로 costmap 노이즈면 흔들릴 수 있음(0.03~0.1 튜닝)
-  forward_point_distance: 0.3     # 앞쪽 어느 지점을 바라보느냐?? / 작으면 각속도 반응 예민, 컨트롤러 흔들리기 쉬움
+  forward_point_distance: 0.4     # 앞쪽 어느 지점을 바라보느냐?? / 작으면 각속도 반응 예민, 컨트롤러 흔들리기 쉬움
 
   stop_time_buffer: 0.05
   prune_plan: true
