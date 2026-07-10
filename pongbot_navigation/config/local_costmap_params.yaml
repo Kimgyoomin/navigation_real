@@ -4,14 +4,17 @@ local_costmap:
   # robot_base_frame: BODY
   # robot_base_frame: base_footprint
   robot_base_frame: body
-  update_frequency: 5.0   # 5.0 -> 10.0 -> 5.0
-  publish_frequency: 5.0  # 5.0 -> 10.0 -> 5.0
+
+  update_frequency: 10.0   # 5.0 -> 10.0 -> 5.0
+  publish_frequency: 10.0  # 5.0 -> 10.0 -> 5.0
+
   width: 6.0               # 5.0 -> 6.0
   height: 6.0
   resolution: 0.05
+
   static_map: false
   rolling_window: true
-  transform_tolerance: 1.0        # AS as same as AMCL transform (nav_amcl.launch), 여유마진 0.5 -> 1.0
+  transform_tolerance: 0.2        # AS as same as AMCL transform (nav_amcl.launch), 여유마진 0.5 -> 1.0
 
   plugins:
     - {name: obstacles, type: "costmap_2d::ObstacleLayer"}
@@ -19,21 +22,26 @@ local_costmap:
 
 
   obstacles:
-    observation_sources: laser
-    laser:
+    transform_tolerance: 0.5
+    observation_sources: nav_scan    # laser -> nav_scan
+
+    nav_scan:
+      sensor_frame: camera_init
       data_type: LaserScan
-      topic: /scan
+      topic: /scan_nav
+
       marking: true
       clearing: true
+      inf_is_valid: true
+
       obstacle_range: 4.0
       raytrace_range: 4.5
-      min_obstacle_height: 0.0
+
+      min_obstacle_height: -0.2
       max_obstacle_height: 1.8
       # 
-      observation_persistence: 0.1
+      observation_persistence: 0.0
       expected_update_rate: 0.0
-      marking: true
-      clearing: true
 
   inflation:
     inflation_radius: 0.20

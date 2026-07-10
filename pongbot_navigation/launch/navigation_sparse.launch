@@ -83,7 +83,7 @@
 
         <remap from="cloud"    to="$(arg pointcloud_topic)"/>
         <remap from="cloud_in" to="$(arg pointcloud_topic)"/>
-        <remap from="scan"     to="/scan"/>
+        <remap from="scan"     to="/scan_nav"/>
 
         <param name="target_frame" value="$(arg robot_base_frame)"/>
         <param name="output_frame_id" value="$(arg robot_base_frame)"/>
