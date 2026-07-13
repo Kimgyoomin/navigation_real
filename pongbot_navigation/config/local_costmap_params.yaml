@@ -26,7 +26,7 @@ local_costmap:
     observation_sources: nav_scan    # laser -> nav_scan
 
     nav_scan:
-      sensor_frame: camera_init
+      sensor_frame: body
       data_type: LaserScan
       topic: /scan_nav
 
@@ -44,5 +44,5 @@ local_costmap:
       expected_update_rate: 0.0
 
   inflation:
-    inflation_radius: 0.20
+    inflation_radius: 0.25
     cost_scaling_factor: 8.0

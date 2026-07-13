@@ -1,0 +1,105 @@
+<launch>
+  <!-- 각 카메라를 선택적으로 실행할 수 있도록 구성 -->
+  <arg name="start_back" default="true"/>
+  <arg name="start_front" default="true"/>
+
+  <!-- USB 부하를 낮춘 초기 검증 설정 -->
+  <arg name="depth_width"  default="640"/>
+  <arg name="depth_height" default="480"/>
+  <arg name="depth_fps"    default="15"/>
+
+  <arg name="color_width"  default="640"/>
+  <arg name="color_height" default="480"/>
+  <arg name="color_fps"    default="15"/>
+
+  <!-- =========================================================
+       Back D435
+  ========================================================= -->
+  <group if="$(arg start_back)" ns="BackCamera">
+    <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+
+      <arg name="camera" value="camera"/>
+      <arg name="tf_prefix" value="BackCamera"/>
+      <arg name="serial_no" value="831612072606"/>
+
+      <arg name="filters" value="pointcloud"/>
+
+      <arg name="enable_depth" value="true"/>
+      <arg name="enable_color" value="true"/>
+
+      <arg name="enable_infra1" value="false"/>
+      <arg name="enable_infra2" value="false"/>
+      <arg name="enable_confidence" value="false"/>
+
+      <arg name="depth_width" value="$(arg depth_width)"/>
+      <arg name="depth_height" value="$(arg depth_height)"/>
+      <arg name="depth_fps" value="$(arg depth_fps)"/>
+
+      <arg name="color_width" value="$(arg color_width)"/>
+      <arg name="color_height" value="$(arg color_height)"/>
+      <arg name="color_fps" value="$(arg color_fps)"/>
+
+      <arg name="pointcloud_texture_stream"
+           value="RS2_STREAM_COLOR"/>
+      <arg name="allow_no_texture_points" value="true"/>
+
+      <arg name="enable_sync" value="true"/>
+      <arg name="align_depth" value="false"/>
+
+      <!-- calibrated camera internal TF -->
+      <arg name="publish_tf" value="true"/>
+
+      <!-- FAST-LIO가 odometry를 담당 -->
+      <arg name="publish_odom_tf" value="false"/>
+
+      <arg name="initial_reset" value="false"/>
+      <arg name="reconnect_timeout" value="6.0"/>
+    </include>
+  </group>
+
+  <!-- =========================================================
+       Front D435I
+  ========================================================= -->
+  <group if="$(arg start_front)" ns="FrontCamera">
+    <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+
+      <arg name="camera" value="camera"/>
+      <arg name="tf_prefix" value="FrontCamera"/>
+      <arg name="serial_no" value="141722075605"/>
+
+      <arg name="filters" value="pointcloud"/>
+
+      <arg name="enable_depth" value="true"/>
+      <arg name="enable_color" value="true"/>
+
+      <!-- D435I의 IMU는 현재 elevation mapping에 불필요 -->
+      <arg name="enable_gyro" value="false"/>
+      <arg name="enable_accel" value="false"/>
+
+      <arg name="enable_infra1" value="false"/>
+      <arg name="enable_infra2" value="false"/>
+      <arg name="enable_confidence" value="false"/>
+
+      <arg name="depth_width" value="$(arg depth_width)"/>
+      <arg name="depth_height" value="$(arg depth_height)"/>
+      <arg name="depth_fps" value="$(arg depth_fps)"/>
+
+      <arg name="color_width" value="$(arg color_width)"/>
+      <arg name="color_height" value="$(arg color_height)"/>
+      <arg name="color_fps" value="$(arg color_fps)"/>
+
+      <arg name="pointcloud_texture_stream"
+           value="RS2_STREAM_COLOR"/>
+      <arg name="allow_no_texture_points" value="true"/>
+
+      <arg name="enable_sync" value="true"/>
+      <arg name="align_depth" value="false"/>
+
+      <arg name="publish_tf" value="true"/>
+      <arg name="publish_odom_tf" value="false"/>
+
+      <arg name="initial_reset" value="false"/>
+      <arg name="reconnect_timeout" value="6.0"/>
+    </include>
+  </group>
+</launch>

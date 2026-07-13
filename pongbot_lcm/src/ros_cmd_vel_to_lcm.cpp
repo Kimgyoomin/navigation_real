@@ -52,9 +52,12 @@ private:
     void cb(const geometry_msgs::TwistConstPtr& msg)
     {
         // (안전) saturation
-        const double lx = clamp(msg->linear.x * 8.,  -max_linear_x_,  max_linear_x_);
-        const double ly = clamp(msg->linear.y * 3.,  -max_linear_y_,  max_linear_y_);
-        const double az = clamp(msg->angular.z * 5., -max_angular_z_, max_angular_z_);
+        // const double lx = clamp(msg->linear.x * 8.,  -max_linear_x_,  max_linear_x_);
+        // const double ly = clamp(msg->linear.y * 3.,  -max_linear_y_,  max_linear_y_);
+        // const double az = clamp(msg->angular.z * 5., -max_angular_z_, max_angular_z_);
+        const double lx = clamp(msg->linear.x,  -max_linear_x_,  max_linear_x_);
+        const double ly = clamp(msg->linear.y,  -max_linear_y_,  max_linear_y_);
+        const double az = clamp(msg->angular.z, -max_angular_z_, max_angular_z_);
 
         robotlcm::cmd_vel_t out{};
         out.seq       = seq_++;
