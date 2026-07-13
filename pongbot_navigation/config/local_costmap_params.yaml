@@ -14,7 +14,7 @@ local_costmap:
 
   static_map: false
   rolling_window: true
-  transform_tolerance: 0.2        # AS as same as AMCL transform (nav_amcl.launch), 여유마진 0.5 -> 1.0
+  transform_tolerance: 0.5        # AS as same as AMCL transform (nav_amcl.launch), 여유마진 0.5 -> 1.0
 
   plugins:
     - {name: obstacles, type: "costmap_2d::ObstacleLayer"}

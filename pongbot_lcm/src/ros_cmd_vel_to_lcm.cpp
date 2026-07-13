@@ -27,7 +27,7 @@ public:
         // default 값은 문자열이 아니라 double 리터럴이어야 함
         nh_.param("max_linear_x",  max_linear_x_,  0.5);
         nh_.param("max_linear_y",  max_linear_y_,  0.2);
-        nh_.param("max_angular_z", max_angular_z_, 0.2);
+        nh_.param("max_angular_z", max_angular_z_, 1.0);
 
         sub_ = nh_.subscribe(cmd_vel_topic_, 10, &CmdVelBridgeTx::cb, this);
 
