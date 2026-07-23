@@ -1,0 +1,123 @@
+planner_server:
+  ros__parameters:
+    use_sim_time: false
+    expected_planner_frequency: 2.0
+    planner_plugins: ["AstarLocal"]
+    AstarLocal:
+      plugin: "pongbot_local_graph_insertion_planner/AstarLocalPlanner"
+      local_costmap_topic: "/local_costmap/costmap_raw"
+      require_local_costmap: true
+      local_costmap_timeout: 2.0
+      transform_timeout: 0.2
+      allow_latest_transform_fallback: false
+      allow_unknown: false
+      blocked_cost_threshold: 253
+      incremental_change_ratio_threshold: 0.20
+      max_planning_time: 1.0
+      enable_shortcutting: false
+      publish_debug_fused_grid: true
+      debug_fused_grid_topic: "/astar_local/fused_grid"
+
+controller_server:
+  ros__parameters:
+    use_sim_time: false
+    controller_frequency: 10.0
+    odom_topic: /Odometry
+    controller_plugins: ["FollowPath"]
+    progress_checker_plugin: "progress_checker"
+    goal_checker_plugins: ["goal_checker"]
+    FollowPath:
+      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
+      desired_linear_vel: 0.7
+      use_velocity_scaled_lookahead_dist: false
+      lookahead_dist: 1.5
+      min_lookahead_dist: 0.6
+      max_lookahead_dist: 2.0
+      lookahead_time: 1.8
+      use_rotate_to_heading: true
+      rotate_to_heading_min_angle: 0.785
+      rotate_to_heading_angular_vel: 0.5
+      max_angular_accel: 5.0
+      use_collision_detection: true
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.2
+      movement_time_allowance: 60.0
+    goal_checker:
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.25
+      yaw_goal_tolerance: 0.25
+      stateful: true
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: false
+      global_frame: map
+      robot_base_frame: base_link
+      odom_frame: camera_init
+      update_frequency: 2.0
+      publish_frequency: 1.0
+      always_send_full_costmap: true
+      resolution: 0.05
+      track_unknown_space: true
+      rolling_window: false
+      transform_tolerance: 1.0
+      robot_radius: 0.25
+      plugins: ["static_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+        map_topic: /map
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        inflation_radius: 0.35
+        cost_scaling_factor: 3.0
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      use_sim_time: false
+      global_frame: camera_init
+      robot_base_frame: base_link
+      rolling_window: true
+      width: 6
+      height: 6
+      resolution: 0.05
+      transform_tolerance: 1.0
+      robot_radius: 0.25
+      update_frequency: 10.0
+      publish_frequency: 5.0
+      always_send_full_costmap: true
+      plugins: ["inflation_layer"]
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        inflation_radius: 0.35
+        cost_scaling_factor: 3.0
+
+behavior_server:
+  ros__parameters:
+    use_sim_time: false
+    local_frame: camera_init
+    global_frame: map
+    robot_base_frame: base_link
+    transform_tolerance: 0.5
+bt_navigator:
+  ros__parameters:
+    use_sim_time: false
+    global_frame: map
+    robot_base_frame: base_link
+    transform_tolerance: 1.0
+    bt_loop_duration: 50
+    default_server_timeout: 100
+    default_nav_to_pose_bt_xml: "navigate_to_pose_astar_local_replanning.xml"
+smoother_server:
+  ros__parameters:
+    use_sim_time: false
+    smoother_plugins: ["simple_smoother"]
+    simple_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      tolerance: 1.0
+      max_its: 1000
+      w_data: 0.2
+      w_smooth: 0.6

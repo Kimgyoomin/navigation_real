@@ -1,0 +1,1 @@
+<library path="pongbot_local_graph_insertion_planner"><class type="pongbot_local_graph_insertion_planner::AstarLocalPlanner" base_class_type="nav2_core::GlobalPlanner" name="pongbot_local_graph_insertion_planner/AstarLocalPlanner"><description>Local cost overlay insertion into an implicit global grid graph.</description></class></library>
