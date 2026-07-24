@@ -1,36 +1,189 @@
 #!/usr/bin/env python3
-"""Run the existing RUBI Nav2 bringup with the isolated AstarLocal parameters."""
+"""RUBI AstarLocal + RPP Nav2 bringup.
+
+FAST-LIO localization is intentionally not launched here.
+Start the existing localization-only launch first, then run this file.
+"""
+
 import os
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
+from launch_ros.descriptions import ParameterFile
 from nav2_common.launch import RewrittenYaml
 
+
 def generate_launch_description():
-    share = get_package_share_directory("pongbot_local_graph_insertion_planner")
     navigation_share = get_package_share_directory("pongbot_navigation")
-    configured_params = RewrittenYaml(
-        source_file=os.path.join(share, "config", "nav2_rubi_astar_local.yaml"),
-        root_key="",
-        param_rewrites={
-            "use_sim_time": LaunchConfiguration("use_sim_time"),
-            "default_nav_to_pose_bt_xml": os.path.join(
-                share, "behavior_trees", "navigate_to_pose_astar_local_replanning.xml"),
-        },
-        convert_types=True)
-    return LaunchDescription([
-        DeclareLaunchArgument("use_sim_time", default_value="false"),
-        DeclareLaunchArgument("autostart", default_value="true"),
-        DeclareLaunchArgument("map_yaml", default_value=os.path.join(navigation_share, "maps", "RUBI_occupancy_map.yaml")),
-        DeclareLaunchArgument("use_rviz", default_value="true", description="Accepted for simulation wrapper compatibility; RViz is launched separately."),
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(os.path.join(navigation_share, "launch", "rubi_navigation.launch.py")),
-            launch_arguments={
-                "params_file": configured_params,
-                "map_yaml": LaunchConfiguration("map_yaml"),
-                "use_sim_time": LaunchConfiguration("use_sim_time"),
-                "autostart": LaunchConfiguration("autostart"),
-            }.items()),
-    ])
+    planner_share = get_package_share_directory(
+        "pongbot_local_graph_insertion_planner"
+    )
+
+    default_map_yaml = os.path.join(
+        navigation_share,
+        "maps",
+        "RUBI_occupancy_map.yaml",
+    )
+    default_params_file = os.path.join(
+        planner_share,
+        "config",
+        "nav2_rubi_astar_local.yaml",
+    )
+    default_bt_xml = os.path.join(
+        planner_share,
+        "behavior_trees",
+        "navigate_to_pose_astar_local_replanning.xml",
+    )
+
+    map_yaml = LaunchConfiguration("map_yaml")
+    params_file = LaunchConfiguration("params_file")
+    bt_xml = LaunchConfiguration("bt_xml")
+    use_sim_time = LaunchConfiguration("use_sim_time")
+    autostart = LaunchConfiguration("autostart")
+
+    declared_arguments = [
+        DeclareLaunchArgument(
+            "map_yaml",
+            default_value=default_map_yaml,
+            description="Nav2 OccupancyGrid map YAML file",
+        ),
+        DeclareLaunchArgument(
+            "params_file",
+            default_value=default_params_file,
+            description="RUBI AstarLocal Nav2 parameter file",
+        ),
+        DeclareLaunchArgument(
+            "bt_xml",
+            default_value=default_bt_xml,
+            description="NavigateToPose replanning behavior tree XML",
+        ),
+        DeclareLaunchArgument(
+            "use_sim_time",
+            default_value="false",
+            description="Use Gazebo /clock when true",
+        ),
+        DeclareLaunchArgument(
+            "autostart",
+            default_value="true",
+            description="Automatically activate Nav2 lifecycle nodes",
+        ),
+    ]
+
+    configured_params = ParameterFile(
+        RewrittenYaml(
+            source_file=params_file,
+            root_key="",
+            param_rewrites={
+                "use_sim_time": use_sim_time,
+                "default_nav_to_pose_bt_xml": bt_xml,
+            },
+            convert_types=True,
+        ),
+        allow_substs=True,
+    )
+
+    map_server = Node(
+        package="nav2_map_server",
+        executable="map_server",
+        name="map_server",
+        output="screen",
+        parameters=[
+            {
+                "use_sim_time": use_sim_time,
+                "yaml_filename": map_yaml,
+                "topic_name": "map",
+                "frame_id": "map",
+            }
+        ],
+    )
+
+    planner_server = Node(
+        package="nav2_planner",
+        executable="planner_server",
+        name="planner_server",
+        output="screen",
+        parameters=[configured_params],
+    )
+
+    controller_server = Node(
+        package="nav2_controller",
+        executable="controller_server",
+        name="controller_server",
+        output="screen",
+        parameters=[configured_params],
+    )
+
+    smoother_server = Node(
+        package="nav2_smoother",
+        executable="smoother_server",
+        name="smoother_server",
+        output="screen",
+        parameters=[configured_params],
+    )
+
+    behavior_server = Node(
+        package="nav2_behaviors",
+        executable="behavior_server",
+        name="behavior_server",
+        output="screen",
+        parameters=[configured_params],
+    )
+
+    bt_navigator = Node(
+        package="nav2_bt_navigator",
+        executable="bt_navigator",
+        name="bt_navigator",
+        output="screen",
+        parameters=[configured_params],
+    )
+
+    map_lifecycle_manager = Node(
+        package="nav2_lifecycle_manager",
+        executable="lifecycle_manager",
+        name="lifecycle_manager_map",
+        output="screen",
+        parameters=[
+            {
+                "use_sim_time": use_sim_time,
+                "autostart": autostart,
+                "node_names": ["map_server"],
+            }
+        ],
+    )
+
+    navigation_lifecycle_manager = Node(
+        package="nav2_lifecycle_manager",
+        executable="lifecycle_manager",
+        name="lifecycle_manager_navigation",
+        output="screen",
+        parameters=[
+            {
+                "use_sim_time": use_sim_time,
+                "autostart": autostart,
+                "node_names": [
+                    "controller_server",
+                    "smoother_server",
+                    "planner_server",
+                    "behavior_server",
+                    "bt_navigator",
+                ],
+            }
+        ],
+    )
+
+    return LaunchDescription(
+        declared_arguments
+        + [
+            map_server,
+            planner_server,
+            controller_server,
+            smoother_server,
+            behavior_server,
+            bt_navigator,
+            map_lifecycle_manager,
+            navigation_lifecycle_manager,
+        ]
+    )

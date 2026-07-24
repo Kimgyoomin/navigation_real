@@ -1,123 +1,296 @@
 planner_server:
   ros__parameters:
+    # launch의 RewrittenYaml이 true/false로 덮어쓴다.
     use_sim_time: false
+
+    # 실행 주기가 아니라 planner 지연 경고 기준이다.
     expected_planner_frequency: 2.0
     planner_plugins: ["AstarLocal"]
+
     AstarLocal:
       plugin: "pongbot_local_graph_insertion_planner/AstarLocalPlanner"
+
+      # Local Costmap2D overlay
       local_costmap_topic: "/local_costmap/costmap_raw"
       require_local_costmap: true
       local_costmap_timeout: 2.0
-      transform_timeout: 0.2
-      allow_latest_transform_fallback: false
+
+      # 현재 simulation의 약 0.08 s future extrapolation 진단용.
+      # TF timestamp를 바로잡은 뒤 false로 복귀하는 것이 최종 목표다.
+      transform_timeout: 0.5
+      allow_latest_transform_fallback: true
+      transform_jump_translation_threshold: 1.0
+      transform_jump_yaw_threshold: 0.785
+
+      # Grid cost contract
+      local_unknown_policy: "ignore"
       allow_unknown: false
+      unknown_traversal_cost: 1.0
       blocked_cost_threshold: 253
+      cost_penalty_scale: 1.0
+
+      # D* Lite / fresh A*
       incremental_change_ratio_threshold: 0.20
-      max_planning_time: 1.0
+      max_planning_time: 5.0
+      enable_incremental_reuse: true
+
+      # Path post-processing
       enable_shortcutting: false
+
+      # Runtime verification
+      publish_debug_metrics: true
       publish_debug_fused_grid: true
       debug_fused_grid_topic: "/astar_local/fused_grid"
 
+
 controller_server:
   ros__parameters:
+    # launch의 RewrittenYaml이 true/false로 덮어쓴다.
     use_sim_time: false
+
     controller_frequency: 10.0
     odom_topic: /Odometry
+
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.001
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.3
+
     controller_plugins: ["FollowPath"]
+
+    # ROS 2 Humble 형식
     progress_checker_plugin: "progress_checker"
     goal_checker_plugins: ["goal_checker"]
-    FollowPath:
-      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
-      desired_linear_vel: 0.7
-      use_velocity_scaled_lookahead_dist: false
-      lookahead_dist: 1.5
-      min_lookahead_dist: 0.6
-      max_lookahead_dist: 2.0
-      lookahead_time: 1.8
-      use_rotate_to_heading: true
-      rotate_to_heading_min_angle: 0.785
-      rotate_to_heading_angular_vel: 0.5
-      max_angular_accel: 5.0
-      use_collision_detection: true
+
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      required_movement_radius: 0.2
-      movement_time_allowance: 60.0
+      required_movement_radius: 0.20
+      movement_time_allowance: 30.0
+
     goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.25
       yaw_goal_tolerance: 0.25
       stateful: true
 
-global_costmap:
-  global_costmap:
-    ros__parameters:
-      use_sim_time: false
-      global_frame: map
-      robot_base_frame: base_link
-      odom_frame: camera_init
-      update_frequency: 2.0
-      publish_frequency: 1.0
-      always_send_full_costmap: true
-      resolution: 0.05
-      track_unknown_space: true
-      rolling_window: false
-      transform_tolerance: 1.0
-      robot_radius: 0.25
-      plugins: ["static_layer", "inflation_layer"]
-      static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
-        map_subscribe_transient_local: true
-        map_topic: /map
-      inflation_layer:
-        plugin: "nav2_costmap_2d::InflationLayer"
-        inflation_radius: 0.35
-        cost_scaling_factor: 3.0
+    FollowPath:
+      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
+
+      # RUBI simulation 초기 보수값
+      desired_linear_vel: 0.70
+
+      lookahead_dist: 0.45
+      min_lookahead_dist: 0.30
+      max_lookahead_dist: 0.60
+      lookahead_time: 1.5
+      use_velocity_scaled_lookahead_dist: true
+
+      transform_tolerance: 0.30
+
+      min_approach_linear_velocity: 0.05
+      approach_velocity_scaling_dist: 0.60
+
+      # Local costmap을 이용한 전방 충돌 검사
+      use_collision_detection: true
+      max_allowed_time_to_collision_up_to_carrot: 1.0
+
+      # 곡률이 큰 구간에서 선속도 감속
+      use_regulated_linear_velocity_scaling: true
+      regulated_linear_scaling_min_radius: 0.80
+      regulated_linear_scaling_min_speed: 0.15
+
+      # 현재 inflation_radius=0.25 m는 cost regulation에 너무 좁다.
+      # 최초 주행 검증에서는 false로 두고, inflation 확장 후 활성화한다.
+      use_cost_regulated_linear_velocity_scaling: false
+      cost_scaling_dist: 0.20
+      cost_scaling_gain: 1.0
+      inflation_cost_scaling_factor: 5.0
+
+      use_rotate_to_heading: true
+      rotate_to_heading_angular_vel: 0.60
+      rotate_to_heading_min_angle: 0.50
+      max_angular_accel: 1.20
+
+      allow_reversing: false
+      max_robot_pose_search_dist: 8.0
+      use_interpolation: true
+
 
 local_costmap:
   local_costmap:
     ros__parameters:
+      # launch의 RewrittenYaml이 true/false로 덮어쓴다.
       use_sim_time: false
+
       global_frame: camera_init
       robot_base_frame: base_link
+
       rolling_window: true
-      width: 6
-      height: 6
+      width: 8
+      height: 8
       resolution: 0.05
-      transform_tolerance: 1.0
+
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      transform_tolerance: 0.30
+
+      track_unknown_space: false
+
       robot_radius: 0.25
-      update_frequency: 10.0
-      publish_frequency: 5.0
-      always_send_full_costmap: true
-      plugins: ["inflation_layer"]
+      footprint_padding: 0.02
+
+      plugins:
+        - "static_layer"
+        - "obstacle_layer"
+        - "inflation_layer"
+
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        enabled: true
+        map_topic: /map
+        map_subscribe_transient_local: true
+        subscribe_to_updates: true
+
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+
+        footprint_clearing_enabled: true
+        combination_method: 1
+        tf_filter_tolerance: 0.30
+
+        observation_sources: "livox_cloud"
+
+        livox_cloud:
+          topic: /livox/lidar_PointCloud2
+          data_type: "PointCloud2"
+
+          marking: true
+          clearing: true
+
+          obstacle_min_range: 0.40
+          obstacle_max_range: 4.0
+
+          raytrace_min_range: 0.30
+          raytrace_max_range: 5.0
+
+          # camera_init 기준 실제 지면 높이에 맞춰 실측 후 조정할 것.
+          min_obstacle_height: 0.10
+          max_obstacle_height: 3.50
+
+          observation_persistence: 0.0
+          expected_update_rate: 0.0
+
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        inflation_radius: 0.35
-        cost_scaling_factor: 3.0
+        enabled: true
+        inflation_radius: 0.25
+        cost_scaling_factor: 5.0
+
+      # AstarLocal이 full /costmap_raw snapshot을 직접 구독하므로 유지한다.
+      always_send_full_costmap: true
+
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      # launch의 RewrittenYaml이 true/false로 덮어쓴다.
+      use_sim_time: false
+
+      global_frame: map
+      robot_base_frame: base_link
+
+      update_frequency: 2.0
+      publish_frequency: 1.0
+      transform_tolerance: 1.0
+
+      resolution: 0.05
+      track_unknown_space: true
+      rolling_window: false
+
+      robot_radius: 0.25
+      footprint_padding: 0.02
+
+      plugins:
+        - "static_layer"
+        - "inflation_layer"
+
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        enabled: true
+        map_topic: /map
+        map_subscribe_transient_local: true
+        subscribe_to_updates: true
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: true
+        inflation_radius: 0.25
+        cost_scaling_factor: 5.0
+
+      always_send_full_costmap: false
+
+
+smoother_server:
+  ros__parameters:
+    use_sim_time: false
+    costmap_topic: /global_costmap/costmap_raw
+    footprint_topic: /global_costmap/published_footprint
+    robot_base_frame: base_link
+    transform_tolerance: 0.30
+
+    smoother_plugins: ["simple_smoother"]
+
+    simple_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      tolerance: 1.0e-10
+      max_its: 1000
+      do_refinement: true
+
 
 behavior_server:
   ros__parameters:
     use_sim_time: false
-    local_frame: camera_init
-    global_frame: map
+
+    # Humble behavior_server는 local costmap 하나로 collision check한다.
+    costmap_topic: /local_costmap/costmap_raw
+    footprint_topic: /local_costmap/published_footprint
+    cycle_frequency: 10.0
+
+    # costmap_topic의 frame과 맞춘다.
+    global_frame: camera_init
     robot_base_frame: base_link
-    transform_tolerance: 0.5
+    transform_tolerance: 0.30
+
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "wait"]
+
+    spin:
+      plugin: "nav2_behaviors/Spin"
+
+    backup:
+      plugin: "nav2_behaviors/BackUp"
+
+    drive_on_heading:
+      plugin: "nav2_behaviors/DriveOnHeading"
+
+    wait:
+      plugin: "nav2_behaviors/Wait"
+
+    simulate_ahead_time: 2.0
+    max_rotational_vel: 0.80
+    min_rotational_vel: 0.20
+    rotational_acc_lim: 1.20
+
+
 bt_navigator:
   ros__parameters:
+    # launch의 RewrittenYaml이 true/false로 덮어쓴다.
     use_sim_time: false
+
     global_frame: map
     robot_base_frame: base_link
-    transform_tolerance: 1.0
-    bt_loop_duration: 50
-    default_server_timeout: 100
-    default_nav_to_pose_bt_xml: "navigate_to_pose_astar_local_replanning.xml"
-smoother_server:
-  ros__parameters:
-    use_sim_time: false
-    smoother_plugins: ["simple_smoother"]
-    simple_smoother:
-      plugin: "nav2_smoother::SimpleSmoother"
-      tolerance: 1.0
-      max_its: 1000
-      w_data: 0.2
-      w_smooth: 0.6
+    odom_topic: /Odometry
+    transform_tolerance: 0.30
+
+    # launch에서도 bt_xml argument로 이 값을 명시적으로 덮어쓴다.
+    default_nav_to_pose_bt_xml: "$(find-pkg-share pongbot_local_graph_insertion_planner)/behavior_trees/navigate_to_pose_astar_local_replanning.xml"

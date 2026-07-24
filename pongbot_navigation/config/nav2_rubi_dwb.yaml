@@ -48,10 +48,10 @@ controller_server:
       max_vel_x: 0.7
       min_vel_y: 0.0
       max_vel_y: 0.0
-      max_vel_theta: 0.60
+      max_vel_theta: 0.8
 
       min_speed_xy: 0.0
-      max_speed_xy: 0.25
+      max_speed_xy: 0.7
       min_speed_theta: 0.0
 
       # RUBI 시뮬레이션 초기 보수값
@@ -65,9 +65,9 @@ controller_server:
 
       vx_samples: 15
       vy_samples: 1
-      vtheta_samples: 30
+      vtheta_samples: 41
 
-      sim_time: 2.0
+      sim_time: 2.5
       linear_granularity: 0.05
       angular_granularity: 0.025
 
@@ -89,7 +89,7 @@ controller_server:
 
       BaseObstacle.scale: 0.02
 
-      PathAlign.scale: 24.0
+      PathAlign.scale: 8.0
       PathAlign.forward_point_distance: 0.15
 
       GoalAlign.scale: 20.0
@@ -112,8 +112,8 @@ local_costmap:
       robot_base_frame: base_link
 
       rolling_window: true
-      width: 8.0
-      height: 8.0
+      width: 8
+      height: 8
       resolution: 0.05
 
       update_frequency: 5.0
@@ -122,7 +122,7 @@ local_costmap:
 
       track_unknown_space: false
 
-      robot_radius: 0.5
+      robot_radius: 0.25
       footprint_padding: 0.02
 
       plugins:
@@ -145,7 +145,7 @@ local_costmap:
         combination_method: 1
         tf_filter_tolerance: 0.30
 
-        observation_sources: ["livox_cloud"]
+        observation_sources: "livox_cloud"
 
         livox_cloud:
           topic: /livox/lidar_PointCloud2
@@ -154,7 +154,7 @@ local_costmap:
           marking: true
           clearing: true
 
-          obstacle_min_range: 0.40
+          obstacle_min_range: 0.30
           obstacle_max_range: 4.0
 
           raytrace_min_range: 0.30
@@ -162,8 +162,8 @@ local_costmap:
 
           # 아래 값은 예시다.
           # camera_init 기준 실제 지면 높이에 맞춰 반드시 수정할 것.
-          min_obstacle_height: 0.2
-          max_obstacle_height: 1.00
+          min_obstacle_height: 0.1
+          max_obstacle_height: 3.50
 
           observation_persistence: 0.0
           expected_update_rate: 0.0
@@ -171,7 +171,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
-        inflation_radius: 0.55
+        inflation_radius: 0.15
         cost_scaling_factor: 3.0
 
       # 초기 RViz 디버깅용. 검증 후 false로 바꿔도 됨.
@@ -195,11 +195,12 @@ global_costmap:
       track_unknown_space: true
       rolling_window: false
 
-      robot_radius: 0.5
+      robot_radius: 0.25
       footprint_padding: 0.02
 
       plugins:
         - "static_layer"
+        - "obstacle_layer"
         - "inflation_layer"
 
       static_layer:
@@ -209,13 +210,44 @@ global_costmap:
         map_subscribe_transient_local: true
         subscribe_to_updates: true
 
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+
+        footprint_clearing_enabled: true
+        combination_method: 1
+        tf_filter_tolerance: 0.30
+
+        observation_sources: "livox_cloud"
+
+        livox_cloud:
+          topic: /livox/lidar_PointCloud2
+          data_type: "PointCloud2"
+
+          marking: true
+          clearing: true
+
+          obstacle_min_range: 0.30
+          obstacle_max_range: 4.0
+
+          raytrace_min_range: 0.30
+          raytrace_max_range: 5.0
+
+          # 아래 값은 예시다.
+          # camera_init 기준 실제 지면 높이에 맞춰 반드시 수정할 것.
+          min_obstacle_height: 0.1
+          max_obstacle_height: 3.50
+
+          observation_persistence: 0.0
+          expected_update_rate: 0.0
+
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
         inflation_radius: 0.55
         cost_scaling_factor: 3.0
 
-      always_send_full_costmap: false
+      always_send_full_costmap: true
 
 
 smoother_server:
