@@ -77,7 +77,7 @@ controller_server:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
 
       # RUBI simulation 초기 보수값
-      desired_linear_vel: 0.70
+      desired_linear_vel: 0.30
 
       lookahead_dist: 0.45
       min_lookahead_dist: 0.30
@@ -85,7 +85,7 @@ controller_server:
       lookahead_time: 1.5
       use_velocity_scaled_lookahead_dist: true
 
-      transform_tolerance: 0.30
+      transform_tolerance: 1.0
 
       min_approach_linear_velocity: 0.05
       approach_velocity_scaling_dist: 0.60
@@ -97,7 +97,7 @@ controller_server:
       # 곡률이 큰 구간에서 선속도 감속
       use_regulated_linear_velocity_scaling: true
       regulated_linear_scaling_min_radius: 0.80
-      regulated_linear_scaling_min_speed: 0.15
+      regulated_linear_scaling_min_speed: 0.12
 
       # 현재 inflation_radius=0.25 m는 cost regulation에 너무 좁다.
       # 최초 주행 검증에서는 false로 두고, inflation 확장 후 활성화한다.
@@ -107,7 +107,7 @@ controller_server:
       inflation_cost_scaling_factor: 5.0
 
       use_rotate_to_heading: true
-      rotate_to_heading_angular_vel: 0.60
+      rotate_to_heading_angular_vel: 0.50
       rotate_to_heading_min_angle: 0.50
       max_angular_accel: 1.20
 

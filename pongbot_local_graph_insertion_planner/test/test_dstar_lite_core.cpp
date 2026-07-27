@@ -5,76 +5,166 @@
 #include <random>
 
 namespace p = pongbot_local_graph_insertion_planner;
-namespace {
-p::GridSnapshot grid(std::size_t w, std::size_t h) {
-  p::GridSnapshot g; g.frame_id="map";g.size_x=w;g.size_y=h;g.resolution=1.0;g.costs.assign(w*h,0);return g;
+namespace
+{
+p::GridSnapshot grid(std::size_t w, std::size_t h)
+{
+  p::GridSnapshot g; g.frame_id = "map";g.size_x = w;g.size_y = h;g.resolution = 1.0;g.costs.assign(
+    w * h, 0);return g;
 }
-void expectSame(const p::GridSnapshot & g,std::size_t s,std::size_t t,p::DStarLite & d,const p::SearchOptions & o={}) {
-  const auto a=p::freshAstar(g,s,t,o), b=d.replan(g,s,t,o);
-  EXPECT_EQ(a.status==p::SearchStatus::kSuccess,b.status==p::SearchStatus::kSuccess);
-  if(a.status==p::SearchStatus::kSuccess){EXPECT_TRUE(p::validPath(g,b.path,o));EXPECT_NEAR(a.cost,b.cost,1e-9);}
+void expectSame(
+  const p::GridSnapshot & g, std::size_t s, std::size_t t, p::DStarLite & d,
+  const p::SearchOptions & o = {})
+{
+  const auto a = p::freshAstar(g, s, t, o), b = d.replan(g, s, t, o);
+  EXPECT_EQ(a.status == p::SearchStatus::kSuccess, b.status == p::SearchStatus::kSuccess);
+  if (a.status == p::SearchStatus::kSuccess) {
+    EXPECT_TRUE(p::validPath(g, b.path, o));EXPECT_NEAR(a.cost, b.cost, 1e-9);
+  }
 }
 }
 TEST(Core, EmptyAndStartEqualsGoal) {
-  auto g=grid(5,5);p::DStarLite d;expectSame(g,0,24,d);auto r=d.replan(g,4,4,{});
-  ASSERT_EQ(r.status,p::SearchStatus::kSuccess);ASSERT_EQ(r.path.size(),1u);EXPECT_EQ(r.cost,0.0);
+  auto g = grid(5, 5);p::DStarLite d;expectSame(g, 0, 24, d);auto r = d.replan(g, 4, 4, {});
+  ASSERT_EQ(r.status, p::SearchStatus::kSuccess);ASSERT_EQ(r.path.size(), 1u);
+  EXPECT_EQ(r.cost, 0.0);
 }
 TEST(Core, BoundsAndOccupiedEndpoints) {
-  auto g=grid(3,3);EXPECT_EQ(p::freshAstar(g,9,0,{}).status,p::SearchStatus::kInvalidInput);
-  g.costs[0]=253;EXPECT_EQ(p::freshAstar(g,0,8,{}).status,p::SearchStatus::kNoPath);
-  g.costs[0]=0;g.costs[8]=254; p::DStarLite d;EXPECT_EQ(d.replan(g,0,8,{}).status,p::SearchStatus::kNoPath);
+  auto g = grid(3, 3);EXPECT_EQ(p::freshAstar(g, 9, 0, {}).status, p::SearchStatus::kInvalidInput);
+  g.costs[0] = 253;EXPECT_EQ(p::freshAstar(g, 0, 8, {}).status, p::SearchStatus::kNoPath);
+  g.costs[0] = 0;g.costs[8] = 254; p::DStarLite d;EXPECT_EQ(
+    d.replan(
+      g, 0, 8,
+      {}).status,
+    p::SearchStatus::kNoPath);
 }
 TEST(Core, UnknownAndCostBoundaryContract) {
-  auto g=grid(3,1);g.costs[1]=255;EXPECT_EQ(p::freshAstar(g,0,2,{}).status,p::SearchStatus::kNoPath);
-  p::SearchOptions known;known.allow_unknown=true;EXPECT_EQ(p::freshAstar(g,0,2,known).status,p::SearchStatus::kSuccess);
-  g.costs[1]=252;EXPECT_EQ(p::freshAstar(g,0,2,{}).status,p::SearchStatus::kSuccess);
-  g.costs[1]=253;EXPECT_EQ(p::freshAstar(g,0,2,{}).status,p::SearchStatus::kNoPath);
+  auto g = grid(3, 1);g.costs[1] = 255;EXPECT_EQ(
+    p::freshAstar(
+      g, 0, 2,
+      {}).status,
+    p::SearchStatus::kNoPath);
+  p::SearchOptions known;known.allow_unknown = true;EXPECT_EQ(
+    p::freshAstar(
+      g, 0, 2,
+      known).status,
+    p::SearchStatus::kSuccess);
+  g.costs[1] = 252;EXPECT_EQ(p::freshAstar(g, 0, 2, {}).status, p::SearchStatus::kSuccess);
+  g.costs[1] = 253;EXPECT_EQ(p::freshAstar(g, 0, 2, {}).status, p::SearchStatus::kNoPath);
 }
 TEST(Core, DiagonalCannotCutCorners) {
-  auto g=grid(2,2);g.costs[1]=253;g.costs[2]=253;
-  EXPECT_EQ(p::freshAstar(g,0,3,{}).status,p::SearchStatus::kNoPath);
+  auto g = grid(2, 2);g.costs[1] = 253;g.costs[2] = 253;
+  EXPECT_EQ(p::freshAstar(g, 0, 3, {}).status, p::SearchStatus::kNoPath);
 }
 TEST(Core, StaticDStarMatchesFresh) {
-  auto g=grid(15,15);for(std::size_t y=1;y<14;++y)if(y!=8)g.costs[g.index(7,y)]=253;
-  p::DStarLite d;expectSame(g,0,224,d);
+  auto g = grid(15, 15);for (std::size_t y = 1; y < 14; ++y) {
+    if (y != 8) {
+      g.costs[g.index(7, y)] = 253;
+    }
+  }
+  p::DStarLite d;expectSame(g, 0, 224, d);
 }
 TEST(Core, ObstacleInsertionRemovalAndMultipleChanges) {
-  auto g=grid(10,5);p::DStarLite d;expectSame(g,20,29,d);
-  g.costs[g.index(4,2)]=253;expectSame(g,20,29,d);
-  g.costs[g.index(4,2)]=0;expectSame(g,20,29,d);
-  for(std::size_t x=2;x<7;++x) {
-    g.costs[g.index(x,2)]=253;
+  auto g = grid(10, 5);p::DStarLite d;expectSame(g, 20, 29, d);
+  g.costs[g.index(4, 2)] = 253;expectSame(g, 20, 29, d);
+  g.costs[g.index(4, 2)] = 0;expectSame(g, 20, 29, d);
+  for (std::size_t x = 2; x < 7; ++x) {
+    g.costs[g.index(x, 2)] = 253;
   }
-  expectSame(g,20,29,d);
+  expectSame(g, 20, 29, d);
 }
 TEST(Core, MovingStartAndGoalReset) {
-  auto g=grid(10,10);p::DStarLite d;expectSame(g,0,99,d);expectSame(g,1,99,d);
-  expectSame(g,1,98,d);EXPECT_EQ(d.lastFallbackReason(),p::FallbackReason::kGoalChanged);
+  auto g = grid(10, 10);p::DStarLite d;expectSame(g, 0, 99, d);expectSame(g, 1, 99, d);
+  expectSame(g, 1, 98, d);EXPECT_EQ(d.lastFallbackReason(), p::FallbackReason::kGoalChanged);
 }
 TEST(Core, ChangedRatioUsesFreshFallback) {
-  auto g=grid(10,10);p::DStarLite d(0.10);expectSame(g,0,99,d);
-  for(std::size_t i=1;i<=20;++i)g.costs[i]=253;
-  expectSame(g,0,99,d);EXPECT_EQ(d.lastFallbackReason(),p::FallbackReason::kChangedRatio);
+  auto g = grid(10, 10);p::DStarLite d(0.10);expectSame(g, 0, 99, d);
+  for (std::size_t i = 1; i <= 20; ++i) {
+    g.costs[i] = 253;
+  }
+  expectSame(g, 0, 99, d);EXPECT_EQ(d.lastFallbackReason(), p::FallbackReason::kChangedRatio);
 }
 TEST(Core, TimeoutAndCancellation) {
-  auto g=grid(30,30);p::SearchOptions timeout;timeout.max_expansions=1;
-  EXPECT_EQ(p::freshAstar(g,0,899,timeout).status,p::SearchStatus::kTimeout);
-  p::DStarLite d;EXPECT_EQ(d.replan(g,0,899,timeout).status,p::SearchStatus::kTimeout);
-  p::SearchOptions cancel;cancel.cancelled=[] {return true;};
-  EXPECT_EQ(p::freshAstar(g,0,899,cancel).status,p::SearchStatus::kCancelled);
+  auto g = grid(30, 30);p::SearchOptions timeout;timeout.max_expansions = 1;
+  EXPECT_EQ(p::freshAstar(g, 0, 899, timeout).status, p::SearchStatus::kTimeout);
+  p::DStarLite d;EXPECT_EQ(d.replan(g, 0, 899, timeout).status, p::SearchStatus::kTimeout);
+  p::SearchOptions cancel;cancel.cancelled = [] {return true;};
+  EXPECT_EQ(p::freshAstar(g, 0, 899, cancel).status, p::SearchStatus::kCancelled);
+}
+TEST(Core, IncrementalRepairRefreshesRuntimeControls) {
+  auto g = grid(12, 8);
+  const auto start = g.index(0, 0), goal = g.index(11, 7);
+  bool initial_deadline_expired = false;
+
+  p::SearchOptions initial;
+  initial.cancelled = [&initial_deadline_expired] {return initial_deadline_expired;};
+
+  p::DStarLite d;
+  ASSERT_EQ(d.replan(g, start, goal, initial).status, p::SearchStatus::kSuccess);
+
+  // Simulate the first createPlan() deadline expiring before a later repair.
+  // The new request's callback must replace it even though the cost contract
+  // (unknown policy, threshold, and penalty) did not change.
+  initial_deadline_expired = true;
+  g.costs[g.index(5, 4)] = 253;
+
+  p::SearchOptions repair;
+  repair.cancelled = [] {return false;};
+  const auto result = d.replan(g, start, goal, repair);
+
+  ASSERT_EQ(result.status, p::SearchStatus::kSuccess);
+  EXPECT_TRUE(p::validPath(g, result.path, repair));
+  EXPECT_EQ(d.lastFallbackReason(), p::FallbackReason::kNone);
 }
 TEST(Core, InvalidFiniteContract) {
-  auto g=grid(2,2);g.resolution=std::numeric_limits<double>::quiet_NaN();
-  EXPECT_EQ(p::freshAstar(g,0,3,{}).status,p::SearchStatus::kInvalidInput);
+  auto g = grid(2, 2);g.resolution = std::numeric_limits<double>::quiet_NaN();
+  EXPECT_EQ(p::freshAstar(g, 0, 3, {}).status, p::SearchStatus::kInvalidInput);
+}
+TEST(Core, IsolatedRegionChangeDoesNotDestabilizeRepair) {
+  auto g = grid(30, 12);
+  // The wall isolates the lower region; start and goal retain a clear upper corridor.
+  for (std::size_t x = 0; x < 30; ++x) {
+    g.costs[g.index(x, 5)] = 253;
+  }
+  p::DStarLite d; expectSame(g, g.index(1, 1), g.index(28, 1), d);
+  g.costs[g.index(12, 9)] = 253;
+  const auto repaired = d.replan(g, g.index(1, 1), g.index(28, 1), {});
+  ASSERT_EQ(repaired.status, p::SearchStatus::kSuccess);
+  EXPECT_TRUE(p::validPath(g, repaired.path, {}));
+}
+TEST(Core, RepeatedUnrelatedRepairsRemainStable) {
+  auto g = grid(32, 14);
+  for (std::size_t x = 0; x < 32; ++x) {
+    g.costs[g.index(x, 6)] = 253;
+  }
+  p::DStarLite d; const auto start = g.index(1, 1), goal = g.index(30, 1);
+  expectSame(g, start, goal, d);
+  for (int iteration = 0; iteration < 60; ++iteration) {
+    g.costs[g.index(16, 10)] = (iteration % 2) == 0 ? 253 : 0;
+    const auto repaired = d.replan(g, start, goal, {});
+    ASSERT_EQ(repaired.status, p::SearchStatus::kSuccess) << iteration;
+    EXPECT_TRUE(p::validPath(g, repaired.path, {})) << iteration;
+  }
 }
 TEST(Core, RandomizedDifferential) {
   std::mt19937 rng(20260723);std::bernoulli_distribution blocked(0.22);
-  constexpr int kIterations=250;
-  for(int iteration=0;iteration<kIterations;++iteration) {
-    auto g=grid(18,17);for(auto & c:g.costs)if(blocked(rng))c=253;g.costs[0]=0;g.costs.back()=0;
-    p::SearchOptions o;o.cost_penalty=(iteration%3)*0.35;p::DStarLite d;
-    const auto a=p::freshAstar(g,0,g.costs.size()-1,o),b=d.replan(g,0,g.costs.size()-1,o);
-    ASSERT_EQ(a.status==p::SearchStatus::kSuccess,b.status==p::SearchStatus::kSuccess) << iteration;
-    if(a.status==p::SearchStatus::kSuccess){double cost=0;ASSERT_TRUE(p::validPath(g,b.path,o,&cost))<<iteration;ASSERT_NEAR(a.cost,b.cost,1e-9)<<iteration;}
+  constexpr int kIterations = 250;
+  for (int iteration = 0; iteration < kIterations; ++iteration) {
+    auto g = grid(18, 17);for (auto & c:g.costs) {
+      if (blocked(rng)) {
+        c = 253;
+      }
+    }
+    g.costs[0] = 0;g.costs.back() = 0;
+    p::SearchOptions o;o.cost_penalty = (iteration % 3) * 0.35;p::DStarLite d;
+    const auto a = p::freshAstar(g, 0, g.costs.size() - 1, o), b = d.replan(
+      g, 0,
+      g.costs.size() - 1, o);
+    ASSERT_EQ(
+      a.status == p::SearchStatus::kSuccess,
+      b.status == p::SearchStatus::kSuccess) << iteration;
+    if (a.status == p::SearchStatus::kSuccess) {
+      double cost = 0;ASSERT_TRUE(p::validPath(g, b.path, o, &cost)) << iteration;ASSERT_NEAR(
+        a.cost, b.cost, 1e-9) << iteration;
+    }
   }
 }

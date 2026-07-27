@@ -7,11 +7,13 @@
 #include <string>
 #include <vector>
 
-namespace pongbot_local_graph_insertion_planner {
+namespace pongbot_local_graph_insertion_planner
+{
 
 enum class SearchStatus { kSuccess, kNoPath, kInvalidInput, kCancelled, kTimeout };
 
-struct SearchOptions {
+struct SearchOptions
+{
   bool allow_unknown{false};
   unsigned char blocked_cost_threshold{253};
   double cost_penalty{0.0};
@@ -19,7 +21,8 @@ struct SearchOptions {
   std::function<bool()> cancelled;
 };
 
-struct SearchResult {
+struct SearchResult
+{
   SearchStatus status{SearchStatus::kNoPath};
   std::string reason;
   std::vector<std::size_t> path;
@@ -28,8 +31,12 @@ struct SearchResult {
 };
 
 bool isBlocked(const GridSnapshot & grid, std::size_t cell, const SearchOptions & options);
-double traversalMultiplier(const GridSnapshot & grid, std::size_t cell, const SearchOptions & options);
-double edgeCost(const GridSnapshot & grid, std::size_t from, std::size_t to, const SearchOptions & options);
+double traversalMultiplier(
+  const GridSnapshot & grid, std::size_t cell,
+  const SearchOptions & options);
+double edgeCost(
+  const GridSnapshot & grid, std::size_t from, std::size_t to,
+  const SearchOptions & options);
 std::vector<std::size_t> neighbors8(
   const GridSnapshot & grid, std::size_t cell, const SearchOptions & options);
 double heuristic(const GridSnapshot & grid, std::size_t from, std::size_t to);

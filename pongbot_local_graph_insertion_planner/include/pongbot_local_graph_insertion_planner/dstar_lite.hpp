@@ -7,27 +7,52 @@
 #include <string>
 #include <vector>
 
-namespace pongbot_local_graph_insertion_planner {
+namespace pongbot_local_graph_insertion_planner
+{
 
-enum class FallbackReason { kNone, kInitialPlan, kGeometryChanged, kGoalChanged, kOptionsChanged,
-  kChangedRatio, kInvariantViolation, kExtractionFailure };
+enum class FallbackReason
+{
+  kNone,
+  kInitialPlan,
+  kGeometryChanged,
+  kGoalChanged,
+  kOptionsChanged,
+  kChangedRatio,
+  kInvariantViolation,
+  kExtractionFailure
+};
 
-class DStarLite {
+class DStarLite
+{
 public:
   explicit DStarLite(double changed_ratio_fallback = 0.35);
   SearchResult replan(
     const GridSnapshot & grid, std::size_t start, std::size_t goal, const SearchOptions & options);
-  FallbackReason lastFallbackReason() const { return last_fallback_reason_; }
-  const std::string & lastFallbackDetail() const { return last_fallback_detail_; }
-  bool initialized() const { return initialized_; }
+  FallbackReason lastFallbackReason() const {return last_fallback_reason_;}
+  const std::string & lastFallbackDetail() const {return last_fallback_detail_;}
+  bool initialized() const {return initialized_;}
 
 private:
-  struct Key { double first; double second; };
-  struct Entry { Key key; std::size_t cell; };
-  struct EntryCompare {
+  struct Key
+  {
+    double first;
+    double second;
+  };
+
+  struct Entry
+  {
+    Key key;
+    std::size_t cell;
+  };
+
+  struct EntryCompare
+  {
     bool operator()(const Entry & a, const Entry & b) const;
   };
-  void reset(const GridSnapshot & grid, std::size_t start, std::size_t goal, const SearchOptions & options);
+
+  void reset(
+    const GridSnapshot & grid, std::size_t start, std::size_t goal,
+    const SearchOptions & options);
   void updateVertex(std::size_t cell);
   void push(std::size_t cell);
   Key calculateKey(std::size_t cell) const;

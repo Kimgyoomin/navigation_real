@@ -13,26 +13,53 @@
 #include "rclcpp/rclcpp.hpp"
 #include "tf2_ros/buffer.h"
 
-namespace pongbot_local_graph_insertion_planner {
-class AstarLocalPlanner : public nav2_core::GlobalPlanner {
+namespace pongbot_local_graph_insertion_planner
+{
+class AstarLocalPlanner : public nav2_core::GlobalPlanner
+{
 public:
-  void configure(const rclcpp_lifecycle::LifecycleNode::WeakPtr & parent, std::string name,
-    std::shared_ptr<tf2_ros::Buffer> tf, std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros) override;
+  void configure(
+    const rclcpp_lifecycle::LifecycleNode::WeakPtr & parent,
+    std::string name,
+    std::shared_ptr<tf2_ros::Buffer> tf,
+    std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros) override;
   void cleanup() override;
   void activate() override;
   void deactivate() override;
-  nav_msgs::msg::Path createPlan(const geometry_msgs::msg::PoseStamped & start,
+
+  nav_msgs::msg::Path createPlan(
+    const geometry_msgs::msg::PoseStamped & start,
     const geometry_msgs::msg::PoseStamped & goal) override;
 
 private:
-  struct LocalSnapshot {
+  struct LocalSnapshot
+  {
     nav2_msgs::msg::Costmap::SharedPtr message;
     rclcpp::Time received_at{0, 0, RCL_ROS_TIME};
   };
+
   void localCostmapCallback(nav2_msgs::msg::Costmap::SharedPtr message);
   GridSnapshot copyGlobalCostmap() const;
-  bool fuseLocalOverlay(GridSnapshot & fused, std::size_t & overlay_cells, double & local_age,
+
+  bool fuseLocalOverlay(
+    GridSnapshot & fused,
+    std::size_t & overlay_cells,
+    double & local_age,
     std::string & failure) const;
+
+  bool poseToCell(
+    const GridSnapshot & grid,
+    const geometry_msgs::msg::Pose & pose,
+    std::size_t & cell) const;
+
+  std::size_t countChangedCells(const GridSnapshot & grid) const;
+  nav_msgs::msg::Path buildPath(
+    const GridSnapshot & grid,
+    const SearchResult & result,
+    const geometry_msgs::msg::PoseStamped & start,
+    const geometry_msgs::msg::PoseStamped & goal) const;
+  const char * planningMode() const;
+
   void publishFusedGrid(const GridSnapshot & grid) const;
   static geometry_msgs::msg::Quaternion normalizedQuaternion(double yaw);
 
