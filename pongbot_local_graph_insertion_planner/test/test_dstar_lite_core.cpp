@@ -55,6 +55,33 @@ TEST(Core, DiagonalCannotCutCorners) {
   auto g = grid(2, 2);g.costs[1] = 253;g.costs[2] = 253;
   EXPECT_EQ(p::freshAstar(g, 0, 3, {}).status, p::SearchStatus::kNoPath);
 }
+TEST(Core, MetricCardinalAndDiagonalCosts) {
+  auto g = grid(2, 2);
+  g.resolution = 0.2;
+
+  const auto cardinal = p::freshAstar(g, g.index(0, 0), g.index(1, 0), {});
+  const auto diagonal = p::freshAstar(g, g.index(0, 0), g.index(1, 1), {});
+
+  ASSERT_EQ(cardinal.status, p::SearchStatus::kSuccess);
+  ASSERT_EQ(diagonal.status, p::SearchStatus::kSuccess);
+  EXPECT_NEAR(cardinal.cost, 0.2, 1e-12);
+  EXPECT_NEAR(diagonal.cost, std::sqrt(2.0) * 0.2, 1e-12);
+}
+TEST(Core, SoftCostPenaltySelectsClearance) {
+  auto g = grid(5, 3);
+  for (std::size_t x = 1; x < 4; ++x) {
+    g.costs[g.index(x, 1)] = 252;
+  }
+
+  p::SearchOptions options;
+  options.cost_penalty = 10.0;
+  const auto result = p::freshAstar(g, g.index(0, 1), g.index(4, 1), options);
+
+  ASSERT_EQ(result.status, p::SearchStatus::kSuccess);
+  for (const auto cell : result.path) {
+    EXPECT_NE(g.costs[cell], 252);
+  }
+}
 TEST(Core, StaticDStarMatchesFresh) {
   auto g = grid(15, 15);for (std::size_t y = 1; y < 14; ++y) {
     if (y != 8) {
@@ -65,8 +92,13 @@ TEST(Core, StaticDStarMatchesFresh) {
 }
 TEST(Core, ObstacleInsertionRemovalAndMultipleChanges) {
   auto g = grid(10, 5);p::DStarLite d;expectSame(g, 20, 29, d);
+  const auto initial = d.replan(g, 20, 29, {});
   g.costs[g.index(4, 2)] = 253;expectSame(g, 20, 29, d);
+  const auto detour = d.replan(g, 20, 29, {});
   g.costs[g.index(4, 2)] = 0;expectSame(g, 20, 29, d);
+  const auto reopened = d.replan(g, 20, 29, {});
+  EXPECT_GT(detour.cost, initial.cost);
+  EXPECT_NEAR(reopened.cost, initial.cost, 1e-9);
   for (std::size_t x = 2; x < 7; ++x) {
     g.costs[g.index(x, 2)] = 253;
   }
@@ -165,6 +197,47 @@ TEST(Core, RandomizedDifferential) {
     if (a.status == p::SearchStatus::kSuccess) {
       double cost = 0;ASSERT_TRUE(p::validPath(g, b.path, o, &cost)) << iteration;ASSERT_NEAR(
         a.cost, b.cost, 1e-9) << iteration;
+    }
+  }
+}
+TEST(Core, RandomizedIncrementalDifferential) {
+  std::mt19937 rng(20260728);
+  std::bernoulli_distribution initially_blocked(0.18);
+  std::uniform_int_distribution<std::size_t> changed_cell(1, 398);
+  constexpr int kScenarios = 50;
+  constexpr int kRepairsPerScenario = 10;
+
+  for (int scenario = 0; scenario < kScenarios; ++scenario) {
+    auto g = grid(20, 20);
+    for (auto & cost : g.costs) {
+      cost = initially_blocked(rng) ? 253 : 0;
+    }
+    g.costs.front() = 0;
+    g.costs.back() = 0;
+
+    p::SearchOptions options;
+    options.cost_penalty = static_cast<double>(scenario % 4) * 0.25;
+    p::DStarLite dstar;
+
+    for (int repair = 0; repair <= kRepairsPerScenario; ++repair) {
+      if (repair > 0) {
+        const auto cell = changed_cell(rng);
+        g.costs[cell] = g.costs[cell] == 253 ? 0 : 253;
+      }
+
+      const auto fresh = p::freshAstar(g, 0, g.costs.size() - 1, options);
+      const auto incremental = dstar.replan(g, 0, g.costs.size() - 1, options);
+      ASSERT_EQ(
+        fresh.status == p::SearchStatus::kSuccess,
+        incremental.status == p::SearchStatus::kSuccess)
+        << "scenario=" << scenario << " repair=" << repair;
+      if (fresh.status == p::SearchStatus::kSuccess) {
+        double incremental_cost = 0.0;
+        ASSERT_TRUE(p::validPath(g, incremental.path, options, &incremental_cost))
+          << "scenario=" << scenario << " repair=" << repair;
+        ASSERT_NEAR(fresh.cost, incremental_cost, 1e-9)
+          << "scenario=" << scenario << " repair=" << repair;
+      }
     }
   }
 }

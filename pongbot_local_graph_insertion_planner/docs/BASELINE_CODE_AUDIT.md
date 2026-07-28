@@ -1,5 +1,68 @@
 # Baseline code audit — Local Graph Insertion experiment
 
+## 2026-07-28 implementation audit
+
+Repository state at the start of this pass:
+
+- branch: `rubi_simulation`
+- commit: `fd2b49179f34984c678c52bbbdb731cad89bfaf4`
+- pre-existing dirty state: nested `Livox-SDK2` only
+
+The current plugin is
+`pongbot_local_graph_insertion_planner/AstarLocalPlanner`. Its production
+baseline is periodic fresh 8-connected global A* over an immutable fusion of:
+
+```text
+global StaticLayer + InflationLayer snapshot
+  max known costs from the latest 8 m x 8 m local costmap
+  -> fresh A* from current robot pose to final goal
+  -> collision-checked SimpleSmoother BT action
+  -> RPP
+```
+
+`local` describes the update footprint, not the search extent. No path splicing
+or explicit per-cell graph objects are used.
+
+### Confirmed implementation contracts
+
+- `enable_incremental_reuse=false` calls `freshAstar()` directly.
+- `enable_incremental_reuse=true` calls the existing D* Lite implementation.
+- Global snapshot copying holds the Costmap2D mutex only during the char-map
+  copy. Search reads only the private snapshot.
+- Local unknown and free cells do not erase global costs. Known costs 1 through
+  254 use max aggregation, so inflation is traversable but expensive and 253+
+  remains blocked.
+- Each plan starts from a new global base snapshot, so removed local obstacles
+  do not accumulate.
+- Cardinal/diagonal costs are `resolution` and `sqrt(2) * resolution`.
+  `cost_penalty_scale` multiplies destination-cell normalized cost in the one
+  shared edge-cost function used by fresh A* and D* Lite.
+- Start and goal are transformed into the global costmap frame. Exact endpoint
+  positions and normalized goal orientation are retained. A one-cell result
+  returns both start and goal poses for rotate-to-heading.
+- The planner publishes the exact fused snapshot as
+  `/astar_local/fused_costmap_raw`. The BT invokes ComputePathToPose at 1 Hz and
+  then Humble `SmoothPath` with `check_for_collisions=true`; SmootherServer uses
+  that fused raw costmap before FollowPath.
+- Runtime metrics use one `[AstarLocalMetrics]` record containing mode, time,
+  expansions, changed/overlay cells, age, path size/length/cost, snapshot
+  version, fallback, and failure.
+
+### Parameter resolution
+
+The previously dead `unknown_traversal_cost`, `enable_shortcutting`, and
+`publish_debug_metrics` entries were removed. All remaining `AstarLocal`
+parameters are declared, validated, and used. Latest-TF fallback is default-off.
+
+### Known performance boundary
+
+The optional D* implementation still scans the complete cost vector for change
+ratio and affected-cell discovery. It is state reuse, not a dirty-region-only
+pipeline. The 2026-07-28 synthetic 210,656-cell benchmark showed fewer expanded
+nodes but worse latency than fresh A*, so no D* speedup is claimed.
+
+## Historical read-only audit
+
 Audit date: 2026-07-23 (read-only phase)
 
 ## Scope and repository state
@@ -132,4 +195,3 @@ This design replans on the latest 2-D costmap snapshot only. It does not predict
 obstacles, generate controller-side detours, solve foothold feasibility, or provide 3-D
 traversability. Performance claims require identical-event measurements against fresh
 full A* and the existing planner.
-

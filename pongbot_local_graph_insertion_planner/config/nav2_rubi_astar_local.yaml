@@ -15,30 +15,25 @@ planner_server:
       require_local_costmap: true
       local_costmap_timeout: 2.0
 
-      # 현재 simulation의 약 0.08 s future extrapolation 진단용.
-      # TF timestamp를 바로잡은 뒤 false로 복귀하는 것이 최종 목표다.
+      # 과거 costmap을 현재 pose에 잘못 투영하지 않도록 exact timestamp가 기본이다.
       transform_timeout: 0.5
-      allow_latest_transform_fallback: true
+      allow_latest_transform_fallback: false
       transform_jump_translation_threshold: 1.0
       transform_jump_yaw_threshold: 0.785
 
       # Grid cost contract
       local_unknown_policy: "ignore"
       allow_unknown: false
-      unknown_traversal_cost: 1.0
       blocked_cost_threshold: 253
       cost_penalty_scale: 1.0
 
-      # D* Lite / fresh A*
+      # false: correctness baseline인 fresh A*. true: 실험용 D* Lite state reuse.
       incremental_change_ratio_threshold: 0.20
       max_planning_time: 5.0
-      enable_incremental_reuse: true
-
-      # Path post-processing
-      enable_shortcutting: false
+      enable_incremental_reuse: false
 
       # Runtime verification
-      publish_debug_metrics: true
+      fused_costmap_topic: "/astar_local/fused_costmap_raw"
       publish_debug_fused_grid: true
       debug_fused_grid_topic: "/astar_local/fused_grid"
 
@@ -184,7 +179,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
-        inflation_radius: 0.25
+        inflation_radius: 0.35
         cost_scaling_factor: 5.0
 
       # AstarLocal이 full /costmap_raw snapshot을 직접 구독하므로 유지한다.
@@ -225,7 +220,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
-        inflation_radius: 0.25
+        inflation_radius: 0.35
         cost_scaling_factor: 5.0
 
       always_send_full_costmap: false
@@ -234,7 +229,8 @@ global_costmap:
 smoother_server:
   ros__parameters:
     use_sim_time: false
-    costmap_topic: /global_costmap/costmap_raw
+    # Planner가 방금 검색·검증한 동일 fused snapshot으로 smoothing 충돌 검사.
+    costmap_topic: /astar_local/fused_costmap_raw
     footprint_topic: /global_costmap/published_footprint
     robot_base_frame: base_link
     transform_tolerance: 0.30
@@ -244,7 +240,7 @@ smoother_server:
     simple_smoother:
       plugin: "nav2_smoother::SimpleSmoother"
       tolerance: 1.0e-10
-      max_its: 1000
+      max_its: 200
       do_refinement: true
 
 

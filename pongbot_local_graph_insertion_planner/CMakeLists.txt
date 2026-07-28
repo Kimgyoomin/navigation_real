@@ -15,12 +15,17 @@ find_package(geometry_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
-add_library(pongbot_local_graph_insertion_core STATIC src/fresh_astar.cpp src/dstar_lite.cpp)
+add_library(pongbot_local_graph_insertion_core STATIC
+  src/fresh_astar.cpp
+  src/dstar_lite.cpp
+  src/local_overlay.cpp)
 target_compile_features(pongbot_local_graph_insertion_core PUBLIC cxx_std_17)
 target_include_directories(pongbot_local_graph_insertion_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
-add_library(${PROJECT_NAME} SHARED src/astar_local_planner.cpp)
+add_library(${PROJECT_NAME} SHARED
+  src/astar_local_planner.cpp
+  src/path_post_processor.cpp)
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -29,9 +34,19 @@ target_link_libraries(${PROJECT_NAME} pongbot_local_graph_insertion_core)
 ament_target_dependencies(${PROJECT_NAME}
   rclcpp rclcpp_lifecycle pluginlib nav2_core nav2_costmap_2d nav2_msgs nav_msgs
   geometry_msgs tf2 tf2_ros tf2_geometry_msgs)
+
+add_executable(benchmark_replanning benchmark/benchmark_replanning.cpp)
+target_compile_features(benchmark_replanning PUBLIC cxx_std_17)
+target_link_libraries(benchmark_replanning pongbot_local_graph_insertion_core)
+target_include_directories(benchmark_replanning PRIVATE include)
+
 pluginlib_export_plugin_description_file(nav2_core plugins.xml)
-install(TARGETS pongbot_local_graph_insertion_core ${PROJECT_NAME}
+install(TARGETS
+  pongbot_local_graph_insertion_core
+  ${PROJECT_NAME}
   ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
+install(TARGETS benchmark_replanning
+  RUNTIME DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include)
 install(FILES plugins.xml DESTINATION share/${PROJECT_NAME})
 install(DIRECTORY docs config launch behavior_trees DESTINATION share/${PROJECT_NAME})
@@ -40,5 +55,13 @@ if(BUILD_TESTING)
   ament_add_gtest(test_dstar_lite_core test/test_dstar_lite_core.cpp)
   target_link_libraries(test_dstar_lite_core pongbot_local_graph_insertion_core)
   target_include_directories(test_dstar_lite_core PRIVATE include)
+
+  ament_add_gtest(test_overlay_and_path
+    test/test_overlay_and_path.cpp
+    src/path_post_processor.cpp)
+  target_link_libraries(test_overlay_and_path pongbot_local_graph_insertion_core)
+  target_include_directories(test_overlay_and_path PRIVATE include)
+  ament_target_dependencies(test_overlay_and_path
+    geometry_msgs nav_msgs rclcpp tf2 tf2_geometry_msgs)
 endif()
 ament_package()

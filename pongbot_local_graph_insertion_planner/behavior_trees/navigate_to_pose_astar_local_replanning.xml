@@ -4,7 +4,15 @@
       <PipelineSequence name="NavigateWithReplanning">
         <RateController hz="1.0" name="RateControllerComputePathToPose">
           <RecoveryNode number_of_retries="1" name="ComputePathToPose">
-            <ComputePathToPose goal="{goal}" path="{path}" planner_id="AstarLocal"/>
+            <Sequence name="ComputeAndSmoothPath">
+              <ComputePathToPose goal="{goal}" path="{raw_path}" planner_id="AstarLocal"/>
+              <SmoothPath
+                smoother_id="simple_smoother"
+                unsmoothed_path="{raw_path}"
+                smoothed_path="{path}"
+                max_smoothing_duration="0.30"
+                check_for_collisions="true"/>
+            </Sequence>
             <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
           </RecoveryNode>
         </RateController>

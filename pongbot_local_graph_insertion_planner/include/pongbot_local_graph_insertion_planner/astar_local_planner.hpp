@@ -1,7 +1,9 @@
 #pragma once
 
 #include "pongbot_local_graph_insertion_planner/dstar_lite.hpp"
+#include "pongbot_local_graph_insertion_planner/local_overlay.hpp"
 
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -35,16 +37,20 @@ private:
   struct LocalSnapshot
   {
     nav2_msgs::msg::Costmap::SharedPtr message;
-    rclcpp::Time received_at{0, 0, RCL_ROS_TIME};
   };
 
   void localCostmapCallback(nav2_msgs::msg::Costmap::SharedPtr message);
-  GridSnapshot copyGlobalCostmap() const;
+  GridSnapshot copyGlobalCostmap();
 
   bool fuseLocalOverlay(
     GridSnapshot & fused,
     std::size_t & overlay_cells,
     double & local_age,
+    std::string & failure);
+
+  bool transformPoseToGlobal(
+    const geometry_msgs::msg::PoseStamped & input,
+    geometry_msgs::msg::PoseStamped & output,
     std::string & failure) const;
 
   bool poseToCell(
@@ -53,15 +59,20 @@ private:
     std::size_t & cell) const;
 
   std::size_t countChangedCells(const GridSnapshot & grid) const;
-  nav_msgs::msg::Path buildPath(
-    const GridSnapshot & grid,
-    const SearchResult & result,
-    const geometry_msgs::msg::PoseStamped & start,
-    const geometry_msgs::msg::PoseStamped & goal) const;
   const char * planningMode() const;
 
   void publishFusedGrid(const GridSnapshot & grid) const;
-  static geometry_msgs::msg::Quaternion normalizedQuaternion(double yaw);
+  void logMetrics(
+    const char * mode,
+    double planning_time_ms,
+    const SearchResult & result,
+    std::size_t changed_cells,
+    std::size_t overlay_cells,
+    double local_age,
+    double path_length,
+    std::uint64_t snapshot_version,
+    const char * fallback_reason,
+    const std::string & failure_reason) const;
 
   rclcpp_lifecycle::LifecycleNode::WeakPtr parent_;
   rclcpp::Logger logger_{rclcpp::get_logger("astar_local")};
@@ -70,6 +81,7 @@ private:
   std::shared_ptr<tf2_ros::Buffer> tf_;
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros_;
   rclcpp::Subscription<nav2_msgs::msg::Costmap>::SharedPtr local_subscription_;
+  rclcpp::Publisher<nav2_msgs::msg::Costmap>::SharedPtr fused_costmap_publisher_;
   rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr debug_publisher_;
   mutable std::mutex local_mutex_;
   LocalSnapshot local_snapshot_;
@@ -80,11 +92,20 @@ private:
   bool allow_unknown_{false};
   bool allow_latest_transform_fallback_{false};
   bool publish_debug_fused_grid_{true};
+  bool enable_incremental_reuse_{false};
+  bool have_last_overlay_transform_{false};
   int blocked_cost_threshold_{253};
   double local_costmap_timeout_{2.0};
   double transform_timeout_{0.2};
   double max_planning_time_{1.0};
+  double cost_penalty_scale_{1.0};
+  double transform_jump_translation_threshold_{1.0};
+  double transform_jump_yaw_threshold_{0.785};
+  std::uint64_t snapshot_version_{0};
+  Transform2D last_overlay_transform_;
+  std::string local_unknown_policy_{"ignore"};
   std::string local_costmap_topic_{"/local_costmap/costmap_raw"};
+  std::string fused_costmap_topic_{"/astar_local/fused_costmap_raw"};
   std::string debug_fused_grid_topic_{"/astar_local/fused_grid"};
 };
 }  // namespace pongbot_local_graph_insertion_planner

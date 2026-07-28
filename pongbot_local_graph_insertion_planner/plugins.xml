@@ -1,1 +1,11 @@
-<library path="pongbot_local_graph_insertion_planner"><class type="pongbot_local_graph_insertion_planner::AstarLocalPlanner" base_class_type="nav2_core::GlobalPlanner" name="pongbot_local_graph_insertion_planner/AstarLocalPlanner"><description>Local cost overlay insertion into an implicit global grid graph.</description></class></library>
+<library path="pongbot_local_graph_insertion_planner">
+  <class
+    type="pongbot_local_graph_insertion_planner::AstarLocalPlanner"
+    base_class_type="nav2_core::GlobalPlanner"
+    name="pongbot_local_graph_insertion_planner/AstarLocalPlanner">
+    <description>
+      Fresh 8-connected global grid A* with a local costmap overlay and optional
+      D* Lite state reuse.
+    </description>
+  </class>
+</library>
