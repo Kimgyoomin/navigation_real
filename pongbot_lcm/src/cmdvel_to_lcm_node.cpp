@@ -25,7 +25,7 @@ public:
     // ROS / LCM interface parameters
     // ------------------------------------------------------------------------
     cmd_vel_topic_ = declare_parameter<std::string>("cmd_vel_topic", "/cmd_vel");
-    lcm_channel_ = declare_parameter<std::string>("lcm_channel", "CMD_VEL");
+    lcm_channel_ = declare_parameter<std::string>("lcm_channel", "NAV_CMD_VEL");
     lcm_url_ = declare_parameter<std::string>(
       "lcm_url", "udpm://239.255.76.67:7667?ttl=1");
 

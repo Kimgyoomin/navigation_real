@@ -12,7 +12,7 @@ def generate_launch_description():
             parameters=[{
                 "joy_topic": "/joy",
                 "lcm_channel": "CMD_VEL",
-                "lcm_url": "udpm://239.255.76.67:7667?ttl=1",
+                "lcm_url": "udpm://239.255.76.67:7667?ttl=255",
 
                 "publish_rate_hz": 50.0,
                 "deadman_timeout_s": 0.3,

@@ -8,7 +8,7 @@
         cube_side_length: 1000.0
         runtime_pos_log_enable: false
         # map_file_path: "./test.pcd"
-        map_file_path: "/home/ams4976/ros2_ws/src/FAST_LIO_LOCALIZATION2/PCD/test_RUBI_wheeled_03.pcd"
+        map_file_path: "/home/rclab/ros2_ws/src/navigation_real/FAST_LIO_LOCALIZATION2/PCD/test_RUBI_wheeled_03.pcd"
 
         common:
             lid_topic:  "/livox/lidar"

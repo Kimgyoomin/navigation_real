@@ -40,7 +40,7 @@ def generate_launch_description():
         # GenZ-ICP config
         DeclareLaunchArgument("bagfile", default_value=""),
         DeclareLaunchArgument("config_file", default_value="localization_corridor.yaml"),
-        DeclareLaunchArgument("map_path", default_value="/home/ams4976/ros2_ws/src/FAST_LIO_LOCALIZATION2/PCD/test.pcd"),
+        DeclareLaunchArgument("map_path", default_value="/home/rclab/ros2_ws/src/navigation_real/FAST_LIO_LOCALIZATION2/PCD/test.pcd"),
 
         # Frame policy
         DeclareLaunchArgument("map_frame", default_value="map"),
