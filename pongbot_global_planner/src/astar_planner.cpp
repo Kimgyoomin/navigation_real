@@ -157,7 +157,7 @@ nav_msgs::msg::Path AstarPlanner::createPlan(
   // Policy:
   //   - UNKNOWN              : blocked
   //   - LETHAL obstacle      : blocked
-  //   - Inflated cost region : traversable, but penalized
+  //   - Inflated cost region : blocked
   //
   // This is important because if you block INSCRIBED_INFLATED_OBSTACLE and above,
   // doors / narrow passages often become disconnected.
@@ -170,8 +170,13 @@ nav_msgs::msg::Path AstarPlanner::createPlan(
         return false;
       }
 
-      // Only lethal obstacle is strictly forbidden
+      // lethal obstacle is strictly forbidden
       if (c >= nav2_costmap_2d::LETHAL_OBSTACLE) {
+        return false;
+      }
+
+      // DWB BaseObstacle과 동일한 통과 기준
+      if (c == nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE) {
         return false;
       }
 
@@ -399,26 +404,26 @@ nav_msgs::msg::Path AstarPlanner::createPlan(
   //   - Smoothing should be done after map->world conversion
   //   - Orientation must be computed AFTER smoothing
   // --------------------------------------------------------------------------
-  if (path.poses.size() >= 3) {
-    auto smoothed_poses = path.poses;
+  // if (path.poses.size() >= 3) {
+  //   auto smoothed_poses = path.poses;
 
-    for (std::size_t i = 1; i + 1 < path.poses.size(); ++i) {
-      smoothed_poses[i].pose.position.x =
-        (path.poses[i - 1].pose.position.x +
-        path.poses[i].pose.position.x +
-        path.poses[i + 1].pose.position.x) / 3.0;
+  //   for (std::size_t i = 1; i + 1 < path.poses.size(); ++i) {
+  //     smoothed_poses[i].pose.position.x =
+  //       (path.poses[i - 1].pose.position.x +
+  //       path.poses[i].pose.position.x +
+  //       path.poses[i + 1].pose.position.x) / 3.0;
 
-      smoothed_poses[i].pose.position.y =
-        (path.poses[i - 1].pose.position.y +
-        path.poses[i].pose.position.y +
-        path.poses[i + 1].pose.position.y) / 3.0;
+  //     smoothed_poses[i].pose.position.y =
+  //       (path.poses[i - 1].pose.position.y +
+  //       path.poses[i].pose.position.y +
+  //       path.poses[i + 1].pose.position.y) / 3.0;
 
-      // Keep z as-is (currently planar path)
-      smoothed_poses[i].pose.position.z = path.poses[i].pose.position.z;
-    }
+  //     // Keep z as-is (currently planar path)
+  //     smoothed_poses[i].pose.position.z = path.poses[i].pose.position.z;
+  //   }
 
-    path.poses = std::move(smoothed_poses);
-  }
+  //   path.poses = std::move(smoothed_poses);
+  // }
 
 
   // --------------------------------------------------------------------------
