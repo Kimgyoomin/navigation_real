@@ -1,0 +1,71 @@
+rubi_heightmap_wavefront_planner:
+  ros__parameters:
+    use_sim_time: false
+    planner_mode: wavefront  # wavefront | rrt_star
+
+    # ROS interface. The FastDEM cloud is an elevation-map snapshot, not raw LiDAR.
+    input_cloud_topic: /fastdem/mapping/cloud_global
+    goal_topic: /goal_pose
+    path_topic: /rubi/heightmap_planner/path
+    debug_nodes_topic: /rubi/heightmap_planner/debug/nodes
+    debug_edges_topic: /rubi/heightmap_planner/debug/edges
+    debug_rejected_topic: /rubi/heightmap_planner/debug/rejected
+    base_frame: body
+
+    # FastDEM map contract. Verify these against the running config/topic.
+    map_resolution_m: 0.10
+    lattice_tolerance_m: 0.02
+    reject_duplicate_cells: true
+    max_grid_cells: 5000000
+    transform_timeout_s: 0.20
+
+    # Terrain evaluation. These are software bootstrap values, not verified
+    # physical limits of RUBI.
+    pca_analysis_radius_m: 0.30
+    pca_min_points: 6
+    support_radius_m: 0.20
+    minimum_observed_support_ratio: 1.00
+    max_slope_deg: 15.0
+    max_roughness_m: -1.0  # negative disables the roughness hard gate
+    max_step_height_m: 0.08
+    edge_check_spacing_m: 0.05
+    check_footprint_along_edge: true
+
+    # TRG-inspired FIFO wavefront sampled roadmap.
+    node_sampling_distance_m: 0.50
+    samples_per_expansion: 12
+    merge_radius_m: 0.25
+    neighbor_connection_radius_m: 0.75
+    goal_connection_distance_m: 0.75
+    max_nodes: 4000
+    max_expansions: 4000
+    max_build_time_ms: 2000
+    stop_when_goal_connected: true
+
+    # Standard RRT*. These parameters are inactive while planner_mode=wavefront.
+    # RRT* draws one global sample per iteration; it does not sample N points
+    # around each node.
+    rrt_star.max_iterations: 5000
+    rrt_star.goal_bias: 0.05
+    rrt_star.steer_distance_m: 0.50
+    rrt_star.rewire_radius_min_m: 0.30
+    rrt_star.rewire_radius_max_m: 1.00
+    rrt_star.goal_connection_distance_m: 0.75
+    rrt_star.max_nodes: 4000
+    rrt_star.max_planning_time_ms: 2000
+    rrt_star.stop_on_first_solution: false
+    rrt_star.random_seed: 42
+
+    # Graph A* cost. Step and excessive slope remain hard-invalid.
+    distance_weight: 1.0
+    slope_risk_weight: 3.0
+    step_risk_weight: 0.0
+    roughness_risk_weight: 0.0  # nonzero is not supported in V0
+
+    # nav_msgs/Path and RViz.
+    path_output_spacing_m: 0.05
+    node_marker_scale_m: 0.08
+    edge_marker_width_m: 0.025
+    path_marker_width_m: 0.08
+    rejected_marker_scale_m: 0.07
+    max_rejected_markers: 5000
