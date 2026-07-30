@@ -5,7 +5,6 @@
 #include <cstring>
 #include <functional>
 #include <limits>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -25,9 +24,9 @@
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_listener.h"
-#include "visualization_msgs/msg/marker.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
 
+#include "rubi_heightmap_wavefront_planner/planner_visualization.hpp"
 #include "rubi_heightmap_wavefront_planner/rrt_star_planner.hpp"
 #include "rubi_heightmap_wavefront_planner/terrain_evaluator.hpp"
 #include "rubi_heightmap_wavefront_planner/terrain_snapshot.hpp"
@@ -106,66 +105,6 @@ std::string terminationName(const WavefrontTermination termination)
   return "unknown";
 }
 
-std::string rejectionKindName(const RejectedSampleKind kind)
-{
-  switch (kind) {
-    case RejectedSampleKind::kNodeInvalid:
-      return "node_invalid";
-    case RejectedSampleKind::kExpansionEdgeInvalid:
-      return "expansion_edge_invalid";
-    case RejectedSampleKind::kMergeEdgeInvalid:
-      return "merge_edge_invalid";
-    case RejectedSampleKind::kGoalEdgeInvalid:
-      return "goal_edge_invalid";
-    case RejectedSampleKind::kNonFiniteEvaluation:
-      return "non_finite";
-    case RejectedSampleKind::kDuplicateEdge:
-      return "duplicate_edge";
-  }
-  return "unknown";
-}
-
-auto makeColor(const float red, const float green, const float blue, const float alpha)
-{
-  visualization_msgs::msg::Marker marker;
-  auto color = marker.color;
-  color.r = red;
-  color.g = green;
-  color.b = blue;
-  color.a = alpha;
-  return color;
-}
-
-auto rejectionColor(
-  const TerrainInvalidReason reason,
-  const RejectedSampleKind kind)
-{
-  switch (reason) {
-    case TerrainInvalidReason::kOutOfBounds:
-      return makeColor(0.25F, 0.25F, 0.25F, 0.90F);
-    case TerrainInvalidReason::kUnknown:
-      return makeColor(0.55F, 0.55F, 0.55F, 0.90F);
-    case TerrainInvalidReason::kInsufficientFootprintSupport:
-      return makeColor(1.00F, 0.50F, 0.05F, 0.95F);
-    case TerrainInvalidReason::kInsufficientPcaSupport:
-      return makeColor(1.00F, 0.90F, 0.05F, 0.95F);
-    case TerrainInvalidReason::kSlopeLimit:
-      return makeColor(1.00F, 0.05F, 0.05F, 0.95F);
-    case TerrainInvalidReason::kRoughnessLimit:
-      return makeColor(0.65F, 0.20F, 1.00F, 0.95F);
-    case TerrainInvalidReason::kStepLimit:
-      return makeColor(1.00F, 0.00F, 0.75F, 0.95F);
-    case TerrainInvalidReason::kInvalidInput:
-      return makeColor(0.05F, 0.05F, 0.05F, 0.95F);
-    case TerrainInvalidReason::kNone:
-      break;
-  }
-  if (kind == RejectedSampleKind::kDuplicateEdge) {
-    return makeColor(0.00F, 0.85F, 0.90F, 0.85F);
-  }
-  return makeColor(0.10F, 0.10F, 0.10F, 0.90F);
-}
-
 bool finitePoint(const Point2D point) noexcept
 {
   return std::isfinite(point.x) && std::isfinite(point.y);
@@ -230,6 +169,15 @@ private:
   {
     std::vector<TerrainPoint> points;
     std::uint64_t content_hash{0U};
+  };
+
+  struct ResultPublication
+  {
+    bool published{false};
+    std::size_t path_pose_count{0U};
+    std::size_t rejected_total{0U};
+    std::size_t rejected_shown{0U};
+    bool rejected_truncated{false};
   };
 
   static std::size_t positiveSizeParameter(
@@ -631,7 +579,8 @@ private:
       hashUint32(parsed.content_hash, x_bits);
       hashUint32(parsed.content_hash, y_bits);
       hashUint32(parsed.content_hash, z_bits);
-      parsed.points.push_back(TerrainPoint{
+      parsed.points.push_back(
+        TerrainPoint{
           static_cast<double>(x), static_cast<double>(y), static_cast<double>(z)});
     }
     preflightLattice(parsed.points);
@@ -772,73 +721,63 @@ private:
       } else {
         result = rrt_star_planner_->plan(terrain, start, goal_xy);
       }
-      if (!result.success) {
-        publishClearForState(state);
+      std::vector<TerrainPoint> dense_path;
+      if (result.success) {
+        std::string validation_error;
+        if (!revalidateGraphPath(result, terrain, validation_error)) {
+          failAndClear(
+            state, "Final graph path revalidation failed: " + validation_error);
+          return;
+        }
+        if (!densifyPath(result, *state->snapshot, dense_path, validation_error)) {
+          failAndClear(
+            state, "Path densification failed: " + validation_error);
+          return;
+        }
+      }
+
+      const auto stamp = now();
+      const ResultPublication publication =
+        publishResultForState(state, result, dense_path, stamp);
+      if (!publication.published) {
+        return;
+      }
+
+      if (result.success) {
+        RCLCPP_INFO(
+          get_logger(),
+          "Planning result: mode=%s map_generation=%lu success=true "
+          "termination=%s nodes=%zu edges=%zu rejected_total=%zu "
+          "rejected_shown=%zu expansions=%zu build_time_ms=%.2f "
+          "path_pose_count=%zu",
+          planner_mode_name_.c_str(),
+          static_cast<unsigned long>(state->generation),
+          terminationName(result.termination).c_str(), result.nodes.size(),
+          result.edges.size(), publication.rejected_total,
+          publication.rejected_shown, result.expansions, result.build_time_ms,
+          publication.path_pose_count);
+      } else {
         RCLCPP_WARN(
           get_logger(),
-          "Planning failed on map generation=%lu: %s; termination=%s; "
-          "rejected[node=%zu expansion_edge=%zu merge_edge=%zu goal_edge=%zu "
-          "non_finite=%zu duplicate=%zu]",
-          static_cast<unsigned long>(state->generation), result.message.c_str(),
-          terminationName(result.termination).c_str(),
+          "Planning result: mode=%s map_generation=%lu success=false "
+          "termination=%s nodes=%zu edges=%zu rejected_total=%zu "
+          "rejected_shown=%zu expansions=%zu build_time_ms=%.2f "
+          "path_pose_count=%zu message='%s' "
+          "reject_counts[node=%zu expansion_edge=%zu merge_edge=%zu "
+          "goal_edge=%zu non_finite=%zu duplicate=%zu]",
+          planner_mode_name_.c_str(),
+          static_cast<unsigned long>(state->generation),
+          terminationName(result.termination).c_str(), result.nodes.size(),
+          result.edges.size(), publication.rejected_total,
+          publication.rejected_shown, result.expansions, result.build_time_ms,
+          publication.path_pose_count, result.message.c_str(),
           result.reject_counts.node_invalid,
           result.reject_counts.expansion_edge_invalid,
           result.reject_counts.merge_edge_invalid,
           result.reject_counts.goal_edge_invalid,
           result.reject_counts.non_finite_evaluation,
           result.reject_counts.duplicate_edge);
-        return;
       }
-
-      std::string validation_error;
-      if (!revalidateGraphPath(result, terrain, validation_error)) {
-        failAndClear(
-          state, "Final graph path revalidation failed: " + validation_error);
-        return;
-      }
-
-      std::vector<TerrainPoint> dense_path;
-      if (!densifyPath(result, *state->snapshot, dense_path, validation_error)) {
-        failAndClear(
-          state, "Path densification failed: " + validation_error);
-        return;
-      }
-
-      const auto stamp = now();
-      const nav_msgs::msg::Path path =
-        makePathMessage(dense_path, state->frame_id, stamp);
-      {
-        // Serialize publishing with map-change clearing. If a new map replaced
-        // this immutable snapshot while planning, silently discard the stale plan.
-        std::lock_guard<std::mutex> output_lock(output_mutex_);
-        {
-          std::lock_guard<std::mutex> state_lock(state_mutex_);
-          if (map_state_ != state) {
-            RCLCPP_WARN(
-              get_logger(),
-              "Discarded a completed plan because its map snapshot was superseded");
-            return;
-          }
-        }
-        path_publisher_->publish(path);
-        nodes_publisher_->publish(
-          makeNodeMarkers(result, state->frame_id, stamp));
-        edges_publisher_->publish(
-          makeEdgeMarkers(result, dense_path, state->frame_id, stamp));
-        rejected_publisher_->publish(
-          makeRejectedMarkers(result, *state->snapshot, state->frame_id, stamp));
-      }
-
-      RCLCPP_INFO(
-        get_logger(),
-        "Path published: mode=%s, generation=%lu, nodes=%zu, edges=%zu, "
-        "graph_path=%zu, dense_poses=%zu, work_units=%zu, rewires=%zu, "
-        "build_time=%.2f ms, termination=%s",
-        planner_mode_name_.c_str(),
-        static_cast<unsigned long>(state->generation), result.nodes.size(),
-        result.edges.size(), result.path_node_ids.size(), path.poses.size(),
-        result.expansions, result.rewires, result.build_time_ms,
-        terminationName(result.termination).c_str());
     } catch (const tf2::TransformException & error) {
       failAndClear(
         state,
@@ -994,170 +933,65 @@ private:
     return path;
   }
 
-  visualization_msgs::msg::Marker makeDeleteAllMarker(
-    const std::string & frame_id,
-    const rclcpp::Time & stamp) const
-  {
-    visualization_msgs::msg::Marker marker;
-    marker.header.frame_id = frame_id;
-    marker.header.stamp = stamp;
-    marker.action = visualization_msgs::msg::Marker::DELETEALL;
-    return marker;
-  }
-
-  visualization_msgs::msg::MarkerArray makeNodeMarkers(
-    const PlanResult & result,
-    const std::string & frame_id,
-    const rclcpp::Time & stamp) const
-  {
-    visualization_msgs::msg::MarkerArray array;
-    array.markers.push_back(makeDeleteAllMarker(frame_id, stamp));
-    visualization_msgs::msg::Marker marker;
-    marker.header.frame_id = frame_id;
-    marker.header.stamp = stamp;
-    marker.ns = planner_mode_name_ + "_nodes";
-    marker.id = 0;
-    marker.type = visualization_msgs::msg::Marker::SPHERE_LIST;
-    marker.action = visualization_msgs::msg::Marker::ADD;
-    marker.pose.orientation.w = 1.0;
-    marker.scale.x = node_marker_scale_m_;
-    marker.scale.y = node_marker_scale_m_;
-    marker.scale.z = node_marker_scale_m_;
-    for (const auto & node : result.nodes) {
-      geometry_msgs::msg::Point point;
-      point.x = node.point.x;
-      point.y = node.point.y;
-      point.z = node.point.z + 0.5 * node_marker_scale_m_;
-      marker.points.push_back(point);
-      switch (node.role) {
-        case GraphNodeRole::kStart:
-          marker.colors.push_back(makeColor(0.00F, 1.00F, 1.00F, 1.00F));
-          break;
-        case GraphNodeRole::kGoal:
-          marker.colors.push_back(makeColor(0.85F, 0.10F, 1.00F, 1.00F));
-          break;
-        case GraphNodeRole::kSampled:
-          marker.colors.push_back(makeColor(0.20F, 0.80F, 0.35F, 0.90F));
-          break;
-      }
-    }
-    array.markers.push_back(std::move(marker));
-    return array;
-  }
-
-  visualization_msgs::msg::MarkerArray makeEdgeMarkers(
+  ResultPublication publishResultForState(
+    const std::shared_ptr<const MapState> & expected_state,
     const PlanResult & result,
     const std::vector<TerrainPoint> & dense_path,
-    const std::string & frame_id,
-    const rclcpp::Time & stamp) const
+    const rclcpp::Time & stamp)
   {
-    visualization_msgs::msg::MarkerArray array;
-    array.markers.push_back(makeDeleteAllMarker(frame_id, stamp));
+    const nav_msgs::msg::Path path =
+      makePathMessage(dense_path, expected_state->frame_id, stamp);
+    PlannerVisualizationParameters visualization_parameters;
+    visualization_parameters.marker_namespace = planner_mode_name_;
+    visualization_parameters.node_marker_scale_m = node_marker_scale_m_;
+    visualization_parameters.edge_marker_width_m = edge_marker_width_m_;
+    visualization_parameters.path_marker_width_m = path_marker_width_m_;
+    visualization_parameters.rejected_marker_scale_m =
+      rejected_marker_scale_m_;
+    visualization_parameters.max_rejected_markers = max_rejected_markers_;
+    const PlannerVisualizationSnapshot visualization =
+      makePlannerVisualization(
+      result, *expected_state->snapshot, dense_path, expected_state->frame_id,
+      static_cast<builtin_interfaces::msg::Time>(stamp),
+      visualization_parameters);
 
-    visualization_msgs::msg::Marker edges;
-    edges.header.frame_id = frame_id;
-    edges.header.stamp = stamp;
-    edges.ns = planner_mode_name_ + "_risk_edges";
-    edges.id = 0;
-    edges.type = visualization_msgs::msg::Marker::LINE_LIST;
-    edges.action = visualization_msgs::msg::Marker::ADD;
-    edges.pose.orientation.w = 1.0;
-    edges.scale.x = edge_marker_width_m_;
-    for (const auto & edge : result.edges) {
-      if (edge.from >= result.nodes.size() || edge.to >= result.nodes.size()) {
-        continue;
+    ResultPublication publication;
+    publication.path_pose_count = path.poses.size();
+    publication.rejected_total = visualization.rejected_total;
+    publication.rejected_shown = visualization.rejected_shown;
+    publication.rejected_truncated = visualization.rejected_truncated;
+    {
+      // Serialize result publication with map-change clearing. The four ROS
+      // topics are not atomic, but they share one immutable map and timestamp.
+      std::lock_guard<std::mutex> output_lock(output_mutex_);
+      {
+        std::lock_guard<std::mutex> state_lock(state_mutex_);
+        if (
+          map_state_ != expected_state ||
+          map_state_->generation != expected_state->generation)
+        {
+          RCLCPP_WARN(
+            get_logger(),
+            "Discarded a completed plan because its map snapshot was superseded");
+          return publication;
+        }
       }
-      const double normalized_slope = std::clamp(
-        edge.terrain.max_slope_deg /
-        std::max(terrain_parameters_.max_slope_deg, kEpsilon),
-        0.0, 1.0);
-      const auto color = makeColor(
-        1.0F,
-        static_cast<float>(1.0 - normalized_slope),
-        static_cast<float>(1.0 - normalized_slope),
-        0.82F);
-      for (const NodeId id : {edge.from, edge.to}) {
-        geometry_msgs::msg::Point point;
-        point.x = result.nodes[id].point.x;
-        point.y = result.nodes[id].point.y;
-        point.z = result.nodes[id].point.z + 0.02;
-        edges.points.push_back(point);
-        edges.colors.push_back(color);
-      }
+      path_publisher_->publish(path);
+      nodes_publisher_->publish(visualization.nodes);
+      edges_publisher_->publish(visualization.edges);
+      rejected_publisher_->publish(visualization.rejected);
+      publication.published = true;
     }
-    array.markers.push_back(std::move(edges));
-
-    visualization_msgs::msg::Marker path;
-    path.header.frame_id = frame_id;
-    path.header.stamp = stamp;
-    path.ns = planner_mode_name_ + "_final_path";
-    path.id = 1;
-    path.type = visualization_msgs::msg::Marker::LINE_STRIP;
-    path.action = visualization_msgs::msg::Marker::ADD;
-    path.pose.orientation.w = 1.0;
-    path.scale.x = path_marker_width_m_;
-    path.color = makeColor(0.00F, 1.00F, 0.25F, 1.00F);
-    for (const auto & sample : dense_path) {
-      geometry_msgs::msg::Point point;
-      point.x = sample.x;
-      point.y = sample.y;
-      point.z = sample.z + 0.04;
-      path.points.push_back(point);
+    if (publication.rejected_truncated) {
+      RCLCPP_WARN(
+        get_logger(),
+        "Rejected visualization truncated: map_generation=%lu "
+        "rejected_shown=%zu rejected_total=%zu cap=%zu",
+        static_cast<unsigned long>(expected_state->generation),
+        publication.rejected_shown, publication.rejected_total,
+        max_rejected_markers_);
     }
-    array.markers.push_back(std::move(path));
-    return array;
-  }
-
-  visualization_msgs::msg::MarkerArray makeRejectedMarkers(
-    const PlanResult & result,
-    const TerrainSnapshot & snapshot,
-    const std::string & frame_id,
-    const rclcpp::Time & stamp) const
-  {
-    visualization_msgs::msg::MarkerArray array;
-    array.markers.push_back(makeDeleteAllMarker(frame_id, stamp));
-    std::map<std::string, visualization_msgs::msg::Marker> buckets;
-    const std::size_t count =
-      std::min(result.rejected.size(), max_rejected_markers_);
-    for (std::size_t index = 0U; index < count; ++index) {
-      const auto & rejected = result.rejected[index];
-      const std::string code =
-        rejected.terrain_reason == TerrainInvalidReason::kNone ?
-        rejectionKindName(rejected.kind) :
-        std::string(toString(rejected.terrain_reason));
-      auto insertion = buckets.emplace(code, visualization_msgs::msg::Marker{});
-      auto & marker = insertion.first->second;
-      if (insertion.second) {
-        marker.header.frame_id = frame_id;
-        marker.header.stamp = stamp;
-        marker.ns = planner_mode_name_ + "_rejected/" + code;
-        marker.type = visualization_msgs::msg::Marker::SPHERE_LIST;
-        marker.action = visualization_msgs::msg::Marker::ADD;
-        marker.pose.orientation.w = 1.0;
-        marker.scale.x = rejected_marker_scale_m_;
-        marker.scale.y = rejected_marker_scale_m_;
-        marker.scale.z = rejected_marker_scale_m_;
-        marker.color = rejectionColor(rejected.terrain_reason, rejected.kind);
-      }
-      geometry_msgs::msg::Point point;
-      point.x = rejected.candidate.x;
-      point.y = rejected.candidate.y;
-      const auto elevation = snapshot.elevationAt(point.x, point.y);
-      if (elevation) {
-        point.z = *elevation + 0.5 * rejected_marker_scale_m_;
-      } else if (rejected.source < result.nodes.size()) {
-        point.z =
-          result.nodes[rejected.source].point.z +
-          0.5 * rejected_marker_scale_m_;
-      }
-      marker.points.push_back(point);
-    }
-    int marker_id = 0;
-    for (auto & item : buckets) {
-      item.second.id = marker_id++;
-      array.markers.push_back(std::move(item.second));
-    }
-    return array;
+    return publication;
   }
 
   void publishClearUnlocked(const std::string & frame_id)
@@ -1169,8 +1003,9 @@ private:
     empty_path.header.stamp = stamp;
     path_publisher_->publish(empty_path);
 
-    visualization_msgs::msg::MarkerArray clear;
-    clear.markers.push_back(makeDeleteAllMarker(safe_frame, stamp));
+    const visualization_msgs::msg::MarkerArray clear =
+      makeDeleteAllMarkerArray(
+      safe_frame, static_cast<builtin_interfaces::msg::Time>(stamp));
     nodes_publisher_->publish(clear);
     edges_publisher_->publish(clear);
     rejected_publisher_->publish(clear);

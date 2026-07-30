@@ -12,9 +12,11 @@ rubi_heightmap_wavefront_planner:
     debug_rejected_topic: /rubi/heightmap_planner/debug/rejected
     base_frame: body
 
-    # FastDEM map contract. Verify these against the running config/topic.
-    map_resolution_m: 0.05              # 0.1 -> 0.05 FastDEM의 resolution바꿈
-    lattice_tolerance_m: 0.01           # 0.02 -> 0.01
+    # FastDEM map contract. This is a consumer-side lattice interpretation:
+    # it does not resample the cloud. The FastDEM producer configuration must
+    # independently use the same 0.05 m resolution.
+    map_resolution_m: 0.05
+    lattice_tolerance_m: 0.01
     reject_duplicate_cells: true
     max_grid_cells: 5000000
     transform_timeout_s: 0.20
@@ -25,21 +27,23 @@ rubi_heightmap_wavefront_planner:
     pca_min_points: 6                           # 크게 하면 PCA가 안정적이지만 sparse, 경계 지역이 invalid 되기 쉬움, 실제 최솟값은 3 (평면 구성 최소 점 개수)
     support_radius_m: 0.20                      # Node 주변 원형 support 영역. 크게 하면 body 주변 unknown 단차를 더 보수적으로 검사하지만 계산과 rejection이 증가
     minimum_observed_support_ratio: 1.00
-    max_slope_deg: 15.0
+    max_slope_deg: 15.0                         # software bootstrap threshold, not a measured RUBI limit
     max_roughness_m: -1.0  # negative disables the roughness hard gate
     max_step_height_m: 0.08
-    edge_check_spacing_m: 0.025                 # 0.05 -> 0.025
+    edge_check_spacing_m: 0.025                 # half-cell checks for the 0.05 m lattice
     check_footprint_along_edge: true
 
     # TRG-inspired FIFO wavefront sampled roadmap.
-    node_sampling_distance_m: 0.30                  # 0.5 -> 0.3
-    samples_per_expansion: 20                       # 12 -> 20
-    merge_radius_m: 0.20                            # 0.25 -> 0.2
-    neighbor_connection_radius_m: 0.45              # 0.75 -> 0.45
-    goal_connection_distance_m: 0.45                # 0.75 -> 0.45
+    node_sampling_distance_m: 0.30
+    # Proposal directions evaluated per expansion, not the number of accepted
+    # graph nodes; merge/terrain rejection can reduce the accepted count.
+    samples_per_expansion: 20
+    merge_radius_m: 0.20
+    neighbor_connection_radius_m: 0.45
+    goal_connection_distance_m: 0.45
     max_nodes: 4000
     max_expansions: 4000
-    max_build_time_ms: 5000                         # 2000 -> 5000
+    max_build_time_ms: 5000
     stop_when_goal_connected: true
 
     # Standard RRT*. These parameters are inactive while planner_mode=wavefront.

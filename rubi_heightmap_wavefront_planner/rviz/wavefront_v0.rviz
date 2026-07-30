@@ -49,7 +49,7 @@ Visualization Manager:
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
-      Name: Risk Edges
+      Name: Valid Edges
       Namespaces:
         {}
       Topic:
@@ -61,7 +61,7 @@ Visualization Manager:
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
-      Name: Rejected Samples
+      Name: Rejected Nodes / Edges
       Namespaces:
         {}
       Topic:
@@ -74,7 +74,7 @@ Visualization Manager:
     - Alpha: 1
       Buffer Length: 1
       Class: rviz_default_plugins/Path
-      Color: 0; 255; 90
+      Color: 255; 255; 0
       Enabled: true
       Head Diameter: 0.1
       Head Length: 0.2
@@ -86,7 +86,7 @@ Visualization Manager:
         X: 0
         Y: 0
         Z: 0.04
-      Pose Color: 0; 255; 90
+      Pose Color: 255; 255; 0
       Pose Style: None
       Radius: 0.03
       Shaft Diameter: 0.05

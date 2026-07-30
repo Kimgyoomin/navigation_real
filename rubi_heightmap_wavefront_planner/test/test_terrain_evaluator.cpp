@@ -237,6 +237,95 @@ TEST(TerrainEvaluator, FlatObservedEdgeIsValidWithMetricCost)
   EXPECT_NEAR(edge.cost, 0.8, 1.0e-8);
 }
 
+TEST(TerrainEvaluator, FiveCentimeterFlatGridSupportsHalfCellEdgeSampling)
+{
+  constexpr double resolution = 0.05;
+  constexpr double edge_spacing = 0.025;
+  const TerrainSnapshot snapshot = TerrainSnapshot::fromPoints(
+    makePlane(29U, 17U, resolution, -0.2, -0.4, 0.0, 0.0),
+    resolution, 1.0e-6);
+
+  auto parameters = permissiveParameters();
+  parameters.pca_radius_m = 0.16;
+  parameters.edge_sample_spacing_m = edge_spacing;
+  const TerrainEvaluator evaluator(snapshot, parameters);
+
+  EXPECT_DOUBLE_EQ(snapshot.resolution(), resolution);
+  EXPECT_DOUBLE_EQ(evaluator.parameters().edge_sample_spacing_m, edge_spacing);
+  const EdgeEvaluation edge = evaluator.evaluateEdge({0.1, 0.0}, {0.9, 0.0});
+  ASSERT_TRUE(edge.valid);
+  EXPECT_EQ(edge.reason, TerrainInvalidReason::kNone);
+  EXPECT_EQ(edge.sample_count, 33U);
+  EXPECT_NEAR(edge.length_xy_m, 0.8, 1.0e-12);
+  EXPECT_NEAR(edge.length_3d_m, 0.8, 1.0e-12);
+  EXPECT_NEAR(edge.cost, 0.8, 1.0e-8);
+}
+
+TEST(TerrainEvaluator, FiveCentimeterGridRejectsSpacingAboveHalfCell)
+{
+  constexpr double resolution = 0.05;
+  const TerrainSnapshot snapshot = TerrainSnapshot::fromPoints(
+    makePlane(9U, 9U, resolution, -0.2, -0.2, 0.0, 0.0),
+    resolution, 1.0e-6);
+  auto parameters = permissiveParameters();
+  parameters.edge_sample_spacing_m = 0.025001;
+
+  EXPECT_THROW(TerrainEvaluator(snapshot, parameters), std::invalid_argument);
+}
+
+TEST(TerrainEvaluator, FiveCentimeterEdgeSamplingPreservesUnknownHoleGate)
+{
+  constexpr double resolution = 0.05;
+  auto points = makePlane(
+    29U, 17U, resolution, -0.2, -0.4, 0.0, 0.0);
+  for (auto iterator = points.begin(); iterator != points.end(); ++iterator) {
+    if (
+      std::abs(iterator->x - 0.5) < 1.0e-9 &&
+      std::abs(iterator->y) < 1.0e-9)
+    {
+      points.erase(iterator);
+      break;
+    }
+  }
+  const TerrainSnapshot snapshot =
+    TerrainSnapshot::fromPoints(points, resolution, 1.0e-6);
+  auto parameters = permissiveParameters();
+  parameters.pca_radius_m = 0.16;
+  parameters.edge_sample_spacing_m = 0.025;
+  const TerrainEvaluator evaluator(snapshot, parameters);
+
+  const EdgeEvaluation edge = evaluator.evaluateEdge({0.1, 0.0}, {0.9, 0.0});
+  EXPECT_FALSE(edge.valid);
+  EXPECT_EQ(edge.reason, TerrainInvalidReason::kUnknown);
+}
+
+TEST(TerrainEvaluator, FiveCentimeterEdgeSamplingPreservesStepGate)
+{
+  constexpr double resolution = 0.05;
+  std::vector<TerrainPoint> points;
+  points.reserve(29U * 17U);
+  for (std::size_t iy = 0U; iy < 17U; ++iy) {
+    for (std::size_t ix = 0U; ix < 29U; ++ix) {
+      const double x = -0.2 + static_cast<double>(ix) * resolution;
+      const double y = -0.4 + static_cast<double>(iy) * resolution;
+      const double z = ix < 14U ? 0.0 : 0.20;
+      points.push_back({x, y, z});
+    }
+  }
+  const TerrainSnapshot snapshot =
+    TerrainSnapshot::fromPoints(points, resolution, 1.0e-6);
+  auto parameters = permissiveParameters();
+  parameters.pca_radius_m = 0.16;
+  parameters.max_step_height_m = 0.08;
+  parameters.edge_sample_spacing_m = 0.025;
+  const TerrainEvaluator evaluator(snapshot, parameters);
+
+  const EdgeEvaluation edge = evaluator.evaluateEdge({0.1, 0.0}, {0.9, 0.0});
+  EXPECT_FALSE(edge.valid);
+  EXPECT_EQ(edge.reason, TerrainInvalidReason::kStepLimit);
+  EXPECT_GT(edge.max_step_m, parameters.max_step_height_m);
+}
+
 TEST(TerrainEvaluator, RejectsInvalidThresholdConfiguration)
 {
   const TerrainSnapshot snapshot = TerrainSnapshot::fromPoints(

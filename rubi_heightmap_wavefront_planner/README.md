@@ -2,7 +2,8 @@
 
 ROS 2 Humble standalone sampling-planner baseline for the FastDEM global
 elevation map. The package contains both a TRG-inspired wavefront roadmap and
-a conventional RRT* core selected by YAML.
+a conventional RRT* core selected by YAML. The bundled `wavefront_v0.yaml`
+profile is the 5 cm Wavefront demo described below.
 
 ```text
 /fastdem/mapping/cloud_global  sensor_msgs/PointCloud2 (x, y, z=elevation)
@@ -26,10 +27,12 @@ wavefront-roadmap idea. It does not copy TRG source code.
 
 ## Scope
 
-V0 deliberately uses only the FastDEM elevation cells (`x`, `y`, `z`).
-FastDEM's optional `slope` or `step` fields are not required.
+V0 consumes the regular 2.5-D observed elevation cells (`x`, `y`, `z`) from
+FastDEM, not raw LiDAR. FastDEM's optional `slope` or `step` fields are not
+required.
 
-- PCA estimates the local plane slope and roughness around every checked pose.
+- PCA over the local elevation neighborhood estimates the plane normal, slope,
+  and roughness around every checked pose.
 - A step is **not** inferred from PCA.
 - Every edge is sampled at `edge_check_spacing_m`; consecutive elevations are
   compared and the edge is rejected when `abs(delta_z) > max_step_height_m`.
@@ -37,9 +40,9 @@ FastDEM's optional `slope` or `step` fields are not required.
 - Excessive slope and step are hard-invalid. Feasible slope is also a soft edge
   cost.
 
-The planner currently outputs `nav_msgs/Path` as a standalone node. It does not
-yet implement a `nav2_core::GlobalPlanner` plugin and it does not generate
-`cmd_vel`.
+The planner currently outputs `nav_msgs/Path` as a standalone node. It is not a
+`nav2_core::GlobalPlanner` plugin, is not connected to a Nav2 costmap or
+controller, and does not generate `cmd_vel`.
 
 ### Wavefront sampling versus RRT*
 
@@ -53,6 +56,35 @@ These controls are intentionally different:
 Therefore “\(n\) samples per node” is the wavefront mode, not standard RRT*.
 RRT* performs `nearest → steer → choose-parent → insert → rewire`, and updates
 all descendant costs after rewiring.
+
+## Wavefront V0 profile
+
+The checked-in `config/wavefront_v0.yaml` profile fixes the demo contract:
+
+| Control | V0 value |
+|---|---:|
+| FastDEM/elevation lattice | 0.05 m |
+| Lattice tolerance | 0.01 m |
+| Edge terrain-check spacing | 0.025 m |
+| Wavefront sampling radius | 0.30 m |
+| Proposal directions per expansion | 20 |
+| Node merge radius | 0.20 m |
+| Neighbor connection radius | 0.45 m |
+| Goal connection distance | 0.45 m |
+| Node / expansion budget | 4000 / 4000 |
+| Graph build-time budget | 5000 ms |
+| Path output spacing | 0.05 m |
+
+`map_resolution_m` tells the consumer how to interpret the incoming lattice.
+The planner does **not** resample a coarse cloud or convert it into a 5 cm map.
+The running FastDEM producer must itself be configured for 0.05 m resolution;
+points from a 10 cm producer may happen to lie on a 5 cm lattice and therefore
+are not proof of a 5 cm producer.
+
+The 20 directions are 20 proposals evaluated around each expanded node, not 20
+guaranteed accepted graph nodes. Terrain gates can reject a proposal and
+`merge_radius_m` can merge it with an existing node. At a 0.30 m ring radius,
+adjacent proposals are only about 0.094 m apart.
 
 ## Build
 
@@ -70,7 +102,8 @@ rosdep install \
 
 colcon build \
   --symlink-install \
-  --packages-select rubi_heightmap_wavefront_planner
+  --packages-select rubi_heightmap_wavefront_planner \
+  --cmake-args -DBUILD_TESTING=ON
 
 source install/setup.bash
 ```
@@ -79,10 +112,21 @@ Run the tests:
 
 ```bash
 colcon test \
-  --packages-select rubi_heightmap_wavefront_planner
+  --packages-select rubi_heightmap_wavefront_planner \
+  --event-handlers console_direct+
 
 colcon test-result --verbose
 ```
+
+Run the non-gating benchmark from the CMake build tree:
+
+```bash
+./build/rubi_heightmap_wavefront_planner/benchmark_flat_map
+```
+
+The benchmark reports the configured physical scenario, map-cell count, graph
+size, termination, build/total time, and path metrics. Wall-clock time is
+reported rather than used as a CTest pass/fail threshold.
 
 The ROS-independent smoke test can also be compiled directly:
 
@@ -103,9 +147,11 @@ g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic \
 
 ## Confirm the live FastDEM contract
 
-Do not start tuning before confirming the actual message:
+Do not start tuning before confirming the producer's source configuration and
+the actual message:
 
 ```bash
+ros2 param get /fastdem config_file
 ros2 topic info -v /fastdem/mapping/cloud_global
 
 ros2 topic echo \
@@ -120,8 +166,15 @@ ros2 topic echo \
 ```
 
 Required fields are `x`, `y`, and `z`, all `FLOAT32`. The message frame is used
-as the planning frame. The configured `map_resolution_m` must match the running
-FastDEM configuration; the parser rejects points that do not fit that lattice.
+as the planning frame, so TF must connect it to `base_frame` and RViz's fixed
+frame. Follow the reported FastDEM config path back to its source-workspace
+file—not an installed copy—and verify `map.resolution: 0.05`. The planner's
+`map_resolution_m: 0.05` must match it; the parser rejects points that do not
+fit that lattice, but lattice alignment alone cannot prove producer density.
+
+Also check that both the observed point count and the dense bounding lattice
+fit `max_grid_cells`. A 200 m by 200 m region at 5 cm is approximately 16
+million cells, above the V0 limit of 5 million cells.
 
 ## Run
 
@@ -138,7 +191,7 @@ ros2 launch rubi_heightmap_wavefront_planner rrt_star_v0.launch.py
 For a robot whose base TF is `base_link` rather than `body`:
 
 ```bash
-ros2 launch rubi_heightmap_wavefront_planner rrt_star_v0.launch.py \
+ros2 launch rubi_heightmap_wavefront_planner wavefront_v0.launch.py \
   launch_rviz:=true \
   base_frame:=base_link
 ```
@@ -164,6 +217,37 @@ terrain message frame <- base_frame
 
 through TF.
 
+### Goal and map lifecycle
+
+A goal received before the first accepted map is held as the pending goal and
+is processed after that map arrives. Once a snapshot has been published:
+
+- An identical map content hash keeps the existing Path and Marker snapshots.
+- A materially changed map clears the existing Path and all Markers.
+- V0 does not automatically replan after a changed map. Wait for the map to
+  stabilize and send the goal again.
+
+Automatic map-update replanning requires cancellation, request epochs, stale
+result checks, and work coalescing and is intentionally deferred.
+
+### Planning-result snapshots
+
+The output contract distinguishes a core planning result from failures that
+occur before a valid result exists:
+
+| Outcome | Path | Accepted graph | Rejections |
+|---|---|---|---|
+| Success | non-empty | complete accepted nodes and edges | shown up to the display cap |
+| Core failure with `PlanResult` | empty, clearing the previous Path | returned partial graph, if any | returned diagnostics up to the cap |
+| Invalid start/goal | empty | may be empty | available diagnostics |
+| TF, malformed goal, or exception | empty | cleared | cleared |
+
+For core success and failure, the Path, accepted nodes, accepted edges/final
+Path Marker, and rejection snapshot come from the same accepted map state, use
+one timestamp, and are published in that fixed order. ROS publishers are not an
+atomic aggregate; a state/generation check immediately before publication
+prevents a result from a superseded map from being published.
+
 ## ROS interface
 
 | Direction | Topic | Type |
@@ -175,15 +259,34 @@ through TF.
 | Debug | `/rubi/heightmap_planner/debug/edges` | `visualization_msgs/msg/MarkerArray` |
 | Debug | `/rubi/heightmap_planner/debug/rejected` | `visualization_msgs/msg/MarkerArray` |
 
-All topic names and the base frame are parameters.
+All topic names and the base frame are parameters. The Path and three debug
+outputs use reliable, transient-local QoS so a late subscriber receives the
+latest snapshot.
 
-RViz colors:
+On success, each `nav_msgs/Path` pose contains graph/densified `x` and `y`, the
+elevation lattice value in `z`, and a normalized yaw quaternion tangent to the
+next path segment (the last pose keeps the final segment direction). The Path
+uses the map snapshot frame and one common timestamp. A core planning failure
+publishes an empty Path to remove any previous successful Path.
+
+RViz legend:
 
 - FastDEM elevation: blue
-- start / goal / sampled nodes: cyan / purple / green
-- valid edge: white to red as slope risk rises
-- unknown / support / slope / step reject: gray / orange / red / magenta
-- final path: thick green
+- start / goal semantic endpoints: cyan / magenta
+- accepted sampled nodes: green
+- accepted valid edges: green
+- `kNodeInvalid` proposal: red sphere
+- terrain-invalid edge proposal: red line from source to candidate
+- non-finite evaluation: diagnostic point
+- final Path Marker and RViz `nav_msgs/Path`: yellow
+
+An edge-invalid candidate is not necessarily an invalid node, so it is not also
+drawn as a red sphere. Duplicate-edge suppression is not a terrain failure and
+is not drawn as a red invalid line. Accepted graph nodes/edges are displayed in
+full. Rejected attempts are capped by `max_rejected_markers` (5000 in V0);
+summary logs report `rejected_shown` and `rejected_total`, and truncation is
+reported explicitly. Snapshot geometry remains batched (`SPHERE_LIST` for
+nodes and `LINE_LIST` for edges) rather than creating one Marker per entity.
 
 The bundled RViz fixed frame is `map`. If FastDEM publishes another frame such
 as `camera_init`, change RViz's Fixed Frame to that message frame or provide the
@@ -191,32 +294,43 @@ corresponding TF.
 
 ## Important parameters
 
-The default numerical limits are software smoke-test values. They are **not**
-validated physical limits of RUBI.
+These are values in `wavefront_v0.yaml`, not necessarily compiled defaults.
+Terrain thresholds are software bootstrap values and are **not** validated
+physical limits of RUBI.
 
-| Parameter | Default | Meaning |
+| Parameter | Wavefront V0 | Meaning |
 |---|---:|---|
 | `planner_mode` | `wavefront` | `wavefront` or `rrt_star` |
-| `map_resolution_m` | 0.10 m | FastDEM elevation lattice resolution |
+| `map_resolution_m` | 0.05 m | consumer lattice; must equal the FastDEM producer resolution |
+| `lattice_tolerance_m` | 0.01 m | maximum point-to-lattice alignment error |
 | `pca_analysis_radius_m` | 0.30 m | local PCA neighborhood |
 | `support_radius_m` | 0.20 m | circular observed-support check |
 | `minimum_observed_support_ratio` | 1.00 | minimum observed fraction; strict unknown rejection |
-| `max_slope_deg` | 15 deg | hard slope gate |
+| `max_slope_deg` | 15 deg | software bootstrap hard gate, not a measured RUBI limit |
 | `max_step_height_m` | 0.08 m | consecutive edge-sample height gate |
-| `edge_check_spacing_m` | 0.05 m | must be no larger than about half a map cell |
-| `node_sampling_distance_m` | 0.50 m | wavefront expansion radius |
-| `samples_per_expansion` | 12 | samples on every expansion ring |
-| `merge_radius_m` | 0.25 m | suppress duplicate graph nodes |
-| `neighbor_connection_radius_m` | 0.75 m | valid loop-edge radius |
-| `goal_connection_distance_m` | 0.75 m | actual-goal connection radius |
+| `edge_check_spacing_m` | 0.025 m | half-cell terrain-check spacing |
+| `node_sampling_distance_m` | 0.30 m | wavefront proposal-ring radius |
+| `samples_per_expansion` | 20 | proposal directions, not accepted-node count |
+| `merge_radius_m` | 0.20 m | suppress duplicate graph nodes |
+| `neighbor_connection_radius_m` | 0.45 m | valid loop-edge radius |
+| `goal_connection_distance_m` | 0.45 m | actual-goal connection radius |
 | `max_nodes` | 4000 | graph node budget |
 | `max_expansions` | 4000 | expanded-reference budget |
-| `max_build_time_ms` | 2000 ms | graph build wall-time budget |
+| `max_build_time_ms` | 5000 ms | graph build wall-time budget |
+| `path_output_spacing_m` | 0.05 m | maximum densified Path segment spacing |
+| `max_rejected_markers` | 5000 | displayed rejection-attempt cap |
+
+The RRT* controls below are present in the same YAML but inactive while
+`planner_mode=wavefront`:
+
+| Parameter | YAML value | Meaning |
+|---|---:|---|
 | `rrt_star.max_iterations` | 5000 | global random-sample budget |
 | `rrt_star.goal_bias` | 0.05 | probability of sampling the exact goal |
 | `rrt_star.steer_distance_m` | 0.50 m | maximum nearest-to-new extension |
 | `rrt_star.rewire_radius_min_m` | 0.30 m | lower rewire-radius clamp |
 | `rrt_star.rewire_radius_max_m` | 1.00 m | upper rewire-radius clamp |
+| `rrt_star.goal_connection_distance_m` | 0.75 m | actual-goal connection radius |
 | `rrt_star.max_nodes` | 4000 | RRT* tree-node budget, including start/goal |
 | `rrt_star.max_planning_time_ms` | 2000 ms | wall-clock budget; `0` disables it |
 | `rrt_star.stop_on_first_solution` | false | keep optimizing after first connection |
@@ -231,12 +345,63 @@ loads.
 constructed graph. It is the fast V0 setting, not a global risk-optimality
 guarantee. Use `false` with a fixed graph budget for planner comparisons.
 
-The next robot experiment must measure at least:
+The 15° slope gate comes from local elevation-neighborhood PCA, not a FastDEM
+precomputed slope field. It is only a software bootstrap threshold. Before
+claiming robot feasibility, physical experiments must measure at least:
 
 - maximum reliable step-up and step-down separately;
 - forward slope versus cross-slope limits;
 - support/corridor radius;
 - observed-support ratio near real map boundaries.
+
+## Runtime verification
+
+After sourcing the workspace, launch without RViz and inspect the effective
+profile:
+
+```bash
+source ~/grid_map_ws/install/setup.bash
+
+ros2 launch rubi_heightmap_wavefront_planner wavefront_v0.launch.py \
+  launch_rviz:=false
+```
+
+```bash
+for parameter in \
+  map_resolution_m \
+  edge_check_spacing_m \
+  node_sampling_distance_m \
+  samples_per_expansion \
+  merge_radius_m \
+  neighbor_connection_radius_m \
+  goal_connection_distance_m \
+  max_build_time_ms
+do
+  ros2 param get /rubi_heightmap_wavefront_planner "${parameter}"
+done
+```
+
+Inspect endpoint types and QoS, then observe one result:
+
+```bash
+ros2 topic info -v /fastdem/mapping/cloud_global
+ros2 topic info -v /rubi/heightmap_planner/path
+ros2 topic info -v /rubi/heightmap_planner/debug/nodes
+ros2 topic info -v /rubi/heightmap_planner/debug/edges
+ros2 topic info -v /rubi/heightmap_planner/debug/rejected
+
+ros2 topic echo \
+  /rubi/heightmap_planner/path \
+  nav_msgs/msg/Path \
+  --once
+```
+
+A successful real-map check requires a non-empty finite Path in the map
+snapshot frame, normalized quaternions, green accepted graph, red rejected
+nodes/terrain edges, and yellow Path. A failure check must show an empty Path;
+a barrier/budget failure keeps any returned partial graph, while invalid
+start/goal may legitimately have no accepted graph. Synthetic tests do not
+replace verification of the real 5 cm FastDEM source config, cloud, and TF.
 
 ## Validation already represented in tests
 
@@ -252,26 +417,38 @@ The next robot experiment must measure at least:
 - merge and loop edges;
 - goal connection to the actual goal;
 - risk-aware A*;
-- node, expansion, and build-time budgets.
+- node, expansion, and build-time budgets;
+- exact 0.05 m config and half-cell edge-spacing contract;
+- 0.30 m / 20-direction proposal evaluation without assuming 20 accepted nodes;
+- failed-plan partial graph and invalid start/goal behavior;
+- accepted/rejected/final-Path Marker colors, edge semantics, cap, and bounds
+  safety;
 - fixed-seed deterministic RRT* construction;
 - RRT* choose-parent, observed rewiring, and descendant-cost propagation;
 - final RRT* parent tree contains no rejected terrain edge;
-- additional RRT* iterations do not increase the best retained path cost.
+- additional RRT* iterations do not increase the best retained path cost;
 - exact `start == goal` and half-cell map-boundary goal handling.
 
 `planner_node.cpp` performs one more terrain revalidation of every selected graph
 edge before publishing the densified path.
 
-## Next integration step
+## V0 limitations
 
-After the standalone topic and RViz acceptance tests pass on the real map:
+This profile is a standalone immutable-snapshot demonstration. It does not
+combine an occupancy grid, Nav2 costmaps, inflation, or dynamic obstacles; it
+is not a Nav2 planner plugin and has no local planner or controller. It also
+does not animate every expansion, persist a global graph, perform local graph
+repair, or automatically replan after a map update.
 
-1. keep `TerrainSnapshot`, `TerrainEvaluator`, `WavefrontPlanner`, and
-   `RrtStarPlanner` unchanged;
-2. add a thin `nav2_core::GlobalPlanner` wrapper;
-3. return the same `nav_msgs/Path` to Nav2 `ComputePathToPose`;
-4. compare Grid A*, wavefront, and RRT* on the same immutable terrain map;
-5. then add heading, directional step-up/down, and foothold feasibility.
+Heading state, directional step-up/down limits, foothold feasibility, and a
+roughness soft cost remain future work. The current terrain gates and timing
+results must not be described as physically RUBI-valid, safe, optimal, or
+real-time without corresponding robot experiments.
+
+Map-update auto-replanning is a separate second-stage feature. It needs a
+worker/coalescing design, request epochs or cancellation, and stale-result
+validation; calling the full planner directly from the cloud callback is not
+the V0 contract.
 
 ## References
 

@@ -215,9 +215,9 @@ TEST(RrtStarPlanner, TerrainEvaluatorOverloadUsesSnapshotBounds)
     for (std::size_t ix = 0U; ix < 21U; ++ix) {
       points.push_back(
         TerrainPoint{
-          -1.0 + 0.1 * static_cast<double>(ix),
-          -1.0 + 0.1 * static_cast<double>(iy),
-          0.0});
+            -1.0 + 0.1 * static_cast<double>(ix),
+            -1.0 + 0.1 * static_cast<double>(iy),
+            0.0});
     }
   }
   const TerrainSnapshot snapshot =
@@ -250,16 +250,16 @@ TEST(RrtStarPlanner, RejectsInvalidParametersAndRequestBounds)
 {
   auto parameters = testParameters();
   parameters.max_iterations = 0U;
-  EXPECT_THROW(RrtStarPlanner(parameters), std::invalid_argument);
+  EXPECT_THROW(RrtStarPlanner{parameters}, std::invalid_argument);
 
   parameters = testParameters();
   parameters.goal_bias = 1.1;
-  EXPECT_THROW(RrtStarPlanner(parameters), std::invalid_argument);
+  EXPECT_THROW(RrtStarPlanner{parameters}, std::invalid_argument);
 
   parameters = testParameters();
   parameters.rewire_radius_min_m = 2.0;
   parameters.rewire_radius_max_m = 1.0;
-  EXPECT_THROW(RrtStarPlanner(parameters), std::invalid_argument);
+  EXPECT_THROW(RrtStarPlanner{parameters}, std::invalid_argument);
 
   const PlanResult result = RrtStarPlanner(testParameters()).plan(
     {0.0, 0.0}, {1.0, 1.0},
