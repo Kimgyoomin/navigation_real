@@ -11,7 +11,8 @@ def generate_launch_description():
             output="screen",
             parameters=[{
                 "cmd_vel_topic": "/cmd_vel",
-                "lcm_channel": "CMD_VEL",
+                # "lcm_channel": "CMD_VEL",
+                "lcm_channel": "NAV_CMD_VEL",
                 "lcm_url": "udpm://239.255.76.67:7667?ttl=1",
 
                 "publish_rate_hz": 50.0,

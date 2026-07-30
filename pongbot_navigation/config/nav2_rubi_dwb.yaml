@@ -148,7 +148,7 @@ local_costmap:
         observation_sources: "livox_cloud"
 
         livox_cloud:
-          topic: /livox/lidar_PointCloud2
+          topic: /livox/lidar
           data_type: "PointCloud2"
 
           marking: true
@@ -221,7 +221,7 @@ global_costmap:
         observation_sources: "livox_cloud"
 
         livox_cloud:
-          topic: /livox/lidar_PointCloud2
+          topic: /livox/lidar
           data_type: "PointCloud2"
 
           marking: true

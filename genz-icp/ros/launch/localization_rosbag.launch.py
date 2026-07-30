@@ -23,7 +23,7 @@ def generate_launch_description():
         DeclareLaunchArgument("config_file", default_value="localization_corridor.yaml"),
         DeclareLaunchArgument(
             "map_path",
-            default_value="/home/rclab/ros2_ws/src/navigation_real/FAST_LIO_LOCALIZATION2/PCD/test.pcd",
+            default_value="/home/rclab/ros2_ws/src/navigation_real/FAST_LIO_ROS2/PCD/2026_07_30_19_48_44.pcd",
         ),
 
         # Frame policy
