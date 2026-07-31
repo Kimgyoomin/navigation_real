@@ -229,7 +229,7 @@ class TestPlannerNodeContract(unittest.TestCase):
             'Timed out waiting for a complete path/node/edge/rejected snapshot',
         )
         return {
-            name: self.received[name][checkpoint[name]]
+            name: self.received[name][-1]
             for name in checkpoint
         }
 
@@ -277,13 +277,14 @@ class TestPlannerNodeContract(unittest.TestCase):
         return color.r > 0.75 and color.g > 0.75 and color.b < 0.25
 
     @staticmethod
-    def _make_cloud(with_barrier):
+    def _make_cloud(with_barrier, corner_z=0.0):
         points = []
         for iy in range(-18, 19):
             for ix in range(-24, 25):
                 if with_barrier and ix == 0:
                     continue
-                points.append((0.05 * ix, 0.05 * iy, 0.0))
+                z = corner_z if (ix, iy) == (-24, -18) else 0.0
+                points.append((0.05 * ix, 0.05 * iy, z))
         header = Header()
         header.frame_id = MAP_FRAME
         return point_cloud2.create_cloud_xyz32(header, points)
@@ -415,7 +416,9 @@ class TestPlannerNodeContract(unittest.TestCase):
             self.assertEqual(Marker.DELETEALL, markers[0].action, name)
 
     def _assert_partial_failure_snapshot(self, snapshot):
-        self._assert_same_snapshot_stamp(snapshot)
+        # An explicit Goal first invalidates the old executable Path with an
+        # empty Path-only publication. The ensuing worker failure replaces only
+        # the debug snapshot, so its markers intentionally have a newer stamp.
         self.assertEqual(0, len(snapshot['path'].poses))
 
         node_markers = self._add_markers(
@@ -588,28 +591,62 @@ class TestPlannerNodeContract(unittest.TestCase):
         self._spin_for(0.75)
         self.assertEqual(identical_checkpoint, self._checkpoint())
 
-        # Removing the x=0 lattice column materially changes the map. The node
-        # must clear once and wait for another goal instead of replanning.
-        barrier_cloud = self._make_cloud(with_barrier=True)
+        # A change outside the remaining corridor updates the map generation
+        # but does not replace a valid Path or its debug markers.
+        outside_change_checkpoint = self._checkpoint()
+        self.cloud_publisher.publish(
+            self._make_cloud(with_barrier=False, corner_z=0.01)
+        )
+        self._spin_for(0.75)
+        self.assertEqual(
+            outside_change_checkpoint,
+            self._checkpoint(),
+            'Map change outside the corridor modified the retained output',
+        )
+
+        # A same-frame material map update changes only the accepted map state
+        # at this lifecycle stage. It must preserve the transient-local output
+        # snapshot until corridor validation is implemented.
+        barrier_cloud = self._make_cloud(with_barrier=True, corner_z=0.01)
         changed_checkpoint = self._checkpoint()
         self.cloud_publisher.publish(barrier_cloud)
-        clear_snapshot = self._wait_for_snapshot(changed_checkpoint)
-        self._assert_clear_snapshot(clear_snapshot)
-        expected_clear_counts = {
-            name: count + 1
-            for name, count in changed_checkpoint.items()
-        }
-        clear_counts = self._checkpoint()
+        self._spin_for(0.75)
         self.assertEqual(
-            expected_clear_counts,
-            clear_counts,
-            'Changed map emitted more than the one required clear snapshot',
-        )
-        self._spin_for(5.5)
-        self.assertEqual(
-            expected_clear_counts,
+            changed_checkpoint,
             self._checkpoint(),
-            'Changed map caused an automatic V0 replan',
+            'Same-frame map update modified Path or debug output before validation',
+        )
+
+        # The same unknown corridor in a second, distinct map generation is a
+        # confirmed soft failure. It invalidates Path once and queues one
+        # automatic replan; the barrier makes that replan fail, while the
+        # latched Path remains empty rather than being published twice.
+        confirmed_checkpoint = self._checkpoint()
+        self.cloud_publisher.publish(
+            self._make_cloud(with_barrier=True, corner_z=0.02)
+        )
+        self._spin_until(
+            lambda: len(self.received['path']) > confirmed_checkpoint['path'],
+            10.0,
+            'Confirmed corridor invalidation did not publish empty Path',
+        )
+        self._spin_for(1.0)
+        self.assertEqual(
+            confirmed_checkpoint['path'] + 1,
+            len(self.received['path']),
+            'One invalid episode published empty Path more than once',
+        )
+        self.assertEqual(0, len(self.received['path'][-1].poses))
+
+        malformed_checkpoint = self._checkpoint()
+        malformed = PointCloud2()
+        malformed.header.frame_id = MAP_FRAME
+        self.cloud_publisher.publish(malformed)
+        self._spin_for(0.5)
+        self.assertEqual(
+            malformed_checkpoint,
+            self._checkpoint(),
+            'Malformed cloud modified the prior map/output snapshot',
         )
 
         # The same reachable goal cannot cross the unknown full-height barrier.
@@ -633,6 +670,22 @@ class TestPlannerNodeContract(unittest.TestCase):
         self.goal_publisher.publish(self._make_goal(0.0))
         invalid_snapshot = self._wait_for_snapshot(invalid_checkpoint)
         self._assert_invalid_goal_snapshot(invalid_snapshot)
+
+        # A map-frame change is the one map update that performs a full reset.
+        frame_change_checkpoint = self._checkpoint()
+        frame_change_cloud = self._make_cloud(with_barrier=False)
+        frame_change_cloud.header.frame_id = 'wavefront_launch_test_other_map'
+        self.cloud_publisher.publish(frame_change_cloud)
+        frame_change_snapshot = self._wait_for_snapshot(frame_change_checkpoint)
+        self.assertEqual(0, len(frame_change_snapshot['path'].poses))
+        for name in ('nodes', 'edges', 'rejected'):
+            markers = frame_change_snapshot[name].markers
+            self.assertEqual(1, len(markers), name)
+            self.assertEqual(Marker.DELETEALL, markers[0].action, name)
+            self.assertEqual(
+                'wavefront_launch_test_other_map',
+                markers[0].header.frame_id,
+            )
 
 
 @launch_testing.post_shutdown_test()

@@ -22,7 +22,8 @@ rubi_heightmap_wavefront_planner:
     transform_timeout_s: 0.20
 
     # Terrain evaluation. These are software bootstrap values, not verified
-    # physical limits of RUBI.
+    # physical limits of RUBI. path_invalid_confirmations=2 is a sensor-noise
+    # bootstrap, not a measured RUBI value.
     pca_analysis_radius_m: 0.30                 # 크면 slope 추정이 안정적이지만, 서로 다른 면/단차를 한 평면으로 섞고 계산량 증가 / 작으면 noise에 민감
     pca_min_points: 6                           # 크게 하면 PCA가 안정적이지만 sparse, 경계 지역이 invalid 되기 쉬움, 실제 최솟값은 3 (평면 구성 최소 점 개수)
     support_radius_m: 0.20                      # Node 주변 원형 support 영역. 크게 하면 body 주변 unknown 단차를 더 보수적으로 검사하지만 계산과 rejection이 증가
@@ -73,3 +74,9 @@ rubi_heightmap_wavefront_planner:
     path_marker_width_m: 0.08
     rejected_marker_scale_m: 0.07
     max_rejected_markers: 5000
+
+    # Require two consecutive soft corridor failures (unknown/out-of-bounds,
+    # support/PCA) before invalidation. This is a sensor-noise bootstrap, not
+    # a measured RUBI value. Step, slope, non-finite and invalid-input failures
+    # invalidate immediately.
+    path_invalid_confirmations: 2

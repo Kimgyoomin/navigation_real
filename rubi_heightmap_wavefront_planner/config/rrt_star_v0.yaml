@@ -12,15 +12,18 @@ rubi_heightmap_wavefront_planner:
     debug_rejected_topic: /rubi/heightmap_planner/debug/rejected
     base_frame: body
 
-    # FastDEM map contract. Verify these against the running config/topic.
-    map_resolution_m: 0.10
-    lattice_tolerance_m: 0.02
+    # FastDEM map contract. This is a consumer-side lattice interpretation:
+    # it does not resample the cloud. The FastDEM producer configuration must
+    # independently use the same 0.05 m resolution.
+    map_resolution_m: 0.05
+    lattice_tolerance_m: 0.01
     reject_duplicate_cells: true
     max_grid_cells: 5000000
     transform_timeout_s: 0.20
 
-    # Terrain validity. These are software bootstrap values, not verified RUBI
-    # physical limits.
+    # Terrain evaluation. These are software bootstrap values, not verified
+    # physical limits of RUBI. path_invalid_confirmations=2 is a sensor-noise
+    # bootstrap, not a measured RUBI value.
     pca_analysis_radius_m: 0.30
     pca_min_points: 6
     support_radius_m: 0.20
@@ -28,8 +31,20 @@ rubi_heightmap_wavefront_planner:
     max_slope_deg: 15.0
     max_roughness_m: -1.0
     max_step_height_m: 0.08
-    edge_check_spacing_m: 0.05
+    edge_check_spacing_m: 0.025
     check_footprint_along_edge: true
+
+    # TRG-inspired FIFO wavefront sampled roadmap. These parameters are
+    # inactive in RRT* mode and retained for an exact profile comparison.
+    node_sampling_distance_m: 0.30
+    samples_per_expansion: 20
+    merge_radius_m: 0.20
+    neighbor_connection_radius_m: 0.45
+    goal_connection_distance_m: 0.45
+    max_nodes: 4000
+    max_expansions: 4000
+    max_build_time_ms: 5000
+    stop_when_goal_connected: true
 
     # True RRT*: one global XY sample per iteration, then nearest -> steer ->
     # choose-parent -> rewire. 0.50 m is the maximum steer distance.
@@ -50,18 +65,6 @@ rubi_heightmap_wavefront_planner:
     step_risk_weight: 0.0
     roughness_risk_weight: 0.0
 
-    # The wavefront parameters below are inactive in RRT* mode, but remain
-    # declared so this file can be switched back by changing planner_mode.
-    node_sampling_distance_m: 0.50
-    samples_per_expansion: 12
-    merge_radius_m: 0.25
-    neighbor_connection_radius_m: 0.75
-    goal_connection_distance_m: 0.75
-    max_nodes: 4000
-    max_expansions: 4000
-    max_build_time_ms: 2000
-    stop_when_goal_connected: true
-
     # nav_msgs/Path and RViz.
     path_output_spacing_m: 0.05
     node_marker_scale_m: 0.08
@@ -69,3 +72,9 @@ rubi_heightmap_wavefront_planner:
     path_marker_width_m: 0.08
     rejected_marker_scale_m: 0.07
     max_rejected_markers: 5000
+
+    # Require two consecutive soft corridor failures (unknown/out-of-bounds,
+    # support/PCA) before invalidation. This is a sensor-noise bootstrap, not
+    # a measured RUBI value. Step, slope, non-finite and invalid-input failures
+    # invalidate immediately.
+    path_invalid_confirmations: 2

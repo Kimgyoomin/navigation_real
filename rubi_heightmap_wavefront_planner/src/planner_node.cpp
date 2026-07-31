@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -10,6 +11,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -27,6 +29,8 @@
 #include "visualization_msgs/msg/marker_array.hpp"
 
 #include "rubi_heightmap_wavefront_planner/planner_visualization.hpp"
+#include "rubi_heightmap_wavefront_planner/path_revalidation.hpp"
+#include "rubi_heightmap_wavefront_planner/plan_lifecycle.hpp"
 #include "rubi_heightmap_wavefront_planner/rrt_star_planner.hpp"
 #include "rubi_heightmap_wavefront_planner/terrain_evaluator.hpp"
 #include "rubi_heightmap_wavefront_planner/terrain_snapshot.hpp"
@@ -150,10 +154,31 @@ public:
     RCLCPP_INFO(
       get_logger(),
       "Heightmap planner ready: mode='%s', cloud='%s', goal='%s', base_frame='%s', "
-      "resolution=%.3f m, max_grid_cells=%zu",
+      "resolution=%.3f m, lattice_tolerance=%.3f m, edge_spacing=%.3f m, "
+      "support_radius=%.3f m, minimum_support=%.2f, max_step=%.3f m, "
+      "max_slope=%.1f deg, invalid_confirmations=%zu, max_grid_cells=%zu",
       planner_mode_name_.c_str(), input_cloud_topic_.c_str(),
       goal_topic_.c_str(), base_frame_.c_str(), map_resolution_m_,
+      lattice_tolerance_m_, terrain_parameters_.edge_sample_spacing_m,
+      terrain_parameters_.footprint_radius_m,
+      terrain_parameters_.min_footprint_observed_ratio,
+      terrain_parameters_.max_step_height_m, terrain_parameters_.max_slope_deg,
+      path_invalid_confirmations_,
       max_grid_cells_);
+
+    planning_worker_ = std::thread(&PlannerNode::planningWorker, this);
+  }
+
+  ~PlannerNode() override
+  {
+    {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      stop_worker_ = true;
+    }
+    planning_cv_.notify_one();
+    if (planning_worker_.joinable()) {
+      planning_worker_.join();
+    }
   }
 
 private:
@@ -178,6 +203,43 @@ private:
     std::size_t rejected_total{0U};
     std::size_t rejected_shown{0U};
     bool rejected_truncated{false};
+  };
+
+  struct PlanRequest
+  {
+    geometry_msgs::msg::PoseStamped goal;
+    std::shared_ptr<const MapState> map;
+    std::uint64_t goal_epoch{0U};
+    std::uint64_t request_sequence{0U};
+    bool automatic_replan{false};
+  };
+
+  struct PendingGoal
+  {
+    geometry_msgs::msg::PoseStamped goal;
+    std::uint64_t goal_epoch{0U};
+  };
+
+  struct ActivePlanState
+  {
+    std::uint64_t plan_id{0U};
+    std::uint64_t goal_epoch{0U};
+    std::uint64_t planned_generation{0U};
+    std::uint64_t validated_generation{0U};
+    geometry_msgs::msg::PoseStamped requested_goal;
+    std::vector<TerrainPoint> dense_path;
+    std::size_t progress_segment{0U};
+    std::size_t soft_invalid_streak{0U};
+    TerrainInvalidReason last_invalid_reason{TerrainInvalidReason::kNone};
+    bool executable{false};
+    bool auto_replan_attempted{false};
+  };
+
+  enum class PublishStatus
+  {
+    kPublished,
+    kStaleGoalOrFrame,
+    kSupersededMap,
   };
 
   static std::size_t positiveSizeParameter(
@@ -228,7 +290,7 @@ private:
   void loadParameters()
   {
     planner_mode_name_ =
-      declare_parameter<std::string>("planner_mode", "wavefront");
+      declare_parameter<std::string>("planner_mode", "rrt_star");
     if (planner_mode_name_ == "wavefront") {
       planner_mode_ = PlannerMode::kWavefront;
     } else if (planner_mode_name_ == "rrt_star") {
@@ -359,6 +421,9 @@ private:
     max_rejected_markers_ = positiveSizeParameter(
       declare_parameter<std::int64_t>("max_rejected_markers", 5000),
       "max_rejected_markers");
+    path_invalid_confirmations_ = positiveSizeParameter(
+      declare_parameter<std::int64_t>("path_invalid_confirmations", 2),
+      "path_invalid_confirmations");
 
     const std::vector<std::pair<std::string, std::string>> named_values{
       {"input_cloud_topic", input_cloud_topic_},
@@ -587,6 +652,175 @@ private:
     return parsed;
   }
 
+  bool enqueueRequestLocked(
+    const geometry_msgs::msg::PoseStamped & goal,
+    const std::shared_ptr<const MapState> & map,
+    const std::uint64_t goal_epoch,
+    const bool automatic_replan)
+  {
+    if (map == nullptr) {
+      return false;
+    }
+    if (
+      queued_request_.has_value() &&
+      !shouldReplaceQueuedRequest(
+        queued_request_->automatic_replan, automatic_replan))
+    {
+      return false;
+    }
+    queued_request_ = PlanRequest{
+      goal, map, goal_epoch, ++request_sequence_, automatic_replan};
+    return true;
+  }
+
+  void requeueLatestMap(const PlanRequest & request)
+  {
+    bool notify = false;
+    {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      if (
+        goal_epoch_ == request.goal_epoch && map_state_ != nullptr &&
+        map_state_->frame_id == request.map->frame_id)
+      {
+        notify = enqueueRequestLocked(
+          request.goal, map_state_, request.goal_epoch, true);
+      }
+    }
+    if (notify) {
+      planning_cv_.notify_one();
+    }
+  }
+
+  bool isImmediateInvalidation(const TerrainInvalidReason reason) const noexcept
+  {
+    return
+      reason == TerrainInvalidReason::kStepLimit ||
+      reason == TerrainInvalidReason::kSlopeLimit ||
+      reason == TerrainInvalidReason::kInvalidInput;
+  }
+
+  std::vector<Point2D> xyRoute(const std::vector<TerrainPoint> & path) const
+  {
+    std::vector<Point2D> route;
+    route.reserve(path.size());
+    for (const TerrainPoint & point : path) {
+      route.push_back(Point2D{point.x, point.y});
+    }
+    return route;
+  }
+
+  PathValidationResult validateDensePath(
+    const std::vector<TerrainPoint> & path,
+    const Point2D robot_position,
+    const std::size_t progress_segment,
+    const TerrainEvaluator & terrain) const
+  {
+    if (path.size() == 1U) {
+      const NodeEvaluation node = terrain.evaluateNode(Point2D{path[0U].x, path[0U].y});
+      return PathValidationResult{
+        node.valid && std::isfinite(node.elevation_m), node.reason, 0U, 0U, 0.0};
+    }
+    return validateRemainingPath(
+      xyRoute(path), robot_position, progress_segment, terrain);
+  }
+
+  bool updatePathElevations(
+    std::vector<TerrainPoint> & path, const TerrainSnapshot & snapshot) const
+  {
+    for (TerrainPoint & point : path) {
+      const auto elevation = snapshot.elevationAt(point.x, point.y);
+      if (!elevation) {
+        return false;
+      }
+      point.z = *elevation;
+    }
+    return true;
+  }
+
+  void revalidateActivePlan(
+    const std::shared_ptr<const MapState> & state,
+    const ActivePlanState & active)
+  {
+    try {
+      const auto timeout = tf2::durationFromSec(transform_timeout_s_);
+      const auto transform = tf_buffer_->lookupTransform(
+        state->frame_id, base_frame_, tf2::TimePointZero, timeout);
+      const Point2D robot_position{
+        transform.transform.translation.x, transform.transform.translation.y};
+      if (!finitePoint(robot_position)) {
+        RCLCPP_WARN(get_logger(), "Skipped path revalidation: base TF has non-finite XY");
+        return;
+      }
+      const TerrainEvaluator terrain(*state->snapshot, terrain_parameters_);
+      const PathValidationResult validation = validateDensePath(
+        active.dense_path, robot_position, active.progress_segment, terrain);
+
+      bool notify = false;
+      bool confirmed = false;
+      {
+        std::unique_lock<std::mutex> state_lock(state_mutex_);
+        if (
+          map_state_ != state || !active_plan_.has_value() ||
+          active_plan_->plan_id != active.plan_id ||
+          !active_plan_->executable)
+        {
+          return;
+        }
+        if (validation.valid) {
+          active_plan_->progress_segment = validation.progress_segment;
+          active_plan_->validated_generation = state->generation;
+          active_plan_->soft_invalid_streak = 0U;
+          active_plan_->last_invalid_reason = TerrainInvalidReason::kNone;
+          return;
+        }
+
+        if (isImmediateInvalidation(validation.reason)) {
+          confirmed = true;
+        } else if (active_plan_->last_invalid_reason == validation.reason) {
+          ++active_plan_->soft_invalid_streak;
+          confirmed = active_plan_->soft_invalid_streak >= path_invalid_confirmations_;
+        } else {
+          active_plan_->last_invalid_reason = validation.reason;
+          active_plan_->soft_invalid_streak = 1U;
+        }
+        if (!confirmed) {
+          RCLCPP_INFO(
+            get_logger(),
+            "Retained active Path after soft corridor failure reason=%s streak=%zu/%zu",
+            std::string(toString(validation.reason)).c_str(),
+            active_plan_->soft_invalid_streak, path_invalid_confirmations_);
+          return;
+        }
+
+        active_plan_->executable = false;
+        std::lock_guard<std::mutex> output_lock(output_mutex_);
+        publishEmptyPathUnlocked(state->frame_id);
+        last_empty_path_goal_epoch_ = active_plan_->goal_epoch;
+        if (!active_plan_->auto_replan_attempted) {
+          active_plan_->auto_replan_attempted = true;
+          notify = enqueueRequestLocked(
+            active_plan_->requested_goal, state, active_plan_->goal_epoch, true);
+        }
+      }
+      RCLCPP_WARN(
+        get_logger(),
+        "Invalidated active Path: reason=%s failing_segment=%zu; auto_replan=%s",
+        std::string(toString(validation.reason)).c_str(), validation.failing_segment,
+        notify ? "queued" : "not_queued");
+      if (notify) {
+        planning_cv_.notify_one();
+      }
+    } catch (const tf2::TransformException & error) {
+      RCLCPP_WARN(
+        get_logger(), "Skipped path revalidation because map<-base TF failed: %s",
+        error.what());
+    } catch (const std::exception & error) {
+      RCLCPP_WARN(
+        get_logger(), "Skipped path revalidation because evaluation failed: %s",
+        error.what());
+    }
+  }
+
   void onCloud(const sensor_msgs::msg::PointCloud2::ConstSharedPtr cloud)
   {
     try {
@@ -600,23 +834,21 @@ private:
                 "TerrainSnapshot exceeds max_grid_cells after construction");
       }
 
-      std::optional<geometry_msgs::msg::PoseStamped> pending_goal;
-      bool materially_changed = false;
-      bool replaced_existing_map = false;
+      bool frame_changed = false;
+      bool notify = false;
       std::shared_ptr<const MapState> accepted_state;
+      std::optional<ActivePlanState> active_to_validate;
       {
-        std::lock_guard<std::mutex> lock(state_mutex_);
+        std::unique_lock<std::mutex> state_lock(state_mutex_);
         if (
           map_state_ != nullptr &&
           map_state_->content_hash == parsed.content_hash &&
           map_state_->frame_id == cloud->header.frame_id)
         {
-          // Identical periodic FastDEM snapshots must not erase a latched path.
           return;
         }
-
-        replaced_existing_map = map_state_ != nullptr;
-        materially_changed = true;
+        frame_changed =
+          map_state_ != nullptr && map_state_->frame_id != cloud->header.frame_id;
         const std::uint64_t generation =
           map_state_ == nullptr ? 1U : map_state_->generation + 1U;
         auto next_state = std::make_shared<MapState>();
@@ -626,165 +858,208 @@ private:
         next_state->generation = generation;
         map_state_ = next_state;
         accepted_state = next_state;
-        if (pending_goal_) {
-          pending_goal = std::move(pending_goal_);
+
+        if (frame_changed) {
+          active_plan_.reset();
+          std::lock_guard<std::mutex> output_lock(output_mutex_);
+          publishFullResetUnlocked(accepted_state->frame_id);
+          last_empty_path_goal_epoch_ = goal_epoch_;
+        } else if (pending_goal_) {
+          notify = enqueueRequestLocked(
+            pending_goal_->goal, accepted_state, pending_goal_->goal_epoch, false);
           pending_goal_.reset();
+        } else if (active_plan_.has_value() && active_plan_->executable) {
+          active_to_validate = *active_plan_;
         }
       }
-
-      if (materially_changed && replaced_existing_map) {
-        publishClear(accepted_state->frame_id);
-        RCLCPP_INFO(
-          get_logger(),
-          "Elevation snapshot changed; cleared transient-local path and debug markers");
+      if (notify) {
+        planning_cv_.notify_one();
       }
       RCLCPP_INFO(
         get_logger(),
         "Accepted elevation snapshot generation=%lu frame='%s': "
-        "observed=%zu, grid=%zux%zu (%zu cells), hash=%016lx",
+        "observed=%zu, grid=%zux%zu (%zu cells), hash=%016lx; "
+        "retained last Path/debug output until corridor revalidation",
         static_cast<unsigned long>(accepted_state->generation),
         accepted_state->frame_id.c_str(),
         accepted_state->snapshot->observedCount(),
         accepted_state->snapshot->sizeX(), accepted_state->snapshot->sizeY(),
         accepted_state->snapshot->cellCount(),
         static_cast<unsigned long>(accepted_state->content_hash));
-
-      if (pending_goal) {
+      if (frame_changed) {
         RCLCPP_INFO(
-          get_logger(), "Processing goal that was pending before the first valid map");
-        processGoal(*pending_goal, accepted_state);
+          get_logger(), "Elevation snapshot frame changed; reset Path and debug markers");
+      }
+      if (active_to_validate) {
+        revalidateActivePlan(accepted_state, *active_to_validate);
       }
     } catch (const std::exception & error) {
       RCLCPP_ERROR(
         get_logger(),
         "Rejected FastDEM elevation snapshot: %s. The previous accepted map, if any, "
-        "remains active.",
-        error.what());
+        "remains active.", error.what());
     }
   }
 
   void onGoal(const geometry_msgs::msg::PoseStamped::ConstSharedPtr goal)
   {
-    std::shared_ptr<const MapState> state;
+    bool notify = false;
+    bool invalidated = false;
+    bool no_map = false;
+    std::string frame_id{"map"};
     {
-      std::lock_guard<std::mutex> lock(state_mutex_);
-      state = map_state_;
-      if (state == nullptr) {
-        pending_goal_ = *goal;
+      std::unique_lock<std::mutex> state_lock(state_mutex_);
+      const std::uint64_t goal_epoch = ++goal_epoch_;
+      if (map_state_ == nullptr) {
+        no_map = true;
+        pending_goal_ = PendingGoal{*goal, goal_epoch};
+      } else {
+        frame_id = map_state_->frame_id;
+        if (active_plan_.has_value() && active_plan_->executable) {
+          active_plan_->executable = false;
+          invalidated = true;
+          std::lock_guard<std::mutex> output_lock(output_mutex_);
+          publishEmptyPathUnlocked(frame_id);
+          last_empty_path_goal_epoch_ = goal_epoch;
+        }
+        notify = enqueueRequestLocked(*goal, map_state_, goal_epoch, false);
       }
     }
-    if (state == nullptr) {
+    if (no_map) {
       RCLCPP_WARN(
-        get_logger(),
-        "No accepted elevation map yet; stored the latest goal as pending");
+        get_logger(), "No accepted elevation map yet; stored the latest goal as pending");
       return;
     }
-    processGoal(*goal, state);
+    if (invalidated) {
+      RCLCPP_INFO(get_logger(), "External Goal invalidated the previously executable Path");
+    }
+    if (notify) {
+      planning_cv_.notify_one();
+    }
   }
 
-  void processGoal(
-    const geometry_msgs::msg::PoseStamped & goal,
-    const std::shared_ptr<const MapState> & state)
+  void planningWorker()
   {
-    if (goal.header.frame_id.empty()) {
-      failAndClear(state, "Goal header.frame_id is empty");
+    while (true) {
+      PlanRequest request;
+      {
+        std::unique_lock<std::mutex> lock(state_mutex_);
+        planning_cv_.wait(
+          lock, [this]() {
+            return stop_worker_ || queued_request_.has_value();
+          });
+        if (stop_worker_) {
+          return;
+        }
+        request = *queued_request_;
+        queued_request_.reset();
+      }
+      processGoal(request);
+    }
+  }
+
+  void processGoal(const PlanRequest & request)
+  {
+    if (request.goal.header.frame_id.empty()) {
+      failAndClear(request, "Goal header.frame_id is empty");
       return;
     }
-
     try {
       const auto timeout = tf2::durationFromSec(transform_timeout_s_);
       const auto start_transform = tf_buffer_->lookupTransform(
-        state->frame_id, base_frame_, tf2::TimePointZero, timeout);
+        request.map->frame_id, base_frame_, tf2::TimePointZero, timeout);
       const Point2D start{
         start_transform.transform.translation.x,
         start_transform.transform.translation.y};
-
       geometry_msgs::msg::PoseStamped goal_in_map;
-      if (goal.header.frame_id == state->frame_id) {
-        goal_in_map = goal;
+      if (request.goal.header.frame_id == request.map->frame_id) {
+        goal_in_map = request.goal;
       } else {
         const auto goal_transform = tf_buffer_->lookupTransform(
-          state->frame_id, goal.header.frame_id, tf2::TimePointZero, timeout);
-        tf2::doTransform(goal, goal_in_map, goal_transform);
+          request.map->frame_id, request.goal.header.frame_id,
+          tf2::TimePointZero, timeout);
+        tf2::doTransform(request.goal, goal_in_map, goal_transform);
       }
       const Point2D goal_xy{
         goal_in_map.pose.position.x, goal_in_map.pose.position.y};
       if (!finitePoint(start) || !finitePoint(goal_xy)) {
-        failAndClear(state, "Start or transformed goal contains non-finite XY");
+        failAndClear(request, "Start or transformed goal contains non-finite XY");
         return;
       }
 
-      const TerrainEvaluator terrain(*state->snapshot, terrain_parameters_);
-      PlanResult result;
-      if (planner_mode_ == PlannerMode::kWavefront) {
-        result = wavefront_planner_->plan(terrain, start, goal_xy);
-      } else {
-        result = rrt_star_planner_->plan(terrain, start, goal_xy);
-      }
+      const TerrainEvaluator terrain(*request.map->snapshot, terrain_parameters_);
+      PlanResult result = planner_mode_ == PlannerMode::kWavefront ?
+        wavefront_planner_->plan(terrain, start, goal_xy) :
+        rrt_star_planner_->plan(terrain, start, goal_xy);
       std::vector<TerrainPoint> dense_path;
       if (result.success) {
         std::string validation_error;
         if (!revalidateGraphPath(result, terrain, validation_error)) {
-          failAndClear(
-            state, "Final graph path revalidation failed: " + validation_error);
+          failAndClear(request, "Final graph path revalidation failed: " + validation_error);
           return;
         }
-        if (!densifyPath(result, *state->snapshot, dense_path, validation_error)) {
-          failAndClear(
-            state, "Path densification failed: " + validation_error);
+        if (!densifyPath(result, *request.map->snapshot, dense_path, validation_error)) {
+          failAndClear(request, "Path densification failed: " + validation_error);
           return;
         }
       }
 
-      const auto stamp = now();
-      const ResultPublication publication =
-        publishResultForState(state, result, dense_path, stamp);
-      if (!publication.published) {
+      std::shared_ptr<const MapState> output_state = request.map;
+      if (result.success) {
+        for (std::size_t attempt = 0U; attempt < 3U; ++attempt) {
+          {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            if (goal_epoch_ != request.goal_epoch || map_state_ == nullptr ||
+              map_state_->frame_id != request.map->frame_id)
+            {
+              return;
+            }
+            output_state = map_state_;
+          }
+          if (output_state != request.map) {
+            const TerrainEvaluator latest_terrain(
+              *output_state->snapshot, terrain_parameters_);
+            const PathValidationResult validation = validateDensePath(
+              dense_path, Point2D{dense_path.front().x, dense_path.front().y},
+              0U, latest_terrain);
+            if (!validation.valid ||
+              !updatePathElevations(dense_path, *output_state->snapshot))
+            {
+              RCLCPP_INFO(
+                get_logger(),
+                "Discarded stale-map candidate after generation=%lu corridor revalidation",
+                static_cast<unsigned long>(output_state->generation));
+              requeueLatestMap(request);
+              return;
+            }
+          }
+          const auto publication = publishResultForRequest(
+            request, output_state, result, dense_path, now());
+          if (publication.first == PublishStatus::kPublished) {
+            logPlanningResult(request, output_state, result, publication.second);
+            return;
+          }
+          if (publication.first == PublishStatus::kStaleGoalOrFrame) {
+            return;
+          }
+        }
+        requeueLatestMap(request);
         return;
       }
 
-      if (result.success) {
-        RCLCPP_INFO(
-          get_logger(),
-          "Planning result: mode=%s map_generation=%lu success=true "
-          "termination=%s nodes=%zu edges=%zu rejected_total=%zu "
-          "rejected_shown=%zu expansions=%zu build_time_ms=%.2f "
-          "path_pose_count=%zu",
-          planner_mode_name_.c_str(),
-          static_cast<unsigned long>(state->generation),
-          terminationName(result.termination).c_str(), result.nodes.size(),
-          result.edges.size(), publication.rejected_total,
-          publication.rejected_shown, result.expansions, result.build_time_ms,
-          publication.path_pose_count);
-      } else {
-        RCLCPP_WARN(
-          get_logger(),
-          "Planning result: mode=%s map_generation=%lu success=false "
-          "termination=%s nodes=%zu edges=%zu rejected_total=%zu "
-          "rejected_shown=%zu expansions=%zu build_time_ms=%.2f "
-          "path_pose_count=%zu message='%s' "
-          "reject_counts[node=%zu expansion_edge=%zu merge_edge=%zu "
-          "goal_edge=%zu non_finite=%zu duplicate=%zu]",
-          planner_mode_name_.c_str(),
-          static_cast<unsigned long>(state->generation),
-          terminationName(result.termination).c_str(), result.nodes.size(),
-          result.edges.size(), publication.rejected_total,
-          publication.rejected_shown, result.expansions, result.build_time_ms,
-          publication.path_pose_count, result.message.c_str(),
-          result.reject_counts.node_invalid,
-          result.reject_counts.expansion_edge_invalid,
-          result.reject_counts.merge_edge_invalid,
-          result.reject_counts.goal_edge_invalid,
-          result.reject_counts.non_finite_evaluation,
-          result.reject_counts.duplicate_edge);
+      const auto publication = publishResultForRequest(
+        request, output_state, result, dense_path, now());
+      if (publication.first == PublishStatus::kSupersededMap) {
+        requeueLatestMap(request);
+      } else if (publication.first == PublishStatus::kPublished) {
+        logPlanningResult(request, output_state, result, publication.second);
       }
     } catch (const tf2::TransformException & error) {
       failAndClear(
-        state,
-        "TF lookup/goal transform failed for map<-" + base_frame_ + ": " +
+        request, "TF lookup/goal transform failed for map<-" + base_frame_ + ": " +
         error.what());
     } catch (const std::exception & error) {
-      failAndClear(state, std::string("Planning exception: ") + error.what());
+      failAndClear(request, std::string("Planning exception: ") + error.what());
     }
   }
 
@@ -933,7 +1208,8 @@ private:
     return path;
   }
 
-  ResultPublication publishResultForState(
+  std::pair<PublishStatus, ResultPublication> publishResultForRequest(
+    const PlanRequest & request,
     const std::shared_ptr<const MapState> & expected_state,
     const PlanResult & result,
     const std::vector<TerrainPoint> & dense_path,
@@ -961,22 +1237,34 @@ private:
     publication.rejected_shown = visualization.rejected_shown;
     publication.rejected_truncated = visualization.rejected_truncated;
     {
-      // Serialize result publication with map-change clearing. The four ROS
-      // topics are not atomic, but they share one immutable map and timestamp.
-      std::lock_guard<std::mutex> output_lock(output_mutex_);
+      // Lock order is always state_mutex_ then output_mutex_. Heavy TF,
+      // planning, visualization, and terrain evaluation happen before this.
+      std::lock_guard<std::mutex> state_lock(state_mutex_);
+      if (map_state_ == nullptr || !mayCommitAfterRevalidation(
+          PlanLifecycleToken{
+          request.goal_epoch, request.map->generation, request.map->frame_id},
+          goal_epoch_, map_state_->frame_id))
       {
-        std::lock_guard<std::mutex> state_lock(state_mutex_);
-        if (
-          map_state_ != expected_state ||
-          map_state_->generation != expected_state->generation)
-        {
-          RCLCPP_WARN(
-            get_logger(),
-            "Discarded a completed plan because its map snapshot was superseded");
-          return publication;
+        return {PublishStatus::kStaleGoalOrFrame, publication};
+      }
+      if (map_state_ != expected_state) {
+        return {PublishStatus::kSupersededMap, publication};
+      }
+      if (result.success) {
+        active_plan_ = ActivePlanState{
+          ++plan_id_sequence_, request.goal_epoch, request.map->generation,
+          expected_state->generation, request.goal, dense_path, 0U, 0U,
+          TerrainInvalidReason::kNone, true, false};
+      }
+      const bool publish_path =
+        result.success || last_empty_path_goal_epoch_ != request.goal_epoch;
+      std::lock_guard<std::mutex> output_lock(output_mutex_);
+      if (publish_path) {
+        path_publisher_->publish(path);
+        if (!result.success) {
+          last_empty_path_goal_epoch_ = request.goal_epoch;
         }
       }
-      path_publisher_->publish(path);
       nodes_publisher_->publish(visualization.nodes);
       edges_publisher_->publish(visualization.edges);
       rejected_publisher_->publish(visualization.rejected);
@@ -991,10 +1279,10 @@ private:
         publication.rejected_shown, publication.rejected_total,
         max_rejected_markers_);
     }
-    return publication;
+    return {PublishStatus::kPublished, publication};
   }
 
-  void publishClearUnlocked(const std::string & frame_id)
+  void publishEmptyPathUnlocked(const std::string & frame_id)
   {
     const auto stamp = now();
     const std::string safe_frame = frame_id.empty() ? "map" : frame_id;
@@ -1002,7 +1290,12 @@ private:
     empty_path.header.frame_id = safe_frame;
     empty_path.header.stamp = stamp;
     path_publisher_->publish(empty_path);
+  }
 
+  void publishDebugDeleteAllUnlocked(const std::string & frame_id)
+  {
+    const auto stamp = now();
+    const std::string safe_frame = frame_id.empty() ? "map" : frame_id;
     const visualization_msgs::msg::MarkerArray clear =
       makeDeleteAllMarkerArray(
       safe_frame, static_cast<builtin_interfaces::msg::Time>(stamp));
@@ -1011,31 +1304,63 @@ private:
     rejected_publisher_->publish(clear);
   }
 
-  void publishClear(const std::string & frame_id)
+  void publishFullResetUnlocked(const std::string & frame_id)
   {
-    std::lock_guard<std::mutex> lock(output_mutex_);
-    publishClearUnlocked(frame_id);
-  }
-
-  bool publishClearForState(const std::shared_ptr<const MapState> & expected_state)
-  {
-    std::lock_guard<std::mutex> output_lock(output_mutex_);
-    {
-      std::lock_guard<std::mutex> state_lock(state_mutex_);
-      if (map_state_ != expected_state) {
-        return false;
-      }
-    }
-    publishClearUnlocked(expected_state->frame_id);
-    return true;
+    publishEmptyPathUnlocked(frame_id);
+    publishDebugDeleteAllUnlocked(frame_id);
   }
 
   void failAndClear(
-    const std::shared_ptr<const MapState> & expected_state,
+    const PlanRequest & request,
     const std::string & message)
   {
-    publishClearForState(expected_state);
+    std::lock_guard<std::mutex> state_lock(state_mutex_);
+    if (
+      map_state_ == nullptr || map_state_ != request.map ||
+      !mayCommitAfterRevalidation(
+        PlanLifecycleToken{
+        request.goal_epoch, request.map->generation, request.map->frame_id},
+        goal_epoch_, map_state_->frame_id))
+    {
+      return;
+    }
+    active_plan_.reset();
+    std::lock_guard<std::mutex> output_lock(output_mutex_);
+    publishFullResetUnlocked(request.map->frame_id);
+    last_empty_path_goal_epoch_ = request.goal_epoch;
     RCLCPP_ERROR(get_logger(), "%s", message.c_str());
+  }
+
+  void logPlanningResult(
+    const PlanRequest & request,
+    const std::shared_ptr<const MapState> & output_state,
+    const PlanResult & result,
+    const ResultPublication & publication) const
+  {
+    if (result.success) {
+      RCLCPP_INFO(
+        get_logger(),
+        "Planning result: mode=%s planned_generation=%lu validated_generation=%lu "
+        "success=true termination=%s nodes=%zu edges=%zu rejected_total=%zu "
+        "rejected_shown=%zu expansions=%zu build_time_ms=%.2f path_pose_count=%zu",
+        planner_mode_name_.c_str(),
+        static_cast<unsigned long>(request.map->generation),
+        static_cast<unsigned long>(output_state->generation),
+        terminationName(result.termination).c_str(), result.nodes.size(),
+        result.edges.size(), publication.rejected_total, publication.rejected_shown,
+        result.expansions, result.build_time_ms, publication.path_pose_count);
+      return;
+    }
+    RCLCPP_WARN(
+      get_logger(),
+      "Planning result: mode=%s map_generation=%lu success=false termination=%s "
+      "nodes=%zu edges=%zu rejected_total=%zu rejected_shown=%zu expansions=%zu "
+      "build_time_ms=%.2f path_pose_count=%zu message='%s'",
+      planner_mode_name_.c_str(),
+      static_cast<unsigned long>(request.map->generation),
+      terminationName(result.termination).c_str(), result.nodes.size(), result.edges.size(),
+      publication.rejected_total, publication.rejected_shown, result.expansions,
+      result.build_time_ms, publication.path_pose_count, result.message.c_str());
   }
 
   std::string input_cloud_topic_;
@@ -1045,8 +1370,8 @@ private:
   std::string debug_edges_topic_;
   std::string debug_rejected_topic_;
   std::string base_frame_;
-  std::string planner_mode_name_{"wavefront"};
-  PlannerMode planner_mode_{PlannerMode::kWavefront};
+  std::string planner_mode_name_{"rrt_star"};
+  PlannerMode planner_mode_{PlannerMode::kRrtStar};
 
   double map_resolution_m_{0.10};
   double lattice_tolerance_m_{0.02};
@@ -1058,6 +1383,7 @@ private:
   double path_marker_width_m_{0.08};
   double rejected_marker_scale_m_{0.07};
   std::size_t max_rejected_markers_{5000U};
+  std::size_t path_invalid_confirmations_{2U};
 
   TerrainEvaluatorParameters terrain_parameters_;
   WavefrontPlannerParameters planner_parameters_;
@@ -1077,7 +1403,17 @@ private:
   std::mutex state_mutex_;
   std::mutex output_mutex_;
   std::shared_ptr<const MapState> map_state_;
-  std::optional<geometry_msgs::msg::PoseStamped> pending_goal_;
+  std::optional<PendingGoal> pending_goal_;
+  std::optional<ActivePlanState> active_plan_;
+  std::optional<PlanRequest> queued_request_;
+  std::uint64_t goal_epoch_{0U};
+  std::uint64_t request_sequence_{0U};
+  std::uint64_t plan_id_sequence_{0U};
+  std::uint64_t last_empty_path_goal_epoch_{
+    std::numeric_limits<std::uint64_t>::max()};
+  std::condition_variable planning_cv_;
+  std::thread planning_worker_;
+  bool stop_worker_{false};
 };
 
 }  // namespace rubi_heightmap_wavefront_planner

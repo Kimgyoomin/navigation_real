@@ -20,6 +20,8 @@ find_package(visualization_msgs REQUIRED)
 add_library(${PROJECT_NAME}_core
   src/terrain_snapshot.cpp
   src/terrain_evaluator.cpp
+  src/path_revalidation.cpp
+  src/plan_lifecycle.cpp
   src/wavefront_planner.cpp
   src/rrt_star_planner.cpp
 )
@@ -127,6 +129,16 @@ if(BUILD_TESTING)
   )
   target_link_libraries(test_rrt_star_planner ${PROJECT_NAME}_core)
 
+  ament_add_gtest(test_path_revalidation
+    test/test_path_revalidation.cpp
+  )
+  target_link_libraries(test_path_revalidation ${PROJECT_NAME}_core)
+
+  ament_add_gtest(test_plan_lifecycle
+    test/test_plan_lifecycle.cpp
+  )
+  target_link_libraries(test_plan_lifecycle ${PROJECT_NAME}_core)
+
   ament_add_pytest_test(
     test_wavefront_config_contract
     test/test_wavefront_config_contract.py
@@ -134,6 +146,11 @@ if(BUILD_TESTING)
 
   add_launch_test(
     test/test_planner_node_launch.py
+    TIMEOUT 90
+  )
+
+  add_launch_test(
+    test/test_rrt_star_node_launch.py
     TIMEOUT 90
   )
 

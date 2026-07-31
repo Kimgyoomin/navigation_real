@@ -246,6 +246,47 @@ TEST(RrtStarPlanner, TerrainEvaluatorOverloadUsesSnapshotBounds)
   EXPECT_NEAR(result.path.back().x, 1.04, 1.0e-12);
 }
 
+TEST(RrtStarPlanner, FiveCentimeterFlatGridUsesSharedTerrainEvaluator)
+{
+  std::vector<TerrainPoint> points;
+  for (std::size_t iy = 0U; iy < 41U; ++iy) {
+    for (std::size_t ix = 0U; ix < 61U; ++ix) {
+      points.push_back(
+        TerrainPoint{
+            -1.5 + 0.05 * static_cast<double>(ix),
+            -1.0 + 0.05 * static_cast<double>(iy), 0.0});
+    }
+  }
+  const TerrainSnapshot snapshot =
+    TerrainSnapshot::fromPoints(points, 0.05, 0.01);
+  TerrainEvaluatorParameters terrain_parameters;
+  terrain_parameters.pca_radius_m = 0.30;
+  terrain_parameters.min_pca_points = 6U;
+  terrain_parameters.footprint_radius_m = 0.20;
+  terrain_parameters.min_footprint_observed_ratio = 1.00;
+  terrain_parameters.max_slope_deg = 15.0;
+  terrain_parameters.max_step_height_m = 0.08;
+  terrain_parameters.edge_sample_spacing_m = 0.025;
+  const TerrainEvaluator terrain(snapshot, terrain_parameters);
+
+  auto parameters = testParameters();
+  parameters.max_iterations = 500U;
+  parameters.goal_bias = 0.20;
+  parameters.steer_distance_m = 0.50;
+  parameters.rewire_radius_min_m = 0.30;
+  parameters.rewire_radius_max_m = 1.00;
+  parameters.goal_connection_distance_m = 0.75;
+  parameters.max_planning_time_ms = 0U;
+  parameters.random_seed = 42U;
+  const PlanResult result =
+    RrtStarPlanner(parameters).plan(terrain, {-0.75, 0.0}, {0.75, 0.0});
+
+  ASSERT_TRUE(result.success) << result.message;
+  ASSERT_FALSE(result.path.empty());
+  EXPECT_NEAR(result.path.front().x, -0.75, 1.0e-12);
+  EXPECT_NEAR(result.path.back().x, 0.75, 1.0e-12);
+}
+
 TEST(RrtStarPlanner, RejectsInvalidParametersAndRequestBounds)
 {
   auto parameters = testParameters();

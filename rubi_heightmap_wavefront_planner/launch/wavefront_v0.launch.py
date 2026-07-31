@@ -35,7 +35,11 @@ def generate_launch_description():
                 output="screen",
                 parameters=[
                     config,
-                    {"use_sim_time": use_sim_time, "base_frame": base_frame},
+                    {
+                        "planner_mode": "wavefront",
+                        "use_sim_time": use_sim_time,
+                        "base_frame": base_frame,
+                    },
                 ],
             ),
             Node(

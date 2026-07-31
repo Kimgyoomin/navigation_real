@@ -2,8 +2,9 @@
 
 ROS 2 Humble standalone sampling-planner baseline for the FastDEM global
 elevation map. The package contains both a TRG-inspired wavefront roadmap and
-a conventional RRT* core selected by YAML. The bundled `wavefront_v0.yaml`
-profile is the 5 cm Wavefront demo described below.
+a conventional RRT* core selected by YAML. The default experiment profile is
+the 5 cm `rrt_star_v0.yaml`; `wavefront_v0.yaml` remains an identical-parameter
+comparison profile with only `planner_mode` changed.
 
 ```text
 /fastdem/mapping/cloud_global  sensor_msgs/PointCloud2 (x, y, z=elevation)
@@ -57,9 +58,12 @@ Therefore “\(n\) samples per node” is the wavefront mode, not standard RRT*.
 RRT* performs `nearest → steer → choose-parent → insert → rewire`, and updates
 all descendant costs after rewiring.
 
-## Wavefront V0 profile
+## 5 cm RRT* baseline and Wavefront comparison
 
-The checked-in `config/wavefront_v0.yaml` profile fixes the demo contract:
+Both checked-in profiles use the same map, terrain, cost, Path/RViz, and active
+and inactive planner parameters. `rrt_star_v0.yaml` selects `rrt_star` and is
+the default experiment; `wavefront_v0.yaml` selects `wavefront` for comparison.
+The shared 5 cm contract is:
 
 | Control | V0 value |
 |---|---:|
@@ -181,11 +185,11 @@ million cells, above the V0 limit of 5 million cells.
 Start FastDEM first, then:
 
 ```bash
-# TRG-inspired wavefront
-ros2 launch rubi_heightmap_wavefront_planner wavefront_v0.launch.py
-
-# True RRT*
+# Default experiment: true RRT*
 ros2 launch rubi_heightmap_wavefront_planner rrt_star_v0.launch.py
+
+# Comparison: TRG-inspired wavefront
+ros2 launch rubi_heightmap_wavefront_planner wavefront_v0.launch.py
 ```
 
 For a robot whose base TF is `base_link` rather than `body`:
@@ -222,13 +226,23 @@ through TF.
 A goal received before the first accepted map is held as the pending goal and
 is processed after that map arrives. Once a snapshot has been published:
 
-- An identical map content hash keeps the existing Path and Marker snapshots.
-- A materially changed map clears the existing Path and all Markers.
-- V0 does not automatically replan after a changed map. Wait for the map to
-  stabilize and send the goal again.
+- An identical map content hash and frame is a no-op, including when only the
+  cloud timestamp changes.
+- A changed same-frame map retains the current outputs while the active dense
+  Path's remaining corridor is evaluated on the new TerrainSnapshot.
+- Step, slope, non-finite, and invalid-input failures invalidate immediately.
+  Unknown/out-of-bounds/support/PCA failures require two consecutive snapshots
+  with the same failure reason. `path_invalid_confirmations=2` is a
+  sensor-noise bootstrap, not a measured RUBI value.
+- Confirmed invalidation publishes one empty Path, keeps the old debug snapshot
+  until a planning result replaces it, and coalesces one automatic replan.
+- A map-frame change performs a full Path plus `DELETEALL` marker reset. A
+  malformed cloud preserves the previous accepted map and outputs.
 
-Automatic map-update replanning requires cancellation, request epochs, stale
-result checks, and work coalescing and is intentionally deferred.
+One worker owns all planner-core calls. It keeps only the newest request, gives
+an external Goal priority over an automatic retry, and rejects a completed
+result when its Goal epoch or map frame changed. A candidate from an older map
+generation is instead revalidated on the latest same-frame map before commit.
 
 ### Planning-result snapshots
 
@@ -294,13 +308,14 @@ corresponding TF.
 
 ## Important parameters
 
-These are values in `wavefront_v0.yaml`, not necessarily compiled defaults.
+These values are shared by `rrt_star_v0.yaml` and `wavefront_v0.yaml`, except
+for `planner_mode`; the node's compiled default is `rrt_star`.
 Terrain thresholds are software bootstrap values and are **not** validated
 physical limits of RUBI.
 
-| Parameter | Wavefront V0 | Meaning |
+| Parameter | Baseline value | Meaning |
 |---|---:|---|
-| `planner_mode` | `wavefront` | `wavefront` or `rrt_star` |
+| `planner_mode` | `rrt_star` | `wavefront` or `rrt_star` |
 | `map_resolution_m` | 0.05 m | consumer lattice; must equal the FastDEM producer resolution |
 | `lattice_tolerance_m` | 0.01 m | maximum point-to-lattice alignment error |
 | `pca_analysis_radius_m` | 0.30 m | local PCA neighborhood |
@@ -319,9 +334,10 @@ physical limits of RUBI.
 | `max_build_time_ms` | 5000 ms | graph build wall-time budget |
 | `path_output_spacing_m` | 0.05 m | maximum densified Path segment spacing |
 | `max_rejected_markers` | 5000 | displayed rejection-attempt cap |
+| `path_invalid_confirmations` | 2 | consecutive soft corridor failures; sensor-noise bootstrap only |
 
-The RRT* controls below are present in the same YAML but inactive while
-`planner_mode=wavefront`:
+The RRT* controls below are active in the baseline and inactive only in the
+Wavefront comparison profile:
 
 | Parameter | YAML value | Meaning |
 |---|---:|---|
@@ -428,6 +444,10 @@ replace verification of the real 5 cm FastDEM source config, cloud, and TF.
 - final RRT* parent tree contains no rejected terrain edge;
 - additional RRT* iterations do not increase the best retained path cost;
 - exact `start == goal` and half-cell map-boundary goal handling.
+- remaining-corridor validation including passed-segment exclusion, unknown,
+  step, slope, and monotonic progress behavior;
+- stale Goal epoch rejection, generation-tolerant post-revalidation commit,
+  latest-request coalescing, and one automatic replan per invalidation episode.
 
 `planner_node.cpp` performs one more terrain revalidation of every selected graph
 edge before publishing the densified path.
@@ -438,17 +458,18 @@ This profile is a standalone immutable-snapshot demonstration. It does not
 combine an occupancy grid, Nav2 costmaps, inflation, or dynamic obstacles; it
 is not a Nav2 planner plugin and has no local planner or controller. It also
 does not animate every expansion, persist a global graph, perform local graph
-repair, or automatically replan after a map update.
+repair, or more than one automatic replan for a confirmed invalidation episode.
 
 Heading state, directional step-up/down limits, foothold feasibility, and a
 roughness soft cost remain future work. The current terrain gates and timing
 results must not be described as physically RUBI-valid, safe, optimal, or
 real-time without corresponding robot experiments.
 
-Map-update auto-replanning is a separate second-stage feature. It needs a
-worker/coalescing design, request epochs or cancellation, and stale-result
-validation; calling the full planner directly from the cloud callback is not
-the V0 contract.
+FastDEM updates can still miss rapid dynamic obstacles between global-map
+snapshots. This global lifecycle does not provide an immediate collision stop;
+that remains the responsibility of a local planner/controller. The 8 cm/15°
+terrain gates and the two-confirmation setting are software bootstrap values,
+not measured RUBI physical limits.
 
 ## References
 
