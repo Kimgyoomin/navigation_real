@@ -1,0 +1,562 @@
+# ============================================================
+# Planner Server
+# 기존 사용자 정의 Sparse A* planner를 그대로 사용한다.
+# ============================================================
+planner_server:
+  ros__parameters:
+    use_sim_time: false
+
+    # Planner가 기대하는 실행 주기 [Hz]
+    expected_planner_frequency: 2.0
+
+    planner_plugins: ["GridBased"]
+
+    GridBased:
+      # 기존 RUBI 사용자 정의 global planner
+      plugin: "pongbot_global_planner/AstarPlanner"
+
+
+# ============================================================
+# Controller Server
+# DWB 대신 MPPI Controller를 사용한다.
+# ============================================================
+controller_server:
+  ros__parameters:
+    # launch의 RewrittenYaml이 최종 값을 덮어쓴다.
+    use_sim_time: false
+
+    # Controller 실행 주기 [Hz]
+    controller_frequency: 10.0
+
+    # FAST-LIO가 제공하는 odometry topic
+    odom_topic: /Odometry
+
+    # 이 값보다 작은 속도는 0으로 취급
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.001
+    min_theta_velocity_threshold: 0.001
+
+    # 일시적인 controller 실패 허용 시간 [s]
+    failure_tolerance: 0.3
+
+    controller_plugins: ["FollowPath"]
+
+    # ROS 2 Humble plugin 설정
+    progress_checker_plugin: "progress_checker"
+    goal_checker_plugins: ["goal_checker"]
+
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+
+      # 이 거리 이상 이동해야 진행 중으로 판단 [m]
+      required_movement_radius: 0.20
+
+      # 정지 상태를 허용할 최대 시간 [s]
+      movement_time_allowance: 30.0
+
+    goal_checker:
+      plugin: "nav2_controller::SimpleGoalChecker"
+
+      # 목표 위치 허용 오차 [m]
+      xy_goal_tolerance: 0.25
+
+      # 목표 yaw 허용 오차 [rad]
+      yaw_goal_tolerance: 0.25
+
+      # 위치 도달 후 yaw 정렬 상태를 유지
+      stateful: true
+
+    # ========================================================
+    # MPPI Controller
+    # 공식 Humble MPPI 예제의 기본값을 중심으로 구성한다.
+    # ========================================================
+    FollowPath:
+      plugin: "nav2_mppi_controller::MPPIController"
+
+      # 한 trajectory를 구성하는 시간 step 개수
+      time_steps: 56
+
+      # trajectory point 간 시간 간격 [s]
+      # 56 × 0.05 = 2.8초 prediction horizon
+      model_dt: 0.1
+
+      # 한 iteration에서 생성할 trajectory 후보 수
+      batch_size: 1000
+
+      # 선속도 x 방향 noise 표준편차 [m/s]
+      vx_std: 0.20
+
+      # DiffDrive에서는 사용되지 않지만 공식 기본값 유지
+      vy_std: 0.20
+
+      # 각속도 noise 표준편차 [rad/s]
+      wz_std: 0.40
+
+      # 최대 전진 속도 [m/s]
+      vx_max: 0.8
+
+      # 후진을 사용하지 않으므로 0으로 제한
+      vx_min: 0.00
+
+      # DiffDrive에서는 횡속도를 사용하지 않음
+      vy_max: 0.00
+
+      # 최대 yaw 속도 [rad/s]
+      wz_max: 0.80
+
+      # MPPI 최적화 반복 횟수
+      # 공식 문서는 1회 반복과 큰 batch를 권장
+      iteration_count: 1
+
+      # 로봇 뒤쪽 global path를 제거할 거리 [m]
+      prune_distance: 1.50
+
+      # TF 조회 허용 시간 [s]
+      transform_tolerance: 0.30
+
+      # 낮을수록 최저 비용 trajectory를 강하게 선택
+      temperature: 0.30
+
+      # 제어 입력의 smoothness / energy trade-off
+      gamma: 0.015
+
+      # RUBI는 현재 횡이동을 사용하지 않으므로 DiffDrive
+      motion_model: "DiffDrive"
+
+      # trajectory 시각화는 CPU 부하가 크므로 기본 비활성화
+      visualize: true
+
+      # 최적화 실패 시 noise reset 재시도 횟수
+      retry_attempt_limit: 1
+
+      # Humble MPPI optimizer 비활성 상태 reset 시간 [s]
+      reset_period: 1.0
+
+      # 매 cycle마다 noise를 다시 생성할지 여부
+      regenerate_noises: false
+
+      # 시각화 활성화 시 trajectory downsampling 설정
+      TrajectoryVisualizer:
+        trajectory_step: 5
+        time_step: 3
+
+      # MPPI trajectory 평가 함수 목록
+      critics:
+        - "ConstraintCritic"
+        - "CostCritic"
+        - "GoalCritic"
+        - "GoalAngleCritic"
+        - "PathAlignCritic"
+        - "PathFollowCritic"
+        - "PathAngleCritic"
+        - "PreferForwardCritic"
+
+      # 속도와 motion model 제약조건 평가
+      ConstraintCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 4.0
+
+      # Costmap의 obstacle / inflation cost 평가
+      CostCritic:
+        enabled: true
+        cost_power: 1
+
+        # 공식 기본 obstacle cost 가중치
+        cost_weight: 3.81
+
+        # inflated cost 영역에 대한 임계 비용
+        critical_cost: 300.0
+
+        # 원형 중심점이 아닌 실제 footprint를 검사
+        consider_footprint: true
+
+        # 실제 충돌 trajectory에 부여하는 큰 비용
+        collision_cost: 1000000.0
+
+        # 목표 근처에서는 장애물 선호 비용을 완화 [m]
+        near_goal_distance: 1.0
+
+      # 목표 위치까지의 거리 평가
+      GoalCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+
+        # 목표가 이 거리 안에 들어오면 critic 적용 [m]
+        threshold_to_consider: 1.4
+
+      # 최종 목표 yaw 정렬 평가
+      GoalAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.0
+        threshold_to_consider: 0.5
+
+      # Global path 방향에 대한 정렬 평가
+      PathAlignCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 14.0
+
+        # Path가 장애물에 점유되면 path 정렬 critic을 완화
+        max_path_occupancy_ratio: 0.05
+
+        # 평가할 trajectory point 간격
+        trajectory_point_step: 3
+
+        # 목표 근처에서 critic을 해제할 거리 [m]
+        threshold_to_consider: 0.5
+
+        # 가장 멀리 진행한 지점 이후 참조 path point 수
+        offset_from_furthest: 20
+
+        # A* path orientation을 강제 사용하지 않음
+        use_path_orientations: false
+
+      # Path를 따라 앞으로 진행하는 정도 평가
+      PathFollowCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        offset_from_furthest: 5
+        threshold_to_consider: 1.4
+
+      # Path heading과 trajectory heading 평가
+      PathAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 2.0
+        offset_from_furthest: 4
+        threshold_to_consider: 0.5
+        max_angle_to_furthest: 1.0
+
+        # 후진보다 전진 trajectory를 선호
+        forward_preference: true
+
+      # 전진 motion을 선호
+      PreferForwardCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 0.5
+
+
+# ============================================================
+# Local Costmap
+# 기존 StaticLayer와 InflationLayer를 유지하고,
+# ObstacleLayer만 SpatioTemporalVoxelLayer로 교체한다.
+# ============================================================
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      use_sim_time: false
+
+      global_frame: camera_init
+      robot_base_frame: base_link
+
+      rolling_window: true
+      width: 8
+      height: 8
+      resolution: 0.05
+
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      transform_tolerance: 0.30
+
+      track_unknown_space: false
+
+      # robot_radius: 0.25
+      footprint: "[[-0.225, -0.25],[-0.225, 0.25],[0.225, 0.25],[0.225, -0.25]]"
+      footprint_padding: 0.10
+
+      plugins:
+        - "static_layer"
+        - "stvl_layer"
+        - "inflation_layer"
+
+      # 기존 2D OccupancyGrid map을 local costmap에도 사용
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        enabled: true
+        map_topic: /map
+        map_subscribe_transient_local: true
+        subscribe_to_updates: true
+
+      # ======================================================
+      # Spatio-Temporal Voxel Layer
+      # Livox MID-360 PointCloud2를 3D voxel로 누적·감쇠한다.
+      # ======================================================
+      stvl_layer:
+        plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
+        enabled: true
+
+        # Local obstacle voxel 유지 시간 [s]
+        # 공식 문서의 local 권장 범위 5~15초 중 최소값
+        voxel_decay: 5.0
+
+        # 0: linear, 1: exponential, -1: persistent
+        decay_model: 0
+
+        # Voxel 한 변의 크기 [m]
+        voxel_size: 0.05
+
+        # Local costmap은 unknown을 추적하지 않음
+        track_unknown_space: false
+
+        # Observation buffer 유지 시간 [s]
+        observation_persistence: 0.0
+
+        # Layer가 처리할 최대 obstacle 높이 [m]
+        max_obstacle_height: 3.50
+
+        # 2D costmap에 반영할 최소 voxel 개수
+        mark_threshold: 0
+
+        # 로봇 footprint 내부 voxel 제거
+        update_footprint_enabled: true
+
+        # 1: 기존 layer와 max 방식으로 결합
+        combination_method: 1
+
+        # 센서가 marking할 최대 수평 거리 [m]
+        obstacle_range: 4.0
+
+        # Voxel grid 기준 z 원점 [m]
+        origin_z: 0.0
+
+        # 디버깅 시에만 true 권장
+        publish_voxel_map: false
+
+        # STVL 내부 TF 허용 시간 [s]
+        transform_tolerance: 0.30
+
+        # Navigation 모드이므로 mapping 비활성화
+        mapping_mode: false
+
+        # Mapping mode 자동 저장 주기 [s]
+        map_save_duration: 60.0
+
+        # 같은 PointCloud를 marking과 clearing에 각각 사용
+        observation_sources: "livox_mark livox_clear"
+
+        # ----------------------------------------------------
+        # Livox obstacle marking source
+        # ----------------------------------------------------
+        livox_mark:
+          enabled: true
+          data_type: "PointCloud2"
+          topic: /livox/lidar_PointCloud2
+
+          marking: true
+          clearing: false
+
+          # 이 높이보다 낮은 point는 obstacle로 사용하지 않음 [m]
+          min_obstacle_height: 0.10
+
+          # 이 높이보다 높은 point는 obstacle로 사용하지 않음 [m]
+          max_obstacle_height: 3.50
+
+          # 0이면 입력 주기 검사 비활성화
+          expected_update_rate: 0.0
+
+          # 0이면 최신 observation만 사용
+          observation_persistence: 0.0
+
+          # 읽은 후 observation buffer를 즉시 비우지 않음
+          clear_after_reading: false
+
+          # Dense PointCloud 연산량 감소용 voxel filter
+          filter: "voxel"
+
+          # 한 voxel에 필요한 최소 point 수
+          voxel_min_points: 0
+
+        # ----------------------------------------------------
+        # Livox clearing frustum source
+        # ----------------------------------------------------
+        livox_clear:
+          enabled: true
+          data_type: "PointCloud2"
+          topic: /livox/lidar_PointCloud2
+
+          marking: false
+          clearing: true
+
+          # Clearing frustum의 최소 z [m]
+          min_z: 0.10
+
+          # Clearing frustum의 최대 z [m]
+          max_z: 5.0
+
+          # MID-360 약 59도 vertical FoV 초기값 [rad]
+          # 실제 driver와 장착 방향을 기준으로 검증 필요
+          vertical_fov_angle: 1.03
+
+          # 360도 horizontal FoV [rad]
+          horizontal_fov_angle: 6.283
+
+          # 3D LiDAR에서는 0을 사용
+          decay_acceleration: 0.0
+
+          # 0: depth camera, 1: 3D LiDAR
+          model_type: 1
+
+      # 기존 inflation 값 최대한 유지
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: true
+        inflation_radius: 0.35
+        cost_scaling_factor: 3.0
+
+      # 초기 RViz 디버깅용
+      always_send_full_costmap: true
+
+
+# ============================================================
+# Global Costmap
+# 기존 StaticLayer를 유지하고 ObstacleLayer만 STVL로 교체한다.
+# ============================================================
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: false
+
+      global_frame: map
+      robot_base_frame: base_link
+
+      update_frequency: 2.0
+      publish_frequency: 1.0
+      transform_tolerance: 1.0
+
+      resolution: 0.05
+      track_unknown_space: true
+      rolling_window: false
+
+      # robot_radius: 0.25
+      footprint: "[[-0.225, -0.25],[-0.225, 0.25],[0.225, 0.25],[0.225, -0.25]]"
+      footprint_padding: 0.10 
+
+      plugins:
+        - "static_layer"
+        - "stvl_layer"
+        - "inflation_layer"
+
+      # 기존 2D OccupancyGrid map 유지
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        enabled: true
+        map_topic: /map
+        map_subscribe_transient_local: true
+        subscribe_to_updates: true
+
+      # Global 3D obstacle voxel layer
+      stvl_layer:
+        plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
+        enabled: true
+
+        # Global obstacle voxel 유지 시간 [s]
+        # 공식 문서의 global 권장 범위 15~45초 중 초기값
+        voxel_decay: 20.0
+
+        # 0: linear decay
+        decay_model: 0
+
+        # Voxel 한 변 크기 [m]
+        voxel_size: 0.05
+
+        # Global map은 unknown 영역 추적
+        track_unknown_space: true
+
+        observation_persistence: 0.0
+        max_obstacle_height: 3.50
+        mark_threshold: 0
+        update_footprint_enabled: true
+        combination_method: 1
+        obstacle_range: 4.0
+        origin_z: 0.0
+
+        # 정상 운용에서는 voxel cloud publish 비활성화
+        publish_voxel_map: false
+
+        transform_tolerance: 0.30
+        mapping_mode: false
+        map_save_duration: 60.0
+
+        observation_sources: "livox_mark livox_clear"
+
+        livox_mark:
+          enabled: true
+          data_type: "PointCloud2"
+          topic: /livox/lidar_PointCloud2
+
+          marking: true
+          clearing: false
+
+          min_obstacle_height: 0.10
+          max_obstacle_height: 3.50
+
+          expected_update_rate: 0.0
+          observation_persistence: 0.0
+          clear_after_reading: false
+
+          filter: "voxel"
+          voxel_min_points: 0
+
+        livox_clear:
+          enabled: true
+          data_type: "PointCloud2"
+          topic: /livox/lidar_PointCloud2
+
+          marking: false
+          clearing: true
+
+          min_z: 0.10
+          max_z: 5.0
+
+          # MID-360 약 59도 / 360도 FoV 초기값
+          vertical_fov_angle: 1.03
+          horizontal_fov_angle: 6.283
+
+          # 3D LiDAR는 decay acceleration을 사용하지 않음
+          decay_acceleration: 0.0
+
+          # 3D LiDAR model
+          model_type: 1
+
+      # 기존 global inflation 값 유지
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: true
+        inflation_radius: 0.55
+        cost_scaling_factor: 3.0
+
+      always_send_full_costmap: true
+
+
+# ============================================================
+# 나머지 Nav2 server 설정은 기존 파일 유지
+# ============================================================
+smoother_server:
+  ros__parameters:
+    use_sim_time: false
+
+
+behavior_server:
+  ros__parameters:
+    use_sim_time: false
+
+    local_frame: camera_init
+    global_frame: map
+    robot_base_frame: base_link
+
+    transform_tolerance: 0.3
+
+
+bt_navigator:
+  ros__parameters:
+    use_sim_time: false
+
+    global_frame: map
+    robot_base_frame: base_link
+    odom_topic: /Odometry

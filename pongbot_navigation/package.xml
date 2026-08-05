@@ -23,6 +23,9 @@
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>pointcloud_to_laserscan</exec_depend>
 
+  <exec_depend>nav2_mppi_controller</exec_depend>
+  <exec_depend>spatio_temporal_voxel_layer</exec_depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>
