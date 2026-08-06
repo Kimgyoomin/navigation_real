@@ -65,7 +65,8 @@ def generate_launch_description():
     declared_arguments = [
         DeclareLaunchArgument(
             "pcd_map",
-            default_value="/home/rclab/ros2_ws/src/navigation_real/FAST_LIO_LOCALIZATION2/PCD/1f_fast_lio_260731_segmented.pcd",
+            # default_value="/home/kim/ros2_ws_nav/src/navigation_real/FAST_LIO_ROS2/PCD/2026_07_22_10_43_57.pcd",
+            default_value="/home/rclab/ros2_ws/src/navigation_real/FAST_LIO_ROS2/PCD/RUBI_glim_map.pcd",
         ),
         DeclareLaunchArgument(
             "pcd_map_topic",

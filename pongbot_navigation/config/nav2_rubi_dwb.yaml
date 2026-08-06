@@ -18,7 +18,7 @@ controller_server:
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
-    failure_tolerance: 0.3
+    failure_tolerance: 0.0                                # rubi_simulation 설정
 
     controller_plugins: ["FollowPath"]
 
@@ -48,32 +48,32 @@ controller_server:
       max_vel_x: 0.7
       min_vel_y: 0.0
       max_vel_y: 0.0
-      max_vel_theta: 0.8
+      max_vel_theta: 5.0
 
       min_speed_xy: 0.0
       max_speed_xy: 0.7
       min_speed_theta: 0.0
 
       # RUBI 시뮬레이션 초기 보수값
-      acc_lim_x: 0.50
+      acc_lim_x: 10.0                         # 0.5 -> 1.5 -> 5.0 -> 1.5 -> 5.0 -> 7.0
       acc_lim_y: 0.0
-      acc_lim_theta: 1.20
+      acc_lim_theta: 7.0                      # 1.5 ->  7.0
 
-      decel_lim_x: -0.80
+      decel_lim_x: -10.0                      
       decel_lim_y: 0.0
-      decel_lim_theta: -1.50
+      decel_lim_theta: -7.0                   # -1.5 -> -7.0
 
-      vx_samples: 15
+      vx_samples: 20                          # 15 -> 20
       vy_samples: 1
       vtheta_samples: 41
 
-      sim_time: 2.5
+      sim_time: 2.5                           # 2.5 -> 2.0  
       linear_granularity: 0.05
       angular_granularity: 0.025
 
-      transform_tolerance: 0.30
-      xy_goal_tolerance: 0.25
-      trans_stopped_velocity: 0.05
+      transform_tolerance: 0.50               # 0.3 -> 0.5
+      xy_goal_tolerance: 0.15                 # 0.25 -> 0.15
+      trans_stopped_velocity: 0.25            # 0.05 -> 0.25
 
       short_circuit_trajectory_evaluation: true
       stateful: true
@@ -89,13 +89,13 @@ controller_server:
 
       BaseObstacle.scale: 0.02
 
-      PathAlign.scale: 8.0
-      PathAlign.forward_point_distance: 0.15
+      PathAlign.scale: 32.0                       # 8.0 -> 32.0
+      PathAlign.forward_point_distance: 0.1       # 0.15 -> 0.1
 
       GoalAlign.scale: 20.0
-      GoalAlign.forward_point_distance: 0.15
+      GoalAlign.forward_point_distance: 0.1       # 0.15 -> 0.1
 
-      PathDist.scale: 24.0
+      PathDist.scale: 32.0                        # 24 -> 32
       GoalDist.scale: 20.0
 
       RotateToGoal.scale: 32.0
@@ -122,8 +122,8 @@ local_costmap:
 
       track_unknown_space: false
 
-      robot_radius: 0.25
-      footprint_padding: 0.02
+      robot_radius: 0.30                          # 0.25 -> 0.30
+      footprint_padding: 0.05                     # 0.02 -> 0.05
 
       plugins:
         - "static_layer"
@@ -157,22 +157,22 @@ local_costmap:
           obstacle_min_range: 0.20
           obstacle_max_range: 4.0
 
-          raytrace_min_range: 0.30
-          raytrace_max_range: 5.0
+          raytrace_min_range: 0.0
+          raytrace_max_range: 4.0
 
           # 아래 값은 예시다.
           # camera_init 기준 실제 지면 높이에 맞춰 반드시 수정할 것.
-          min_obstacle_height: 0.1
-          max_obstacle_height: 3.50
+          min_obstacle_height: -0.2                         # 0.1 -> -0.2
+          max_obstacle_height: 1.0                          # 3.5 -> 1.0
 
-          observation_persistence: 0.0
+          observation_persistence: 5.0
           expected_update_rate: 0.0
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
-        inflation_radius: 0.35
-        cost_scaling_factor: 3.0
+        inflation_radius: 0.5                                 # 0.35 -> 0.5
+        cost_scaling_factor: 3.0                              # 5.0 -> 2.0 -> 3.0
 
       # 초기 RViz 디버깅용. 검증 후 false로 바꿔도 됨.
       always_send_full_costmap: true
@@ -187,16 +187,16 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_link
 
-      update_frequency: 2.0
-      publish_frequency: 1.0
+      update_frequency: 5.0                           # 2.0 -> 5.0
+      publish_frequency: 5.0                          # 1.0 -> 5.0
       transform_tolerance: 1.0
 
       resolution: 0.05
       track_unknown_space: true
       rolling_window: false
 
-      robot_radius: 0.25
-      footprint_padding: 0.02
+      robot_radius: 0.30                                # 0.25 -> 0.30
+      footprint_padding: 0.05                           # 0.02 -> 0.05
 
       plugins:
         - "static_layer"
@@ -225,20 +225,20 @@ global_costmap:
           data_type: "PointCloud2"
 
           marking: true
-          clearing: true
+          clearing: false                               # true -> false
 
           obstacle_min_range: 0.20
           obstacle_max_range: 4.0
 
-          raytrace_min_range: 0.30
+          raytrace_min_range: 0.0                       # 0.30 -> 0.0
           raytrace_max_range: 5.0
 
           # 아래 값은 예시다.
           # camera_init 기준 실제 지면 높이에 맞춰 반드시 수정할 것.
-          min_obstacle_height: 0.1
-          max_obstacle_height: 3.50
+          min_obstacle_height: -0.3                       # 0.1 -> -0.3
+          max_obstacle_height: 2.5                        # 3.5 -> 2.5
 
-          observation_persistence: 0.0
+          observation_persistence: 0.5                    # 0.0 -> 0.5
           expected_update_rate: 0.0
 
       inflation_layer:
@@ -247,7 +247,7 @@ global_costmap:
         inflation_radius: 0.55
         cost_scaling_factor: 3.0
 
-      always_send_full_costmap: true
+      always_send_full_costmap: false
 
 
 smoother_server:

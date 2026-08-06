@@ -11,8 +11,10 @@ def generate_launch_description():
             output="screen",
             parameters=[{
                 "joy_topic": "/joy",
+                "cmd_vel_topic": "/cmd_vel",
                 "lcm_channel": "CMD_VEL",
-                "lcm_url": "udpm://239.255.76.67:7667?ttl=255",
+                # LCM is confined to the directly connected robot LAN.
+                "lcm_url": "udpm://239.255.76.67:7667?ttl=1",
 
                 "publish_rate_hz": 50.0,
                 "deadman_timeout_s": 0.3,

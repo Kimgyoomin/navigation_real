@@ -48,7 +48,7 @@ target_link_libraries(lcm_test_listener ${LCM_LIBRARIES})
 add_executable(joy_lcm_node src/joy_lcm_node.cpp)
 add_dependencies(joy_lcm_node lcmtypes_gen)
 target_include_directories(joy_lcm_node PRIVATE ${LCM_INCLUDE_DIRS} ${LCM_GEN_DIR})
-ament_target_dependencies(joy_lcm_node rclcpp sensor_msgs)
+ament_target_dependencies(joy_lcm_node rclcpp sensor_msgs geometry_msgs)
 target_link_libraries(joy_lcm_node ${LCM_LIBRARIES})
 
 install(TARGETS

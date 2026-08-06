@@ -1,13 +1,28 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# enable multicast and add route for lcm out the top
-sudo ifconfig enP7p1s0 multicast
-sudo route add -net 224.0.0.0 netmask 240.0.0.0 dev enP7p1s0
+# LCM multicast must stay on the dedicated Jetson <-> Main PC Ethernet link.
+LCM_IF="${LCM_IF:-enP7p1s0}"
+LCM_GROUP="${LCM_GROUP:-239.255.76.67}"
 
-# If u want to set other network
-# change below 
-# enP7p1s0 -> other network (check by ip a in terminal)
-# 224.0.0.0 -> must be same as server/client netmask (manual setting)
-# After u type down .sh file, u need to give permission for the file
-# chmod +x run_lcm_start.sh 
-# In general, write down chmod +x YOUR_FILE_NAME.sh
+if ! ip link show dev "$LCM_IF" >/dev/null 2>&1; then
+    echo "[LCM] interface not found: $LCM_IF" >&2
+    exit 1
+fi
+
+if ! ip link show dev "$LCM_IF" | grep -q "UP"; then
+    echo "[LCM] interface is not up: $LCM_IF" >&2
+    exit 1
+fi
+
+SUDO=()
+if (( EUID != 0 )); then
+    SUDO=(sudo)
+fi
+
+"${SUDO[@]}" ip link set dev "$LCM_IF" multicast on
+# 'replace' is idempotent, unlike the previous legacy 'route add' command.
+"${SUDO[@]}" ip route replace 224.0.0.0/4 dev "$LCM_IF"
+
+echo "[LCM] multicast route ready"
+ip route get "$LCM_GROUP"

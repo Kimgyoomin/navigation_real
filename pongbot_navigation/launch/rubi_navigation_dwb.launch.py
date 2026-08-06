@@ -38,7 +38,7 @@ def generate_launch_description():
     declared_arguments = [
         DeclareLaunchArgument(
             "map_yaml",
-            default_value=default_map_yaml,
+            default_value="/home/rclab/ros2_ws/src/navigation_real/FAST_LIO_LOCALIZATION2/maps/RUBI_1F_occupancy_map.yaml",
             description="Nav2 OccupancyGrid map YAML file",
         ),
         DeclareLaunchArgument(

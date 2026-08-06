@@ -7,6 +7,7 @@
 #include <cmath>
 
 #include "rclcpp/rclcpp.hpp"
+#include "geometry_msgs/msg/twist.hpp"
 #include "sensor_msgs/msg/joy.hpp"
 
 #include <lcm/lcm-cpp.hpp>
@@ -21,6 +22,7 @@ public:
   : Node("joy_to_lcm")
   {
     joy_topic_   = declare_parameter<std::string>("joy_topic", "/joy");
+    cmd_vel_topic_ = declare_parameter<std::string>("cmd_vel_topic", "/cmd_vel");
     lcm_channel_ = declare_parameter<std::string>("lcm_channel", "CMD_VEL");
     lcm_url_     = declare_parameter<std::string>("lcm_url", "udpm://239.255.76.67:7667?ttl=255");
 
@@ -57,6 +59,11 @@ public:
       rclcpp::SensorDataQoS(),
       std::bind(&JoyToLcmNode::joyCb, this, std::placeholders::_1));
 
+    cmd_vel_sub_ = create_subscription<geometry_msgs::msg::Twist>(
+      cmd_vel_topic_,
+      rclcpp::QoS(10),
+      std::bind(&JoyToLcmNode::cmdVelCb, this, std::placeholders::_1));
+
     last_joy_time_ = now();
 
     const double hz = std::max(1.0, publish_rate_hz_);
@@ -69,6 +76,16 @@ public:
   }
 
 private:
+  // -------------------------
+  // CMD_VEL CALLBACK
+  // -------------------------
+  void cmdVelCb(const geometry_msgs::msg::Twist::SharedPtr msg)
+  {
+    last_cmd_lx_ = msg->linear.x;
+    last_cmd_ly_ = msg->linear.y;
+    last_cmd_az_ = msg->angular.z;
+  }
+
   static inline double clamp(double v, double lo, double hi)
   {
     return std::max(lo, std::min(v, hi));
@@ -177,10 +194,10 @@ private:
     out.seq = seq_++;
     out.utime = static_cast<int64_t>(now().nanoseconds() / 1000);
 
-    // velocity
-    out.linear_x  = static_cast<float>(lx) * 2.0;
-    out.linear_y  = static_cast<float>(ly) * 5.0;
-    out.angular_z = static_cast<float>(az) * 2.5;
+    // velocity from Nav2 /cmd_vel
+    out.linear_x  = static_cast<float>(last_cmd_lx_);
+    out.linear_y  = static_cast<float>(last_cmd_ly_);
+    out.angular_z = static_cast<float>(last_cmd_az_);
 
     // axes
     for (int i = 0; i < 8; ++i)
@@ -195,6 +212,7 @@ private:
 
 private:
   std::string joy_topic_;
+  std::string cmd_vel_topic_;
   std::string lcm_channel_;
   std::string lcm_url_;
 
@@ -223,6 +241,7 @@ private:
   bool deadman_active_{false};
 
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr sub_;
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
   rclcpp::TimerBase::SharedPtr publish_timer_;
   rclcpp::Time last_joy_time_;
 
@@ -233,6 +252,10 @@ private:
   double last_lx_{0.0};
   double last_ly_{0.0};
   double last_az_{0.0};
+
+  double last_cmd_lx_{0.0};
+  double last_cmd_ly_{0.0};
+  double last_cmd_az_{0.0};
 
   float last_axes_[8]{};
   bool  last_buttons_[16]{};
