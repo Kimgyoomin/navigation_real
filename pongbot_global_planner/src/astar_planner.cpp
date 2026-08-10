@@ -234,7 +234,7 @@ nav_msgs::msg::Path AstarPlanner::createPlan(
   // Since inflated areas are traversable, they should become "expensive", not blocked.
   // You can tune cost_scale later (e.g. 2.0, 5.0, 10.0) if planner still hugs walls.
   // --------------------------------------------------------------------------
-  const double cost_scale = 10.0;
+  const double cost_scale = 100.0;
   auto stepPenalty = [costmap, cost_scale](unsigned int x, unsigned int y) -> double {
       const unsigned char c = costmap->getCost(x, y);
       return cost_scale * (static_cast<double>(c) / 255.0);

@@ -7,7 +7,7 @@
       <PipelineSequence name="NavigateWithReplanning">
 
         <!-- Global Planning -->
-        <RateController hz="2.0">
+        <RateController hz="1.0">
           <RecoveryNode number_of_retries="1" name="ComputePathToPose">
 
             <ComputePathToPose

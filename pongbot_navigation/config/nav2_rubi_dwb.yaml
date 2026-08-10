@@ -38,7 +38,30 @@ controller_server:
       stateful: true
 
     FollowPath:
-      plugin: "dwb_core::DWBLocalPlanner"
+      # plugin: "dwb_core::DWBLocalPlanner"
+      # RotationShimController를 위해 아래 블록 추가
+      # controller_server가 직접 로드하는 외부 controller
+      plugin: "nav2_rotation_shim_controller::RotationShimController"
+
+      # Rotation Shim이 내부에서 로드할 실제 path tracker
+      # Humble에서는 반드시 문자열이다.
+      primary_controller: "dwb_core::DWBLocalPlanner"
+
+      # RUBI의 제한적인 제자리 회전을 고려한 초기 실험값
+      angular_dist_threshold: 0.50
+      angular_disengage_threshold: 0.20
+
+      forward_sampling_distance: 0.40
+
+      rotate_to_heading_angular_vel: 0.50
+      max_angular_accel: 1.00
+
+      simulate_ahead_time: 1.00
+
+      rotate_to_goal_heading: false
+      closed_loop: true
+
+      # 여기부터는 기존 DWB 설정을 같은 위치에 그대로 둔다.
       trajectory_generator_name: "dwb_plugins::StandardTrajectoryGenerator"
 
       debug_trajectory_details: true
@@ -75,7 +98,7 @@ controller_server:
       xy_goal_tolerance: 0.15       # 0.25 -> 0.15
       trans_stopped_velocity: 0.25  # 0.05 -> 0.25
 
-      short_circuit_trajectory_evaluation: true
+      # short_circuit_trajectory_evaluation: true
       stateful: true
 
       critics:
@@ -103,7 +126,7 @@ controller_server:
       RotateToGoal.lookahead_time: -1.0
 
       # 튜닝 중 모든 critic 값을 확인
-      short_circuit_trajectory_evaluation: false
+      short_circuit_trajectory_evaluation: true
       publish_evaluation: true
       publish_trajectories: true
 
@@ -128,7 +151,7 @@ local_costmap:
       track_unknown_space: false
 
       robot_radius: 0.25
-      footprint_padding: 0.05
+      footprint_padding: 0.01
 
       plugins:
         - "static_layer"
@@ -145,6 +168,11 @@ local_costmap:
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
+
+        # layer-level 필터도 지정
+        min_obstacle_height: -0.2
+        max_obstacle_height: 2.0
+
 
         footprint_clearing_enabled: true
         combination_method: 1
@@ -170,7 +198,7 @@ local_costmap:
           min_obstacle_height: -0.15     # -2.0 -> -0.3
           max_obstacle_height: 1.0
 
-          observation_persistence: 5.0
+          observation_persistence: 0.0    # 5.0 -> 0.0
           expected_update_rate: 0.0
 
       inflation_layer:
@@ -201,7 +229,7 @@ global_costmap:
       rolling_window: false
 
       robot_radius: 0.25
-      footprint_padding: 0.05
+      footprint_padding: 0.01
 
       plugins:
         - "static_layer"
@@ -218,6 +246,10 @@ global_costmap:
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
+
+        # layer-level 필터도 지정
+        min_obstacle_height: -0.2
+        max_obstacle_height: 2.0
 
         footprint_clearing_enabled: true
         combination_method: 1
@@ -242,14 +274,14 @@ global_costmap:
           # camera_init 기준 실제 지면 높이에 맞춰 반드시 수정할 것.
           min_obstacle_height: -0.3              # 0.1 -> -0.3
           max_obstacle_height: 2.5
-          observation_persistence: 0.5            # 0.0 -> 0.5
+          observation_persistence: 0.0    # 5.0 -> 0.0            # 0.0 -> 0.5 -> 2.0 -> 0.0
           expected_update_rate: 0.0
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
-        inflation_radius: 0.55
-        cost_scaling_factor: 3.0
+        inflation_radius: 0.70                # 0.55 -> 0.70
+        cost_scaling_factor: 1.0              # 3.0 -> 2.0 -> 1.0
 
       always_send_full_costmap: true
 
