@@ -199,7 +199,7 @@ std::vector<NodeId> shortestPathAStar(
       parent[adjacent.neighbor] = current.id;
       open.push(
         QueueEntry{
-          adjacent.neighbor, tentative, tentative + heuristic(adjacent.neighbor)});
+            adjacent.neighbor, tentative, tentative + heuristic(adjacent.neighbor)});
     }
   }
 
@@ -365,7 +365,7 @@ PlanResult WavefrontPlanner::plan(
       goal_id, toTerrainPoint(goal, goal_evaluation), goal_evaluation,
       GraphNodeRole::kGoal, 0U});
 
-  if(planarDistance(start, goal) <= kComparisonTolerance) {
+  if (planarDistance(start, goal) <= kComparisonTolerance) {
     result.goal_connections = 1U;
     result.path_node_ids = {start_id};
     result.path = {result.nodes[start_id].point};
@@ -408,8 +408,8 @@ PlanResult WavefrontPlanner::plan(
     };
 
   const auto add_edge = [&](
-      const NodeId from, const NodeId to, const EdgeEvaluation & evaluation,
-      const bool is_goal_connection, const bool is_loop_closure) {
+    const NodeId from, const NodeId to, const EdgeEvaluation & evaluation,
+    const bool is_goal_connection, const bool is_loop_closure) {
       const auto key = canonicalEdge(from, to);
       if (from == to || edge_keys.find(key) != edge_keys.end()) {
         reject(
@@ -429,7 +429,7 @@ PlanResult WavefrontPlanner::plan(
       edge_keys.insert(key);
       result.edges.push_back(
         GraphEdge{
-          from, to, evaluation, cost, is_goal_connection, is_loop_closure});
+        from, to, evaluation, cost, is_goal_connection, is_loop_closure});
       return true;
     };
 
@@ -517,10 +517,8 @@ PlanResult WavefrontPlanner::plan(
         continue;
       }
 
-      NodeId merge_target = std::numeric_limits<NodeId>::max();
       const double merge_radius_squared =
         parameters_.merge_radius_m * parameters_.merge_radius_m;
-      
       std::vector<std::pair<double, NodeId>> merge_candidates;
 
       for (const auto & existing : result.nodes) {
@@ -530,15 +528,6 @@ PlanResult WavefrontPlanner::plan(
 
         const double distance_squared =
           planarDistanceSquared(candidate, toPoint2D(existing.point));
-        
-        // if (
-        //   distance_squared < merge_distance_squared - kComparisonTolerance ||
-        //   (std::abs(distance_squared - merge_distance_squared) <=
-        //   kComparisonTolerance && existing.id < merge_target))
-        // {
-        //   merge_target = existing.id;
-        //   merge_distance_squared = distance_squared;
-        // }
 
         if (
           distance_squared <=
@@ -552,8 +541,8 @@ PlanResult WavefrontPlanner::plan(
       // 1) distance squared
       // 2) Node ID
       //
-      // This preserves deterministic behavior. Dont' put a floating-point
-      // tolerance inside the comparator because std::sort requires a strict weak ordering
+      // This preserves deterministic behavior. Do not put a floating-point
+      // tolerance in the comparator: std::sort requires strict weak ordering.
       std::sort(merge_candidates.begin(), merge_candidates.end());
 
       bool merge_edge_added = false;
@@ -568,87 +557,18 @@ PlanResult WavefrontPlanner::plan(
           stop_for_time_budget = true;
           break;
         }
-      }
-
-      const NodeId merge_target = merge_candidate.second;
-      const Point2D merge_point = 
-        toPoint2D(result.nodes[merge_target].point);
-
-      const auto merge_key = canonicalEdge(source, merge_target);
-
-      if (edge_keys.find(merge_key) != edge_keys.end()) {
-        reject(
-          source,
-          merge_point,
-          RejectedSampleKind::kDuplicateEdge,
-          TerrainInvalidReason::kNone);
-
-      represented_by_existing_edge = true;
-      continue;
-      }
-
-      const EdgeEvaluation edge_evaluateion = 
-        evaluate_edge(source_point, merge_point);
-
-      if(!edge_evaluateion.valid) {
-        reject(
-          source,
-          merge_point,
-          RejectedSampleKind::kMergeEdgeInvalid,
-          edge_evaluateion.reason);
-        continue;
-      }
-
-      if (!hasFiniteValidEdgeEvaluation(edge_evaluateion)) {
-        reject(
-          source,
-          merge_point,
-          RejectedSampleKind::kNonFiniteEvaluation,
-          edge_evaluateion.reason);
-        continue;
-      }
-
-      if (
-        add_edge(
-          source,
-          merge_target,
-          edge_evaluation,
-          false,            // is_goal_connection
-          true))            // is_loop_closure
-      {
-        merge_edge_added = true;
-        try_goal_connection(merge_target);
-        break;
-      }
-    }
-
-    if (stop_for_time_budget) {
-      break;
-    }
-
-    if (merge_edge_added) {
-      if (
-        parameters_.stop_when_goal_connected &&
-        result.goal_connections > 0U)
-      {
-        stop_for_goal_connection = true;
-        break;
-      }
-
-      continue;
-    }
-
-    // If an identical source-target edge already exists, this spatial region is
-    // already represented. Don't create an almost-duplicate sampled node
-    if (represented_by_existing_edge) {
-      continue;
-    }
-
-    // If this point is reached, no merge target was usable
-    // Fall through to the existing "create a new sampled node" block
-
-      if (merge_target != std::numeric_limits<NodeId>::max()) {
+        const NodeId merge_target = merge_candidate.second;
         const Point2D merge_point = toPoint2D(result.nodes[merge_target].point);
+        const auto merge_key = canonicalEdge(source, merge_target);
+
+        if (edge_keys.find(merge_key) != edge_keys.end()) {
+          reject(
+            source, merge_point, RejectedSampleKind::kDuplicateEdge,
+            TerrainInvalidReason::kNone);
+          represented_by_existing_edge = true;
+          continue;
+        }
+
         const EdgeEvaluation edge_evaluation =
           evaluate_edge(source_point, merge_point);
         if (!edge_evaluation.valid) {
@@ -663,12 +583,32 @@ PlanResult WavefrontPlanner::plan(
             edge_evaluation.reason);
           continue;
         }
-        add_edge(source, merge_target, edge_evaluation, false, true);
-        try_goal_connection(merge_target);
-        if (parameters_.stop_when_goal_connected && result.goal_connections > 0U) {
+
+        if (add_edge(source, merge_target, edge_evaluation, false, true)) {
+          merge_edge_added = true;
+          try_goal_connection(merge_target);
+          break;
+        }
+      }
+
+      if (stop_for_time_budget) {
+        break;
+      }
+
+      if (merge_edge_added) {
+        if (
+          parameters_.stop_when_goal_connected &&
+          result.goal_connections > 0U)
+        {
           stop_for_goal_connection = true;
           break;
         }
+        continue;
+      }
+
+      // An existing source-target edge already represents this spatial region.
+      // Invalid non-duplicate merge edges alone still fall through to insertion.
+      if (represented_by_existing_edge) {
         continue;
       }
 

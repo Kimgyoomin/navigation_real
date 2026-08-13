@@ -16,6 +16,8 @@ namespace
 {
 
 constexpr double kPi = 3.141592653589793238462643383279502884;
+constexpr double kGoldenAngle = kPi * (3.0 - 2.236067977499789696409173668731276);
+constexpr double kPointTolerance = 1.0e-10;
 
 NodeEvaluation flatNode(const Point2D &)
 {
@@ -70,6 +72,64 @@ WavefrontPlannerParameters smallParameters()
   parameters.risk_weights.slope = 1.0;
   parameters.risk_weights.step = 0.0;
   return parameters;
+}
+
+bool samePoint(const Point2D & lhs, const Point2D & rhs)
+{
+  return
+    std::abs(lhs.x - rhs.x) <= kPointTolerance &&
+    std::abs(lhs.y - rhs.y) <= kPointTolerance;
+}
+
+Point2D ringPoint(const std::size_t sample)
+{
+  const double angle = 2.0 * kPi * static_cast<double>(sample) / 8.0;
+  return Point2D{std::cos(angle), std::sin(angle)};
+}
+
+Point2D firstDepthOneCandidate()
+{
+  return Point2D{1.0 + std::cos(kGoldenAngle), std::sin(kGoldenAngle)};
+}
+
+WavefrontPlannerParameters mergeRegressionParameters()
+{
+  auto parameters = smallParameters();
+  parameters.num_expansion_samples = 8U;
+  parameters.merge_radius_m = 0.50;
+  parameters.neighbor_connection_radius_m = 0.01;
+  parameters.max_expansions = 2U;
+  parameters.stop_when_goal_connected = false;
+  return parameters;
+}
+
+NodeEvaluation mergeRegressionNode(const Point2D & point)
+{
+  const Point2D start{0.0, 0.0};
+  const Point2D goal{100.0, 100.0};
+  bool allowed = samePoint(point, start) || samePoint(point, goal) ||
+    samePoint(point, firstDepthOneCandidate());
+  for (std::size_t sample = 0U; sample < 8U; ++sample) {
+    allowed = allowed || samePoint(point, ringPoint(sample));
+  }
+
+  auto evaluation = flatNode(point);
+  if (!allowed) {
+    evaluation.valid = false;
+    evaluation.reason = TerrainInvalidReason::kUnknown;
+  }
+  return evaluation;
+}
+
+bool hasEdge(const PlanResult & result, const NodeId lhs, const NodeId rhs)
+{
+  return std::any_of(
+    result.edges.begin(), result.edges.end(),
+    [lhs, rhs](const GraphEdge & edge) {
+      return
+      (edge.from == lhs && edge.to == rhs) ||
+      (edge.from == rhs && edge.to == lhs);
+    });
 }
 
 TEST(WavefrontPlanner, DirectGoalConnectionStopsBeforeExpansion)
@@ -388,6 +448,132 @@ TEST(WavefrontPlanner, RejectsInvalidConfiguration)
   EXPECT_THROW(WavefrontPlanner{parameters}, std::invalid_argument);
 }
 
+TEST(WavefrontPlanner, MergeTriesNextTargetWhenNearestEdgeIsInvalid)
+{
+  const WavefrontPlanner planner(mergeRegressionParameters());
+  const Point2D source = ringPoint(0U);
+  const Point2D nearest_target = ringPoint(2U);
+  const Point2D second_target = ringPoint(1U);
+  std::vector<Point2D> evaluated_merge_targets;
+
+  const auto selective_edge = [&](const Point2D & from, const Point2D & to) {
+      auto evaluation = flatEdge(from, to);
+      if (
+        samePoint(from, source) &&
+        (samePoint(to, nearest_target) || samePoint(to, second_target)))
+      {
+        evaluated_merge_targets.push_back(to);
+        if (samePoint(to, nearest_target)) {
+          evaluation.valid = false;
+          evaluation.reason = TerrainInvalidReason::kStepLimit;
+        }
+      }
+      return evaluation;
+    };
+
+  const PlanResult result = planner.plan(
+    Point2D{0.0, 0.0}, Point2D{100.0, 100.0},
+    mergeRegressionNode, selective_edge);
+
+  ASSERT_GE(evaluated_merge_targets.size(), 2U);
+  EXPECT_TRUE(samePoint(evaluated_merge_targets[0], nearest_target));
+  EXPECT_TRUE(samePoint(evaluated_merge_targets[1], second_target));
+  EXPECT_FALSE(hasEdge(result, 2U, 4U));
+  ASSERT_TRUE(hasEdge(result, 2U, 3U));
+  EXPECT_TRUE(
+    std::any_of(
+      result.edges.begin(), result.edges.end(),
+      [](const GraphEdge & edge) {
+        return
+        edge.is_loop_closure &&
+        ((edge.from == 2U && edge.to == 3U) ||
+        (edge.from == 3U && edge.to == 2U));
+      }));
+  EXPECT_GE(result.reject_counts.merge_edge_invalid, 1U);
+}
+
+TEST(WavefrontPlanner, InsertsCandidateWhenAllMergeEdgesAreInvalid)
+{
+  const WavefrontPlanner planner(mergeRegressionParameters());
+  const Point2D source = ringPoint(0U);
+  const Point2D nearest_target = ringPoint(2U);
+  const Point2D second_target = ringPoint(1U);
+  const Point2D candidate = firstDepthOneCandidate();
+
+  const auto invalid_merge_edges = [&](const Point2D & from, const Point2D & to) {
+      auto evaluation = flatEdge(from, to);
+      if (
+        samePoint(from, source) &&
+        (samePoint(to, nearest_target) || samePoint(to, second_target)))
+      {
+        evaluation.valid = false;
+        evaluation.reason = TerrainInvalidReason::kStepLimit;
+      }
+      return evaluation;
+    };
+
+  const PlanResult result = planner.plan(
+    Point2D{0.0, 0.0}, Point2D{100.0, 100.0},
+    mergeRegressionNode, invalid_merge_edges);
+
+  const auto candidate_node = std::find_if(
+    result.nodes.begin(), result.nodes.end(),
+    [&candidate](const GraphNode & node) {
+      return node.role == GraphNodeRole::kSampled &&
+      samePoint(Point2D{node.point.x, node.point.y}, candidate);
+    });
+  ASSERT_NE(candidate_node, result.nodes.end());
+  EXPECT_EQ(candidate_node->wavefront_depth, result.nodes[2U].wavefront_depth + 1U);
+
+  const auto expansion_edge = std::find_if(
+    result.edges.begin(), result.edges.end(),
+    [&candidate_node](const GraphEdge & edge) {
+      return
+      edge.from == 2U && edge.to == candidate_node->id &&
+      !edge.is_loop_closure && !edge.is_goal_connection;
+    });
+  ASSERT_NE(expansion_edge, result.edges.end());
+  EXPECT_GE(result.reject_counts.merge_edge_invalid, 2U);
+}
+
+TEST(WavefrontPlanner, DuplicateMergeDoesNotInsertNearDuplicateNode)
+{
+  auto parameters = mergeRegressionParameters();
+  parameters.neighbor_connection_radius_m = 1.50;
+  const WavefrontPlanner planner(parameters);
+  const Point2D source = ringPoint(0U);
+  const Point2D nearest_target = ringPoint(2U);
+  const Point2D second_target = ringPoint(1U);
+  const Point2D candidate = firstDepthOneCandidate();
+  std::size_t duplicate_edge_evaluations = 0U;
+
+  const auto counting_edge = [&](const Point2D & from, const Point2D & to) {
+      if (
+        samePoint(from, source) &&
+        (samePoint(to, nearest_target) || samePoint(to, second_target)))
+      {
+        ++duplicate_edge_evaluations;
+      }
+      return flatEdge(from, to);
+    };
+
+  const PlanResult result = planner.plan(
+    Point2D{0.0, 0.0}, Point2D{100.0, 100.0},
+    mergeRegressionNode, counting_edge);
+
+  EXPECT_TRUE(hasEdge(result, 2U, 3U));
+  EXPECT_TRUE(hasEdge(result, 2U, 4U));
+  EXPECT_GE(result.reject_counts.duplicate_edge, 2U);
+  EXPECT_EQ(duplicate_edge_evaluations, 0U);
+  EXPECT_EQ(
+    std::count_if(
+      result.nodes.begin(), result.nodes.end(),
+      [&candidate](const GraphNode & node) {
+        return samePoint(Point2D{node.point.x, node.point.y}, candidate);
+      }),
+    0);
+}
+
 TEST(WavefrontPlanner, StartAtGoalReturnsSingletonPathWithoutEdgeEvaluation)
 {
   auto parameters = smallParameters();
@@ -410,9 +596,13 @@ TEST(WavefrontPlanner, StartAtGoalReturnsSingletonPathWithoutEdgeEvaluation)
 
   ASSERT_TRUE(result.success) << result.message;
   EXPECT_EQ(result.termination, WavefrontTermination::kGoalConnected);
+  EXPECT_EQ(result.goal_connections, 1U);
+  EXPECT_TRUE(result.stopped_on_goal_connection);
   EXPECT_EQ(edge_evaluation_count, 0U);
   EXPECT_EQ(result.nodes.size(), 2U);
   EXPECT_TRUE(result.edges.empty());
+  EXPECT_EQ(result.nodes[0].role, GraphNodeRole::kStart);
+  EXPECT_EQ(result.nodes[1].role, GraphNodeRole::kGoal);
 
   ASSERT_EQ(result.path_node_ids.size(), 1U);
   EXPECT_EQ(result.path_node_ids.front(), 0U);
