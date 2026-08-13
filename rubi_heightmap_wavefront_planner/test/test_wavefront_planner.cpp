@@ -388,5 +388,39 @@ TEST(WavefrontPlanner, RejectsInvalidConfiguration)
   EXPECT_THROW(WavefrontPlanner{parameters}, std::invalid_argument);
 }
 
+TEST(WavefrontPlanner, StartAtGoalReturnsSingletonPathWithoutEdgeEvaluation)
+{
+  auto parameters = smallParameters();
+  parameters.stop_when_goal_connected = false;
+  const WavefrontPlanner planner(parameters);
+
+  std::size_t edge_evaluation_count = 0U;
+  const auto invalid_edge =
+    [&edge_evaluation_count](const Point2D &, const Point2D &) {
+      ++edge_evaluation_count;
+      EdgeEvaluation evaluation;
+      evaluation.valid = false;
+      evaluation.reason = TerrainInvalidReason::kInvalidInput;
+      return evaluation;
+    };
+
+  const Point2D point{1.25, -0.75};
+  const PlanResult result =
+    planner.plan(point, point, flatNode, invalid_edge);
+
+  ASSERT_TRUE(result.success) << result.message;
+  EXPECT_EQ(result.termination, WavefrontTermination::kGoalConnected);
+  EXPECT_EQ(edge_evaluation_count, 0U);
+  EXPECT_EQ(result.nodes.size(), 2U);
+  EXPECT_TRUE(result.edges.empty());
+
+  ASSERT_EQ(result.path_node_ids.size(), 1U);
+  EXPECT_EQ(result.path_node_ids.front(), 0U);
+
+  ASSERT_EQ(result.path.size(), 1U);
+  EXPECT_DOUBLE_EQ(result.path.front().x, point.x);
+  EXPECT_DOUBLE_EQ(result.path.front().y, point.y);
+}
+
 }  // namespace
 }  // namespace rubi_heightmap_wavefront_planner

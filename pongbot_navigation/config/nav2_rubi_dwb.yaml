@@ -262,7 +262,7 @@ global_costmap:
           data_type: "PointCloud2"
 
           marking: true
-          clearing: false
+          clearing: true
 
           obstacle_min_range: 0.1                 # 0.3 -> 0.1
           obstacle_max_range: 4.0

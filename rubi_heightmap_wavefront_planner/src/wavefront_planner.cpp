@@ -11,6 +11,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 namespace rubi_heightmap_wavefront_planner
 {
@@ -364,6 +365,18 @@ PlanResult WavefrontPlanner::plan(
       goal_id, toTerrainPoint(goal, goal_evaluation), goal_evaluation,
       GraphNodeRole::kGoal, 0U});
 
+  if(planarDistance(start, goal) <= kComparisonTolerance) {
+    result.goal_connections = 1U;
+    result.path_node_ids = {start_id};
+    result.path = {result.nodes[start_id].point};
+    result.success = true;
+    result.termination = WavefrontTermination::kGoalConnected;
+    result.stopped_on_goal_connection = true;
+    result.message = "start already equals goal";
+    update_build_time();
+    return result;
+  }
+
   std::deque<NodeId> frontier;
   frontier.push_back(start_id);
   std::set<std::pair<NodeId, NodeId>> edge_keys;
@@ -505,23 +518,134 @@ PlanResult WavefrontPlanner::plan(
       }
 
       NodeId merge_target = std::numeric_limits<NodeId>::max();
-      double merge_distance_squared =
+      const double merge_radius_squared =
         parameters_.merge_radius_m * parameters_.merge_radius_m;
+      
+      std::vector<std::pair<double, NodeId>> merge_candidates;
+
       for (const auto & existing : result.nodes) {
         if (existing.id == source || existing.role == GraphNodeRole::kGoal) {
           continue;
         }
+
         const double distance_squared =
           planarDistanceSquared(candidate, toPoint2D(existing.point));
+        
+        // if (
+        //   distance_squared < merge_distance_squared - kComparisonTolerance ||
+        //   (std::abs(distance_squared - merge_distance_squared) <=
+        //   kComparisonTolerance && existing.id < merge_target))
+        // {
+        //   merge_target = existing.id;
+        //   merge_distance_squared = distance_squared;
+        // }
+
         if (
-          distance_squared < merge_distance_squared - kComparisonTolerance ||
-          (std::abs(distance_squared - merge_distance_squared) <=
-          kComparisonTolerance && existing.id < merge_target))
+          distance_squared <=
+          merge_radius_squared + kComparisonTolerance)
         {
-          merge_target = existing.id;
-          merge_distance_squared = distance_squared;
+          merge_candidates.emplace_back(distance_squared, existing.id);
         }
       }
+
+      // std::pair ordering:
+      // 1) distance squared
+      // 2) Node ID
+      //
+      // This preserves deterministic behavior. Dont' put a floating-point
+      // tolerance inside the comparator because std::sort requires a strict weak ordering
+      std::sort(merge_candidates.begin(), merge_candidates.end());
+
+      bool merge_edge_added = false;
+      bool represented_by_existing_edge = false;
+
+      for (const auto & merge_candidate : merge_candidates) {
+        if (
+          update_build_time() >=
+          static_cast<double>(parameters_.max_build_time_ms))
+        {
+          result.build_time_budget_reached = true;
+          stop_for_time_budget = true;
+          break;
+        }
+      }
+
+      const NodeId merge_target = merge_candidate.second;
+      const Point2D merge_point = 
+        toPoint2D(result.nodes[merge_target].point);
+
+      const auto merge_key = canonicalEdge(source, merge_target);
+
+      if (edge_keys.find(merge_key) != edge_keys.end()) {
+        reject(
+          source,
+          merge_point,
+          RejectedSampleKind::kDuplicateEdge,
+          TerrainInvalidReason::kNone);
+
+      represented_by_existing_edge = true;
+      continue;
+      }
+
+      const EdgeEvaluation edge_evaluateion = 
+        evaluate_edge(source_point, merge_point);
+
+      if(!edge_evaluateion.valid) {
+        reject(
+          source,
+          merge_point,
+          RejectedSampleKind::kMergeEdgeInvalid,
+          edge_evaluateion.reason);
+        continue;
+      }
+
+      if (!hasFiniteValidEdgeEvaluation(edge_evaluateion)) {
+        reject(
+          source,
+          merge_point,
+          RejectedSampleKind::kNonFiniteEvaluation,
+          edge_evaluateion.reason);
+        continue;
+      }
+
+      if (
+        add_edge(
+          source,
+          merge_target,
+          edge_evaluation,
+          false,            // is_goal_connection
+          true))            // is_loop_closure
+      {
+        merge_edge_added = true;
+        try_goal_connection(merge_target);
+        break;
+      }
+    }
+
+    if (stop_for_time_budget) {
+      break;
+    }
+
+    if (merge_edge_added) {
+      if (
+        parameters_.stop_when_goal_connected &&
+        result.goal_connections > 0U)
+      {
+        stop_for_goal_connection = true;
+        break;
+      }
+
+      continue;
+    }
+
+    // If an identical source-target edge already exists, this spatial region is
+    // already represented. Don't create an almost-duplicate sampled node
+    if (represented_by_existing_edge) {
+      continue;
+    }
+
+    // If this point is reached, no merge target was usable
+    // Fall through to the existing "create a new sampled node" block
 
       if (merge_target != std::numeric_limits<NodeId>::max()) {
         const Point2D merge_point = toPoint2D(result.nodes[merge_target].point);
