@@ -150,6 +150,11 @@ if(BUILD_TESTING)
   )
 
   add_launch_test(
+    test/test_runtime_profile_launch.py
+    TIMEOUT 60
+  )
+
+  add_launch_test(
     test/test_rrt_star_node_launch.py
     TIMEOUT 90
   )

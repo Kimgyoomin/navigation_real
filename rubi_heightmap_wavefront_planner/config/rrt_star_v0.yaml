@@ -10,7 +10,7 @@ rubi_heightmap_wavefront_planner:
     debug_nodes_topic: /rubi/heightmap_planner/debug/nodes
     debug_edges_topic: /rubi/heightmap_planner/debug/edges
     debug_rejected_topic: /rubi/heightmap_planner/debug/rejected
-    base_frame: body
+    base_frame: base_link
 
     # FastDEM map contract. This is a consumer-side lattice interpretation:
     # it does not resample the cloud. The FastDEM producer configuration must

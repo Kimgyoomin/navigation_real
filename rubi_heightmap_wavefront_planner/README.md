@@ -3,7 +3,7 @@
 ROS 2 Humble standalone sampling-planner baseline for the FastDEM global
 elevation map. The package contains both a TRG-inspired wavefront roadmap and
 a conventional RRT* core selected by YAML. The default experiment profile is
-the 5 cm `rrt_star_v0.yaml`; `wavefront_v0.yaml` remains an identical-parameter
+the standalone 5 cm `wavefront_v0.yaml`; `rrt_star_v0.yaml` is an explicit
 comparison profile with only `planner_mode` changed.
 
 ```text
@@ -58,11 +58,11 @@ Therefore “\(n\) samples per node” is the wavefront mode, not standard RRT*.
 RRT* performs `nearest → steer → choose-parent → insert → rewire`, and updates
 all descendant costs after rewiring.
 
-## 5 cm RRT* baseline and Wavefront comparison
+## 5 cm Wavefront baseline and RRT* comparison
 
 Both checked-in profiles use the same map, terrain, cost, Path/RViz, and active
 and inactive planner parameters. `rrt_star_v0.yaml` selects `rrt_star` and is
-the default experiment; `wavefront_v0.yaml` selects `wavefront` for comparison.
+the explicit comparison; `wavefront_v0.yaml` selects the standalone default.
 The shared 5 cm contract is:
 
 | Control | V0 value |
@@ -107,7 +107,9 @@ rosdep install \
 colcon build \
   --symlink-install \
   --packages-select rubi_heightmap_wavefront_planner \
-  --cmake-args -DBUILD_TESTING=ON
+  --cmake-args \
+    -DBUILD_TESTING=ON \
+    -DCMAKE_BUILD_TYPE=Release
 
 source install/setup.bash
 ```
@@ -177,22 +179,27 @@ file—not an installed copy—and verify `map.resolution: 0.05`. The planner's
 fit that lattice, but lattice alignment alone cannot prove producer density.
 
 Also check that both the observed point count and the dense bounding lattice
-fit `max_grid_cells`. A 200 m by 200 m region at 5 cm is approximately 16
-million cells, above the V0 limit of 5 million cells.
+fit `max_grid_cells`. This parameter is a dense bounding-grid safety cap, not a
+map resolution. At 0.05 m, 5,000,000 cells correspond to a square about
+111.8 m on each side. Use the actual `Accepted elevation snapshot` log's
+`grid=XxY` value to size the cap; for comparison, a 200 m by 200 m region at
+5 cm is approximately 16 million cells and exceeds the V0 limit.
 
 ## Run
 
 Start FastDEM first, then:
 
 ```bash
-# Default experiment: true RRT*
-ros2 launch rubi_heightmap_wavefront_planner rrt_star_v0.launch.py
-
-# Comparison: TRG-inspired wavefront
+# Default standalone planner: TRG-inspired wavefront
 ros2 launch rubi_heightmap_wavefront_planner wavefront_v0.launch.py
+
+# Explicit comparison profile: true RRT*
+ros2 launch rubi_heightmap_wavefront_planner rrt_star_v0.launch.py
 ```
 
-For a robot whose base TF is `base_link` rather than `body`:
+The default base frame is `base_link`. The `body` frame is the FAST-LIO/Livox
+sensor origin, and robot/localization bring-up must provide the transform
+between it and `base_link`. To override the robot base frame explicitly:
 
 ```bash
 ros2 launch rubi_heightmap_wavefront_planner wavefront_v0.launch.py \
@@ -261,6 +268,9 @@ Path Marker, and rejection snapshot come from the same accepted map state, use
 one timestamp, and are published in that fixed order. ROS publishers are not an
 atomic aggregate; a state/generation check immediately before publication
 prevents a result from a superseded map from being published.
+Full resets likewise publish the empty Path and all three `DELETEALL` marker
+arrays with one shared timestamp. A Path-only invalidation does not replace the
+marker snapshot and may use an independent timestamp.
 
 ## ROS interface
 
@@ -313,13 +323,14 @@ corresponding TF.
 ## Important parameters
 
 These values are shared by `rrt_star_v0.yaml` and `wavefront_v0.yaml`, except
-for `planner_mode`; the node's compiled default is `rrt_star`.
+for `planner_mode`; the node's compiled default is `wavefront`.
 Terrain thresholds are software bootstrap values and are **not** validated
 physical limits of RUBI.
 
 | Parameter | Baseline value | Meaning |
 |---|---:|---|
-| `planner_mode` | `rrt_star` | `wavefront` or `rrt_star` |
+| `planner_mode` | `wavefront` | `wavefront` or `rrt_star` |
+| `base_frame` | `base_link` | robot planning base; bring-up supplies sensor-origin TF |
 | `map_resolution_m` | 0.05 m | consumer lattice; must equal the FastDEM producer resolution |
 | `lattice_tolerance_m` | 0.01 m | maximum point-to-lattice alignment error |
 | `pca_analysis_radius_m` | 0.30 m | local PCA neighborhood |
@@ -340,8 +351,8 @@ physical limits of RUBI.
 | `max_rejected_markers` | 5000 | displayed rejection-attempt cap |
 | `path_invalid_confirmations` | 2 | consecutive soft corridor failures; sensor-noise bootstrap only |
 
-The RRT* controls below are active in the baseline and inactive only in the
-Wavefront comparison profile:
+The RRT* controls below are inactive in the Wavefront baseline and active in
+the explicit RRT* comparison profile:
 
 | Parameter | YAML value | Meaning |
 |---|---:|---|

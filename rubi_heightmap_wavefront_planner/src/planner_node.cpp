@@ -319,7 +319,7 @@ private:
   void loadParameters()
   {
     planner_mode_name_ =
-      declare_parameter<std::string>("planner_mode", "rrt_star");
+      declare_parameter<std::string>("planner_mode", "wavefront");
     if (planner_mode_name_ == "wavefront") {
       planner_mode_ = PlannerMode::kWavefront;
     } else if (planner_mode_name_ == "rrt_star") {
@@ -340,18 +340,18 @@ private:
       "debug_edges_topic", "/rubi/heightmap_planner/debug/edges");
     debug_rejected_topic_ = declare_parameter<std::string>(
       "debug_rejected_topic", "/rubi/heightmap_planner/debug/rejected");
-    base_frame_ = declare_parameter<std::string>("base_frame", "body");
+    base_frame_ = declare_parameter<std::string>("base_frame", "base_link");
 
-    map_resolution_m_ = declare_parameter<double>("map_resolution_m", 0.10);
+    map_resolution_m_ = declare_parameter<double>("map_resolution_m", 0.05);
     lattice_tolerance_m_ =
-      declare_parameter<double>("lattice_tolerance_m", 0.02);
+      declare_parameter<double>("lattice_tolerance_m", 0.01);
     const bool reject_duplicate_cells =
       declare_parameter<bool>("reject_duplicate_cells", true);
     max_grid_cells_ = positiveSizeParameter(
       declare_parameter<std::int64_t>("max_grid_cells", 5000000),
       "max_grid_cells");
     transform_timeout_s_ =
-      declare_parameter<double>("transform_timeout_s", 0.25);
+      declare_parameter<double>("transform_timeout_s", 0.20);
 
     terrain_parameters_.pca_radius_m =
       declare_parameter<double>("pca_analysis_radius_m", 0.30);
@@ -372,28 +372,28 @@ private:
     terrain_parameters_.max_step_height_m =
       declare_parameter<double>("max_step_height_m", 0.08);
     terrain_parameters_.edge_sample_spacing_m =
-      declare_parameter<double>("edge_check_spacing_m", 0.05);
+      declare_parameter<double>("edge_check_spacing_m", 0.025);
     terrain_parameters_.check_footprint_along_edge =
       declare_parameter<bool>("check_footprint_along_edge", true);
 
     planner_parameters_.node_sampling_distance_m =
-      declare_parameter<double>("node_sampling_distance_m", 0.50);
+      declare_parameter<double>("node_sampling_distance_m", 0.30);
     planner_parameters_.num_expansion_samples = positiveSizeParameter(
-      declare_parameter<std::int64_t>("samples_per_expansion", 12),
+      declare_parameter<std::int64_t>("samples_per_expansion", 20),
       "samples_per_expansion");
     planner_parameters_.merge_radius_m =
-      declare_parameter<double>("merge_radius_m", 0.25);
+      declare_parameter<double>("merge_radius_m", 0.20);
     planner_parameters_.neighbor_connection_radius_m =
-      declare_parameter<double>("neighbor_connection_radius_m", 0.75);
+      declare_parameter<double>("neighbor_connection_radius_m", 0.45);
     planner_parameters_.goal_connection_distance_m =
-      declare_parameter<double>("goal_connection_distance_m", 0.75);
+      declare_parameter<double>("goal_connection_distance_m", 0.45);
     planner_parameters_.max_nodes = positiveSizeParameter(
       declare_parameter<std::int64_t>("max_nodes", 4000), "max_nodes");
     planner_parameters_.max_expansions = positiveSizeParameter(
       declare_parameter<std::int64_t>("max_expansions", 4000),
       "max_expansions");
     planner_parameters_.max_build_time_ms = positiveSizeParameter(
-      declare_parameter<std::int64_t>("max_build_time_ms", 2000),
+      declare_parameter<std::int64_t>("max_build_time_ms", 5000),
       "max_build_time_ms");
     planner_parameters_.stop_when_goal_connected =
       declare_parameter<bool>("stop_when_goal_connected", true);
@@ -823,7 +823,7 @@ private:
 
         active_plan_->executable = false;
         std::lock_guard<std::mutex> output_lock(output_mutex_);
-        publishEmptyPathUnlocked(state->frame_id);
+        publishEmptyPathUnlocked(state->frame_id, now());
         last_empty_path_goal_epoch_ = active_plan_->goal_epoch;
         if (!active_plan_->auto_replan_attempted) {
           active_plan_->auto_replan_attempted = true;
@@ -948,7 +948,7 @@ private:
           active_plan_->executable = false;
           invalidated = true;
           std::lock_guard<std::mutex> output_lock(output_mutex_);
-          publishEmptyPathUnlocked(frame_id);
+          publishEmptyPathUnlocked(frame_id, now());
           last_empty_path_goal_epoch_ = goal_epoch;
         }
         notify = enqueueRequestLocked(*goal, map_state_, goal_epoch, false);
@@ -1338,9 +1338,10 @@ private:
     return {PublishStatus::kPublished, publication};
   }
 
-  void publishEmptyPathUnlocked(const std::string & frame_id)
+  void publishEmptyPathUnlocked(
+    const std::string & frame_id,
+    const rclcpp::Time & stamp)
   {
-    const auto stamp = now();
     const std::string safe_frame = frame_id.empty() ? "map" : frame_id;
     nav_msgs::msg::Path empty_path;
     empty_path.header.frame_id = safe_frame;
@@ -1348,9 +1349,10 @@ private:
     path_publisher_->publish(empty_path);
   }
 
-  void publishDebugDeleteAllUnlocked(const std::string & frame_id)
+  void publishDebugDeleteAllUnlocked(
+    const std::string & frame_id,
+    const rclcpp::Time & stamp)
   {
-    const auto stamp = now();
     const std::string safe_frame = frame_id.empty() ? "map" : frame_id;
     const visualization_msgs::msg::MarkerArray clear =
       makeDeleteAllMarkerArray(
@@ -1362,8 +1364,9 @@ private:
 
   void publishFullResetUnlocked(const std::string & frame_id)
   {
-    publishEmptyPathUnlocked(frame_id);
-    publishDebugDeleteAllUnlocked(frame_id);
+    const rclcpp::Time stamp = now();
+    publishEmptyPathUnlocked(frame_id, stamp);
+    publishDebugDeleteAllUnlocked(frame_id, stamp);
   }
 
   void failAndClear(
@@ -1426,13 +1429,13 @@ private:
   std::string debug_edges_topic_;
   std::string debug_rejected_topic_;
   std::string base_frame_;
-  std::string planner_mode_name_{"rrt_star"};
-  PlannerMode planner_mode_{PlannerMode::kRrtStar};
+  std::string planner_mode_name_{"wavefront"};
+  PlannerMode planner_mode_{PlannerMode::kWavefront};
 
-  double map_resolution_m_{0.10};
-  double lattice_tolerance_m_{0.02};
+  double map_resolution_m_{0.05};
+  double lattice_tolerance_m_{0.01};
   std::size_t max_grid_cells_{5000000U};
-  double transform_timeout_s_{0.25};
+  double transform_timeout_s_{0.20};
   double path_output_spacing_m_{0.05};
   double node_marker_scale_m_{0.08};
   double edge_marker_width_m_{0.025};

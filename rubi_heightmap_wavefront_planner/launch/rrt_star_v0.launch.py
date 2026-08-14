@@ -27,7 +27,7 @@ def generate_launch_description():
             DeclareLaunchArgument("rviz_config", default_value=default_rviz),
             DeclareLaunchArgument("use_sim_time", default_value="false"),
             DeclareLaunchArgument("launch_rviz", default_value="true"),
-            DeclareLaunchArgument("base_frame", default_value="body"),
+            DeclareLaunchArgument("base_frame", default_value="base_link"),
             Node(
                 package="rubi_heightmap_wavefront_planner",
                 executable="wavefront_planner_node",

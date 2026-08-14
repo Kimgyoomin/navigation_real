@@ -266,10 +266,10 @@ class TestPlannerNodeContract(unittest.TestCase):
             for name in checkpoint
         }
 
-    def _assert_same_snapshot_stamp(self, snapshot):
+    def _assert_same_snapshot_stamp(self, snapshot, expected_frame=MAP_FRAME):
         path = snapshot['path']
         expected_stamp = (path.header.stamp.sec, path.header.stamp.nanosec)
-        self.assertEqual(MAP_FRAME, path.header.frame_id)
+        self.assertEqual(expected_frame, path.header.frame_id)
         for name in ('nodes', 'edges', 'rejected'):
             markers = snapshot[name].markers
             self.assertTrue(markers, name)
@@ -279,7 +279,7 @@ class TestPlannerNodeContract(unittest.TestCase):
                     marker.header.stamp.nanosec,
                 )
                 self.assertEqual(expected_stamp, marker_stamp, name)
-                self.assertEqual(MAP_FRAME, marker.header.frame_id, name)
+                self.assertEqual(expected_frame, marker.header.frame_id, name)
 
     @staticmethod
     def _add_markers(marker_array, marker_type):
@@ -441,14 +441,14 @@ class TestPlannerNodeContract(unittest.TestCase):
             'No non-empty yellow final-path marker was published',
         )
 
-    def _assert_clear_snapshot(self, snapshot):
-        self.assertEqual(MAP_FRAME, snapshot['path'].header.frame_id)
+    def _assert_clear_snapshot(self, snapshot, expected_frame=MAP_FRAME):
+        self._assert_same_snapshot_stamp(snapshot, expected_frame)
         self.assertEqual(0, len(snapshot['path'].poses))
         for name in ('nodes', 'edges', 'rejected'):
             markers = snapshot[name].markers
             self.assertEqual(1, len(markers), name)
             self.assertEqual(Marker.DELETEALL, markers[0].action, name)
-            self.assertEqual(MAP_FRAME, markers[0].header.frame_id, name)
+            self.assertEqual(expected_frame, markers[0].header.frame_id, name)
 
     def _assert_partial_failure_snapshot(self, snapshot):
         # An explicit Goal first invalidates the old executable Path with an
@@ -650,9 +650,8 @@ class TestPlannerNodeContract(unittest.TestCase):
             'Map change outside the corridor modified the retained output',
         )
 
-        # A same-frame material map update changes only the accepted map state
-        # at this lifecycle stage. It must preserve the transient-local output
-        # snapshot until corridor validation is implemented.
+        # The first soft corridor failure has streak 1/2, so the active Path
+        # and its transient-local debug snapshot remain published.
         barrier_cloud = self._make_cloud(with_barrier=True, corner_z=0.01)
         changed_checkpoint = self._checkpoint()
         self.cloud_publisher.publish(barrier_cloud)
@@ -739,15 +738,10 @@ class TestPlannerNodeContract(unittest.TestCase):
         frame_change_cloud.header.frame_id = 'wavefront_launch_test_other_map'
         self.cloud_publisher.publish(frame_change_cloud)
         frame_change_snapshot = self._wait_for_snapshot(frame_change_checkpoint)
-        self.assertEqual(0, len(frame_change_snapshot['path'].poses))
-        for name in ('nodes', 'edges', 'rejected'):
-            markers = frame_change_snapshot[name].markers
-            self.assertEqual(1, len(markers), name)
-            self.assertEqual(Marker.DELETEALL, markers[0].action, name)
-            self.assertEqual(
-                'wavefront_launch_test_other_map',
-                markers[0].header.frame_id,
-            )
+        self._assert_clear_snapshot(
+            frame_change_snapshot,
+            'wavefront_launch_test_other_map',
+        )
 
 
 @launch_testing.post_shutdown_test()

@@ -31,6 +31,31 @@ def test_profiles_match_except_for_planner_mode():
     }
 
 
+def test_wavefront_v0_runtime_profile_contract():
+    parameters = _parameters(WAVEFRONT_CONFIG_PATH)
+    expected = {
+        'planner_mode': 'wavefront',
+        'base_frame': 'base_link',
+        'map_resolution_m': 0.05,
+        'lattice_tolerance_m': 0.01,
+        'max_grid_cells': 5000000,
+        'transform_timeout_s': 0.20,
+        'edge_check_spacing_m': 0.025,
+        'node_sampling_distance_m': 0.30,
+        'samples_per_expansion': 20,
+        'merge_radius_m': 0.20,
+        'neighbor_connection_radius_m': 0.45,
+        'goal_connection_distance_m': 0.45,
+        'max_nodes': 4000,
+        'max_expansions': 4000,
+        'max_build_time_ms': 5000,
+        'path_output_spacing_m': 0.05,
+    }
+
+    for name, value in expected.items():
+        assert parameters[name] == value
+
+
 def test_rrt_star_v0_five_centimeter_profile_contract():
     parameters = _parameters(RRT_STAR_CONFIG_PATH)
     expected = {
