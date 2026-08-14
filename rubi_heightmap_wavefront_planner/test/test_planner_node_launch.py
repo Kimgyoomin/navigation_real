@@ -31,6 +31,10 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 MAP_FRAME = 'wavefront_launch_test_map'
 BASE_FRAME = 'wavefront_launch_test_body'
+GOAL_FRAME = 'wavefront_launch_test_goal_frame'
+GOAL_FRAME_YAW = math.pi / 6.0
+GOAL_INPUT_YAW = math.pi / 3.0
+GOAL_MAP_YAW = GOAL_FRAME_YAW + GOAL_INPUT_YAW
 INPUT_CLOUD_TOPIC = '/wavefront_launch_test/fastdem_cloud'
 GOAL_TOPIC = '/wavefront_launch_test/goal'
 PATH_TOPIC = '/wavefront_launch_test/path'
@@ -109,6 +113,30 @@ def generate_test_description():
         ],
         output='screen',
     )
+    goal_static_tf = launch_ros.actions.Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='wavefront_launch_test_goal_static_tf',
+        arguments=[
+            '--x',
+            '0.0',
+            '--y',
+            '0.0',
+            '--z',
+            '0.0',
+            '--yaw',
+            str(GOAL_FRAME_YAW),
+            '--pitch',
+            '0.0',
+            '--roll',
+            '0.0',
+            '--frame-id',
+            MAP_FRAME,
+            '--child-frame-id',
+            GOAL_FRAME,
+        ],
+        output='screen',
+    )
     planner = launch_ros.actions.Node(
         package='rubi_heightmap_wavefront_planner',
         executable='wavefront_planner_node',
@@ -120,11 +148,16 @@ def generate_test_description():
         launch.LaunchDescription(
             [
                 static_tf,
+                goal_static_tf,
                 planner,
                 launch_testing.actions.ReadyToTest(),
             ]
         ),
-        {'planner': planner, 'static_tf': static_tf},
+        {
+            'planner': planner,
+            'static_tf': static_tf,
+            'goal_static_tf': goal_static_tf,
+        },
     )
 
 
@@ -289,16 +322,24 @@ class TestPlannerNodeContract(unittest.TestCase):
         header.frame_id = MAP_FRAME
         return point_cloud2.create_cloud_xyz32(header, points)
 
-    def _make_goal(self, x, y=0.0):
+    def _make_goal(
+        self,
+        x,
+        y=0.0,
+        yaw=0.0,
+        quaternion_scale=1.0,
+        frame_id=MAP_FRAME,
+    ):
         goal = PoseStamped()
-        goal.header.frame_id = MAP_FRAME
+        goal.header.frame_id = frame_id
         goal.header.stamp = self.node.get_clock().now().to_msg()
         goal.pose.position.x = x
         goal.pose.position.y = y
-        goal.pose.orientation.w = 1.0
+        goal.pose.orientation.z = quaternion_scale * math.sin(0.5 * yaw)
+        goal.pose.orientation.w = quaternion_scale * math.cos(0.5 * yaw)
         return goal
 
-    def _assert_success_snapshot(self, snapshot):
+    def _assert_success_snapshot(self, snapshot, expected_goal_yaw):
         self._assert_same_snapshot_stamp(snapshot)
         path = snapshot['path']
         self.assertEqual(MAP_FRAME, path.header.frame_id)
@@ -335,16 +376,9 @@ class TestPlannerNodeContract(unittest.TestCase):
             )
             self.assertAlmostEqual(1.0, quaternion_norm, places=6)
 
-            if len(path.poses) > 1:
-                tangent_from = (
-                    pose if index + 1 < len(path.poses)
-                    else path.poses[index - 1]
-                )
-                tangent_to = (
-                    path.poses[index + 1]
-                    if index + 1 < len(path.poses)
-                    else pose
-                )
+            if index + 1 < len(path.poses):
+                tangent_from = pose
+                tangent_to = path.poses[index + 1]
                 expected_yaw = math.atan2(
                     tangent_to.pose.position.y
                     - tangent_from.pose.position.y,
@@ -352,7 +386,7 @@ class TestPlannerNodeContract(unittest.TestCase):
                     - tangent_from.pose.position.x,
                 )
             else:
-                expected_yaw = 0.0
+                expected_yaw = expected_goal_yaw
             expected_z = math.sin(0.5 * expected_yaw)
             expected_w = math.cos(0.5 * expected_yaw)
             orientation_dot = abs(
@@ -408,12 +442,13 @@ class TestPlannerNodeContract(unittest.TestCase):
         )
 
     def _assert_clear_snapshot(self, snapshot):
-        self._assert_same_snapshot_stamp(snapshot)
+        self.assertEqual(MAP_FRAME, snapshot['path'].header.frame_id)
         self.assertEqual(0, len(snapshot['path'].poses))
         for name in ('nodes', 'edges', 'rejected'):
             markers = snapshot[name].markers
             self.assertEqual(1, len(markers), name)
             self.assertEqual(Marker.DELETEALL, markers[0].action, name)
+            self.assertEqual(MAP_FRAME, markers[0].header.frame_id, name)
 
     def _assert_partial_failure_snapshot(self, snapshot):
         # An explicit Goal first invalidates the old executable Path with an
@@ -558,15 +593,26 @@ class TestPlannerNodeContract(unittest.TestCase):
             'Planner ROS interfaces were not discovered',
         )
         self._spin_until(
-            lambda: self.tf_buffer.can_transform(
-                MAP_FRAME, BASE_FRAME, Time()
+            lambda: (
+                self.tf_buffer.can_transform(MAP_FRAME, BASE_FRAME, Time())
+                and self.tf_buffer.can_transform(
+                    MAP_FRAME, GOAL_FRAME, Time()
+                )
             ),
             10.0,
-            'Static map-to-base transform was not received',
+            'Static map-to-base and map-to-goal transforms were not received',
         )
 
         flat_cloud = self._make_cloud(with_barrier=False)
-        reachable_goal = self._make_goal(0.75)
+        goal_frame_x = 0.75 * math.cos(GOAL_FRAME_YAW)
+        goal_frame_y = -0.75 * math.sin(GOAL_FRAME_YAW)
+        reachable_goal = self._make_goal(
+            goal_frame_x,
+            goal_frame_y,
+            yaw=GOAL_INPUT_YAW,
+            quaternion_scale=3.0,
+            frame_id=GOAL_FRAME,
+        )
 
         # A goal sent before the first accepted map is held, then planned once
         # that map arrives.
@@ -579,7 +625,7 @@ class TestPlannerNodeContract(unittest.TestCase):
         success_checkpoint = self._checkpoint()
         self.cloud_publisher.publish(flat_cloud)
         success_snapshot = self._wait_for_snapshot(success_checkpoint)
-        self._assert_success_snapshot(success_snapshot)
+        self._assert_success_snapshot(success_snapshot, GOAL_MAP_YAW)
         self._spin_for(0.25)
 
         # Header stamps are not part of the elevation-content hash. Republishing
@@ -670,6 +716,22 @@ class TestPlannerNodeContract(unittest.TestCase):
         self.goal_publisher.publish(self._make_goal(0.0))
         invalid_snapshot = self._wait_for_snapshot(invalid_checkpoint)
         self._assert_invalid_goal_snapshot(invalid_snapshot)
+
+        # A zero-norm Goal quaternion is malformed. It must clear both the
+        # executable Path and every latched debug snapshot.
+        invalid_quaternion_checkpoint = self._checkpoint()
+        self.goal_publisher.publish(
+            self._make_goal(0.75, quaternion_scale=0.0)
+        )
+        invalid_quaternion_snapshot = self._wait_for_snapshot(
+            invalid_quaternion_checkpoint
+        )
+        self._assert_clear_snapshot(invalid_quaternion_snapshot)
+        proc_output.assertWaitFor(
+            expected_output='Goal orientation quaternion',
+            process=planner,
+            timeout=5.0,
+        )
 
         # A map-frame change is the one map update that performs a full reset.
         frame_change_checkpoint = self._checkpoint()

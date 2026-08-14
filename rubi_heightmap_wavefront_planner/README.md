@@ -278,8 +278,12 @@ outputs use reliable, transient-local QoS so a late subscriber receives the
 latest snapshot.
 
 On success, each `nav_msgs/Path` pose contains graph/densified `x` and `y`, the
-elevation lattice value in `z`, and a normalized yaw quaternion tangent to the
-next path segment (the last pose keeps the final segment direction). The Path
+elevation lattice value in `z`, and a normalized orientation quaternion.
+Intermediate poses use yaw tangent to the next path segment. The final pose,
+including a singleton Path, preserves the requested Goal orientation after it
+is transformed into the elevation-map frame and normalized. Finite non-unit
+Goal quaternions are accepted and normalized; a non-finite or near-zero-norm
+quaternion is malformed and clears the Path and all debug outputs. The Path
 uses the map snapshot frame and one common timestamp. A core planning failure
 publishes an empty Path to remove any previous successful Path.
 

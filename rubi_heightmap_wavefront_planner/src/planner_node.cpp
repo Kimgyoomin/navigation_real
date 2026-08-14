@@ -17,6 +17,7 @@
 
 #include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "geometry_msgs/msg/quaternion.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
@@ -44,6 +45,7 @@ namespace
 constexpr std::uint64_t kFnvOffset = 14695981039346656037ULL;
 constexpr std::uint64_t kFnvPrime = 1099511628211ULL;
 constexpr double kEpsilon = 1.0e-12;
+constexpr double kQuaternionNormSquaredEpsilon = 1.0e-12;
 
 enum class PlannerMode
 {
@@ -112,6 +114,33 @@ std::string terminationName(const WavefrontTermination termination)
 bool finitePoint(const Point2D point) noexcept
 {
   return std::isfinite(point.x) && std::isfinite(point.y);
+}
+
+std::optional<geometry_msgs::msg::Quaternion> normalizedQuaternion(
+  const geometry_msgs::msg::Quaternion & quaternion) noexcept
+{
+  if (!std::isfinite(quaternion.x) || !std::isfinite(quaternion.y) ||
+    !std::isfinite(quaternion.z) || !std::isfinite(quaternion.w))
+  {
+    return std::nullopt;
+  }
+
+  const double norm_squared =
+    quaternion.x * quaternion.x + quaternion.y * quaternion.y +
+    quaternion.z * quaternion.z + quaternion.w * quaternion.w;
+  if (!std::isfinite(norm_squared) ||
+    norm_squared <= kQuaternionNormSquaredEpsilon)
+  {
+    return std::nullopt;
+  }
+
+  const double inverse_norm = 1.0 / std::sqrt(norm_squared);
+  geometry_msgs::msg::Quaternion normalized;
+  normalized.x = quaternion.x * inverse_norm;
+  normalized.y = quaternion.y * inverse_norm;
+  normalized.z = quaternion.z * inverse_norm;
+  normalized.w = quaternion.w * inverse_norm;
+  return normalized;
 }
 
 }  // namespace
@@ -965,6 +994,17 @@ private:
       return;
     }
     try {
+      const auto normalized_goal_orientation =
+        normalizedQuaternion(request.goal.pose.orientation);
+      if (!normalized_goal_orientation) {
+        failAndClear(
+          request,
+          "Goal orientation quaternion has non-finite components or an invalid norm");
+        return;
+      }
+      geometry_msgs::msg::PoseStamped normalized_goal = request.goal;
+      normalized_goal.pose.orientation = *normalized_goal_orientation;
+
       const auto timeout = tf2::durationFromSec(transform_timeout_s_);
       const auto start_transform = tf_buffer_->lookupTransform(
         request.map->frame_id, base_frame_, tf2::TimePointZero, timeout);
@@ -973,13 +1013,21 @@ private:
         start_transform.transform.translation.y};
       geometry_msgs::msg::PoseStamped goal_in_map;
       if (request.goal.header.frame_id == request.map->frame_id) {
-        goal_in_map = request.goal;
+        goal_in_map = normalized_goal;
       } else {
         const auto goal_transform = tf_buffer_->lookupTransform(
           request.map->frame_id, request.goal.header.frame_id,
           tf2::TimePointZero, timeout);
-        tf2::doTransform(request.goal, goal_in_map, goal_transform);
+        tf2::doTransform(normalized_goal, goal_in_map, goal_transform);
       }
+      const auto transformed_goal_orientation =
+        normalizedQuaternion(goal_in_map.pose.orientation);
+      if (!transformed_goal_orientation) {
+        failAndClear(
+          request, "Transformed Goal orientation quaternion has an invalid norm");
+        return;
+      }
+      goal_in_map.pose.orientation = *transformed_goal_orientation;
       const Point2D goal_xy{
         goal_in_map.pose.position.x, goal_in_map.pose.position.y};
       if (!finitePoint(start) || !finitePoint(goal_xy)) {
@@ -1034,7 +1082,8 @@ private:
             }
           }
           const auto publication = publishResultForRequest(
-            request, output_state, result, dense_path, now());
+            request, output_state, result, dense_path,
+            goal_in_map.pose.orientation, now());
           if (publication.first == PublishStatus::kPublished) {
             logPlanningResult(request, output_state, result, publication.second);
             return;
@@ -1048,7 +1097,8 @@ private:
       }
 
       const auto publication = publishResultForRequest(
-        request, output_state, result, dense_path, now());
+        request, output_state, result, dense_path,
+        goal_in_map.pose.orientation, now());
       if (publication.first == PublishStatus::kSupersededMap) {
         requeueLatestMap(request);
       } else if (publication.first == PublishStatus::kPublished) {
@@ -1178,6 +1228,7 @@ private:
   nav_msgs::msg::Path makePathMessage(
     const std::vector<TerrainPoint> & points,
     const std::string & frame_id,
+    const geometry_msgs::msg::Quaternion & goal_orientation_in_map,
     const rclcpp::Time & stamp) const
   {
     nav_msgs::msg::Path path;
@@ -1205,6 +1256,9 @@ private:
       pose.pose.orientation.w = std::cos(0.5 * yaw);
       path.poses.push_back(std::move(pose));
     }
+    if (!path.poses.empty()) {
+      path.poses.back().pose.orientation = goal_orientation_in_map;
+    }
     return path;
   }
 
@@ -1213,10 +1267,12 @@ private:
     const std::shared_ptr<const MapState> & expected_state,
     const PlanResult & result,
     const std::vector<TerrainPoint> & dense_path,
+    const geometry_msgs::msg::Quaternion & goal_orientation_in_map,
     const rclcpp::Time & stamp)
   {
     const nav_msgs::msg::Path path =
-      makePathMessage(dense_path, expected_state->frame_id, stamp);
+      makePathMessage(
+      dense_path, expected_state->frame_id, goal_orientation_in_map, stamp);
     PlannerVisualizationParameters visualization_parameters;
     visualization_parameters.marker_namespace = planner_mode_name_;
     visualization_parameters.node_marker_scale_m = node_marker_scale_m_;
