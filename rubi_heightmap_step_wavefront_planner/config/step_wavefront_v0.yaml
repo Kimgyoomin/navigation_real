@@ -1,0 +1,37 @@
+rubi_heightmap_step_wavefront_planner:
+  ros__parameters:
+    use_sim_time: false
+    input_cloud_topic: /fastdem/mapping/cloud_global
+    goal_topic: /goal_pose
+    path_topic: /rubi/heightmap_step_planner/path
+    debug_nodes_topic: /rubi/heightmap_step_planner/debug/nodes
+    debug_edges_topic: /rubi/heightmap_step_planner/debug/edges
+    debug_rejected_topic: /rubi/heightmap_step_planner/debug/rejected
+    base_frame: base_link
+    map_resolution_m: 0.05
+    lattice_tolerance_m: 0.01
+    max_grid_cells: 5000000
+    transform_timeout_s: 0.20
+    hard_clearance_radius_m: 0.20
+    edge_check_spacing_m: 0.025
+    max_crossable_height_jump_m: 0.08
+    height_noise_floor_m: 0.01
+    height_cost_exponent: 2.0
+    distance_weight: 1.0
+    height_cost_weight: 5.0
+    node_sampling_distance_m: 0.30
+    samples_per_expansion: 20
+    merge_radius_m: 0.20
+    neighbor_connection_radius_m: 0.45
+    goal_connection_distance_m: 0.45
+    max_nodes: 4000
+    max_expansions: 4000
+    max_graph_build_time_ms: 5000
+    post_goal_expansions: 50
+    path_output_spacing_m: 0.05
+    path_invalid_confirmations: 2
+    node_marker_scale_m: 0.08
+    edge_marker_width_m: 0.025
+    path_marker_width_m: 0.08
+    rejected_marker_scale_m: 0.07
+    max_rejected_markers: 5000

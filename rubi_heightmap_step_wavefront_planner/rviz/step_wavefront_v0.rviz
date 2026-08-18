@@ -1,0 +1,27 @@
+Panels:
+  - Class: rviz_common/Displays
+Visualization Manager:
+  Global Options:
+    Fixed Frame: map
+  Displays:
+    - Class: rviz_default_plugins/PointCloud2
+      Name: FastDEM Heightmap
+      Topic: /fastdem/mapping/cloud_global
+      Enabled: true
+    - Class: rviz_default_plugins/Path
+      Name: Final Path
+      Topic: /rubi/heightmap_step_planner/path
+      Color: 255; 255; 0
+      Enabled: true
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Valid Nodes
+      Topic: /rubi/heightmap_step_planner/debug/nodes
+      Enabled: true
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Valid Edges and Path
+      Topic: /rubi/heightmap_step_planner/debug/edges
+      Enabled: true
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Rejections
+      Topic: /rubi/heightmap_step_planner/debug/rejected
+      Enabled: true

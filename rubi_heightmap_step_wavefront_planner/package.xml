@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>rubi_heightmap_step_wavefront_planner</name>
+  <version>0.1.0</version>
+  <description>Height-discontinuity-aware standalone Wavefront route planner.</description>
+  <maintainer email="kim@example.com">kim</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>builtin_interfaces</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>visualization_msgs</depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>python3-yaml</test_depend>
+  <test_depend>sensor_msgs_py</test_depend>
+
+  <export><build_type>ament_cmake</build_type></export>
+</package>
