@@ -4,7 +4,8 @@ rubi_heightmap_wavefront_planner:
     planner_mode: wavefront  # wavefront | rrt_star
 
     # ROS interface. The FastDEM cloud is an elevation-map snapshot, not raw LiDAR.
-    input_cloud_topic: /fastdem/mapping/cloud_global
+    # input_cloud_topic: /fastdem/mapping/cloud_global
+    input_cloud_topic: /fastdem/postprocess/cloud
     goal_topic: /goal_pose
     path_topic: /rubi/heightmap_planner/path
     debug_nodes_topic: /rubi/heightmap_planner/debug/nodes

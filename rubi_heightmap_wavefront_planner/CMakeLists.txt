@@ -25,6 +25,7 @@ add_library(${PROJECT_NAME}_core
   src/wavefront_planner.cpp
   src/rrt_star_planner.cpp
 )
+set_target_properties(${PROJECT_NAME}_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_features(${PROJECT_NAME}_core PUBLIC cxx_std_17)
 target_include_directories(${PROJECT_NAME}_core
   PUBLIC

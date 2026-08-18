@@ -1,0 +1,10 @@
+<library path="pongbot_navigation_heightmap_wavefront_plugin">
+  <class
+    name="pongbot_navigation/HeightmapWavefrontNav2Planner"
+    type="pongbot_navigation::HeightmapWavefrontNav2Planner"
+    base_class_type="nav2_core::GlobalPlanner">
+    <description>
+      Nav2 adapter for the RUBI FastDEM heightmap Wavefront sampled-roadmap planner.
+    </description>
+  </class>
+</library>
