@@ -167,7 +167,20 @@ class TestPlannerNode(unittest.TestCase):
         self._wait(lambda: self.goal_pub.get_subscription_count() > 0)
         self._spin_for(1.0)
 
-        flat = self._publish_and_wait_path('flat', True)
+        # A Goal arriving before the first accepted map is retained and queued
+        # automatically when that map arrives.
+        pending_checkpoint = len(self.paths)
+        self.goal_pub.publish(self._goal())
+        self._spin_for(0.25)
+        self.assertEqual(len(self.paths), pending_checkpoint)
+        self.cloud_pub.publish(self._cloud('flat'))
+        self._wait(lambda: (
+            len(self.paths) > pending_checkpoint
+            and len(self.paths[-1].poses) > 0))
+        flat = self.paths[-1]
+        proc_output.assertWaitFor(
+            expected_output='stored Goal as pending', process=planner,
+            timeout=5.0)
         self.assertEqual(flat.header.frame_id, MAP)
         self.assertAlmostEqual(flat.poses[0].pose.position.x, -0.60, places=5)
         self.assertAlmostEqual(flat.poses[-1].pose.position.x, 0.60, places=5)
