@@ -81,3 +81,7 @@ no samples during repeated timed checks. `map -> base_link` was also absent with
 two disconnected TF trees. Consequently real FastDEM acceptance, live Goal
 planning, and visual RViz confirmation are `BLOCKED_BY_TF` / `NOT VERIFIED`;
 the synthetic ROS launch integration remains PASS.
+
+The validated implementation history reaches `e630245` (including the pending
+Goal runtime regression). Immediately before this report-only update,
+`git status --short` contained only the pre-existing `? Livox-SDK2` entry.
