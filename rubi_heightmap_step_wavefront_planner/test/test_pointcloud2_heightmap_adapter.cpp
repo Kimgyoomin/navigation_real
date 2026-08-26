@@ -27,6 +27,21 @@ sensor_msgs::msg::PointCloud2 cloud()
   return message;
 }
 
+sensor_msgs::msg::PointCloud2 shiftedCloud()
+{
+  auto message = cloud();
+  message.width = 4U;
+  message.row_step = 48U;
+  message.data.resize(48U);
+  const float values[12] = {
+    0.025F, -0.025F, 0.1F,
+    0.075F, -0.025F, 0.2F,
+    0.025F, 0.025F, 0.3F,
+    0.075F, 0.025F, 0.4F};
+  std::memcpy(message.data.data(), values, sizeof(values));
+  return message;
+}
+
 TEST(PointCloud2HeightmapAdapter, StrictLayoutAndSnapshot)
 {
   planner::PointCloud2HeightmapAdapter adapter;
@@ -38,4 +53,15 @@ TEST(PointCloud2HeightmapAdapter, StrictLayoutAndSnapshot)
   EXPECT_THROW(adapter.parse(malformed), std::invalid_argument);
   malformed = cloud(); malformed.fields.pop_back();
   EXPECT_THROW(adapter.parse(malformed), std::invalid_argument);
+}
+
+TEST(PointCloud2HeightmapAdapter, AcceptsShiftedRuntimeEntryLattice)
+{
+  const auto snapshot = planner::PointCloud2HeightmapAdapter{}.makeSnapshot(
+    shiftedCloud(), {0.05, 0.01, 100U});
+  EXPECT_EQ(snapshot.sizeX(), 2U);
+  EXPECT_EQ(snapshot.sizeY(), 2U);
+  EXPECT_NEAR(snapshot.originX(), 0.025, 1.0e-6);
+  EXPECT_NEAR(snapshot.originY(), -0.025, 1.0e-6);
+  EXPECT_NEAR(*snapshot.elevation({1, 1}), 0.4, 1.0e-6);
 }

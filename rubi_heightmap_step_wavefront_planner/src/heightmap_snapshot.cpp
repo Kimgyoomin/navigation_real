@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <iomanip>
+#include <sstream>
 #include <stdexcept>
 #include <unordered_set>
 
@@ -23,23 +25,34 @@ void hashBytes(std::uint64_t & hash, const void * data, std::size_t size) noexce
   }
 }
 
-std::int64_t latticeCoordinate(double value, double resolution, double tolerance)
+std::int64_t latticeIndex(
+  const double value, const double origin, const double resolution,
+  const double tolerance, const char axis)
 {
-  if (!std::isfinite(value)) {
+  if (!std::isfinite(value) || !std::isfinite(origin)) {
     throw std::invalid_argument("heightmap point contains non-finite coordinate");
   }
-  const double scaled = value / resolution;
+  const double scaled = (value - origin) / resolution;
   if (!std::isfinite(scaled) ||
     scaled < static_cast<double>(std::numeric_limits<std::int64_t>::min()) ||
     scaled > static_cast<double>(std::numeric_limits<std::int64_t>::max()))
   {
     throw std::invalid_argument("heightmap lattice coordinate overflow");
   }
-  const auto coordinate = static_cast<std::int64_t>(std::llround(scaled));
-  if (std::abs(value - static_cast<double>(coordinate) * resolution) > tolerance) {
-    throw std::invalid_argument("heightmap point is off the configured lattice");
+  const auto index = static_cast<std::int64_t>(std::llround(scaled));
+  const double expected = origin + static_cast<double>(index) * resolution;
+  const double residual = std::abs(value - expected);
+  if (residual > tolerance) {
+    std::ostringstream message;
+    message << std::fixed << std::setprecision(6)
+            << "heightmap lattice mismatch: axis=" << axis
+            << " value=" << value << " origin=" << origin
+            << " resolution=" << resolution << " nearest_index=" << index
+            << " expected=" << expected << " residual=" << residual
+            << " tolerance=" << tolerance;
+    throw std::invalid_argument(message.str());
   }
-  return coordinate;
+  return index;
 }
 
 }  // namespace
@@ -67,12 +80,20 @@ HeightmapSnapshot HeightmapSnapshot::fromPoints(
   std::int64_t max_x = std::numeric_limits<std::int64_t>::min();
   std::int64_t min_y = std::numeric_limits<std::int64_t>::max();
   std::int64_t max_y = std::numeric_limits<std::int64_t>::min();
+  double origin_x = std::numeric_limits<double>::infinity();
+  double origin_y = std::numeric_limits<double>::infinity();
   for (const auto & point : points) {
-    if (!std::isfinite(point.z)) {
-      throw std::invalid_argument("heightmap point contains non-finite elevation");
+    if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+      throw std::invalid_argument("heightmap point contains non-finite coordinate");
     }
-    const std::int64_t x = latticeCoordinate(point.x, resolution_m, lattice_tolerance_m);
-    const std::int64_t y = latticeCoordinate(point.y, resolution_m, lattice_tolerance_m);
+    origin_x = std::min(origin_x, point.x);
+    origin_y = std::min(origin_y, point.y);
+  }
+  for (const auto & point : points) {
+    const std::int64_t x = latticeIndex(
+      point.x, origin_x, resolution_m, lattice_tolerance_m, 'x');
+    const std::int64_t y = latticeIndex(
+      point.y, origin_y, resolution_m, lattice_tolerance_m, 'y');
     canonical.push_back({x, y, point.z});
     min_x = std::min(min_x, x);
     max_x = std::max(max_x, x);
@@ -94,8 +115,8 @@ HeightmapSnapshot HeightmapSnapshot::fromPoints(
 
   HeightmapSnapshot snapshot;
   snapshot.resolution_m_ = resolution_m;
-  snapshot.origin_x_ = static_cast<double>(min_x) * resolution_m;
-  snapshot.origin_y_ = static_cast<double>(min_y) * resolution_m;
+  snapshot.origin_x_ = origin_x;
+  snapshot.origin_y_ = origin_y;
   snapshot.size_x_ = static_cast<std::size_t>(width);
   snapshot.size_y_ = static_cast<std::size_t>(height);
   snapshot.elevations_.assign(cell_count, 0.0);

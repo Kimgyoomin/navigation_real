@@ -1,6 +1,8 @@
 # Phase 1 Contract
 
-- Input is a complete immutable 5 cm global elevation snapshot.
+- Input is a complete immutable 5 cm global elevation snapshot. Its world-frame
+  lattice origin may be arbitrary; observed coordinates must share the configured
+  spacing within `lattice_tolerance_m`.
 - A “step” is an adjacent-cell height discontinuity, not a footstep or gait event.
 - Unknown, bounds, clearance support, over-limit discontinuity, diagonal corner,
   and numeric failures are hard invalid. Crossable discontinuities and optional

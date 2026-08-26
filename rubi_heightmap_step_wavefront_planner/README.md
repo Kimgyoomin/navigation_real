@@ -55,8 +55,11 @@ unknown/out-of-bounds terrain and adjacent-cell discontinuities over 8 cm.
 Only `x`, `y`, and `z` `FLOAT32 count=1` fields are consumed. Each PointCloud2
 is a complete immutable snapshot. Missing lattice cells remain explicitly
 unknown; disappearing cells are not restored from an older snapshot. Parsing
-checks the unorganized row layout, endianness, finite coordinates, 5 cm lattice
-alignment, duplicates, overflow, and `max_grid_cells`.
+checks the unorganized row layout, endianness, finite coordinates, duplicates,
+overflow, and `max_grid_cells`. The map may use an arbitrary world-frame
+lattice origin. All observed points must remain consistent with the configured
+5 cm spacing within `lattice_tolerance_m`; coordinates are never forced onto a
+world-zero lattice.
 
 The content hash follows canonical lattice-cell order, so input point ordering
 does not create a new generation. For reproducible experiments, use a frozen
