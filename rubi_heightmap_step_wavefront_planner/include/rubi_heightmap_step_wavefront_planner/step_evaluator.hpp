@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include "rubi_heightmap_step_wavefront_planner/heightmap_snapshot.hpp"
@@ -31,6 +33,9 @@ struct StepEvaluatorParameters
   double height_cost_exponent{2.0};
   double distance_weight{1.0};
   double height_cost_weight{5.0};
+  double preferred_clearance_radius_m{0.20};
+  double clearance_cost_weight{0.0};
+  double clearance_cost_exponent{2.0};
 };
 
 struct NodeEvaluation
@@ -40,6 +45,7 @@ struct NodeEvaluation
   double elevation_m{0.0};
   double observed_support_ratio{0.0};
   double max_clearance_height_jump_m{0.0};
+  double minimum_clearance_m{0.0};
 };
 
 struct EdgeEvaluation
@@ -52,6 +58,8 @@ struct EdgeEvaluation
   double max_height_jump_m{0.0};
   std::size_t height_jump_event_count{0U};
   double height_jump_score_m{0.0};
+  double minimum_clearance_m{0.0};
+  double clearance_score_m{0.0};
   double cost{0.0};
 };
 
@@ -70,9 +78,13 @@ public:
 
 private:
   NodeEvaluation evaluateClearance(GridCell center) const;
+  double nearestHazardDistance(GridCell center) const;
 
   const HeightmapSnapshot & snapshot_;
   StepEvaluatorParameters parameters_;
+  // One evaluator is request-local. This mutable memoization is therefore not
+  // shared across planning threads or map generations.
+  mutable std::unordered_map<std::size_t, double> clearance_cache_;
 };
 
 }  // namespace rubi_heightmap_step_wavefront_planner

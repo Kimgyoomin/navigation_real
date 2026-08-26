@@ -19,6 +19,9 @@ rubi_heightmap_step_wavefront_planner:
     height_cost_exponent: 2.0
     distance_weight: 1.0
     height_cost_weight: 5.0
+    preferred_clearance_radius_m: 0.20
+    clearance_cost_weight: 0.0
+    clearance_cost_exponent: 2.0
     node_sampling_distance_m: 0.30
     samples_per_expansion: 20
     merge_radius_m: 0.20

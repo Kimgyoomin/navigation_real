@@ -1,0 +1,20 @@
+rubi_heightmap_step_wavefront_planner:
+  ros__parameters:
+    use_sim_time: false
+    input_cloud_topic: /fastdem/mapping/cloud_global
+    map_resolution_m: 0.05
+    edge_check_spacing_m: 0.025
+    max_crossable_height_jump_m: 0.08  # Software Phase-1 threshold, not a measured hardware limit.
+    height_noise_floor_m: 0.01
+    height_cost_exponent: 2.0
+    distance_weight: 1.0
+    height_cost_weight: 2.0
+    hard_clearance_radius_m: 0.20
+    preferred_clearance_radius_m: 0.20
+    clearance_cost_weight: 0.0
+    clearance_cost_exponent: 2.0
+    node_sampling_distance_m: 0.30
+    samples_per_expansion: 20
+    merge_radius_m: 0.20
+    neighbor_connection_radius_m: 0.45
+    goal_connection_distance_m: 0.45

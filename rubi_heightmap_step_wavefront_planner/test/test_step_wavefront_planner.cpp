@@ -127,3 +127,35 @@ TEST(StepWavefrontPlanner, OverLimitEdgesNeverEnterAcceptedGraph)
     EXPECT_NE(accepted.evaluation.reason, planner::StepInvalidReason::kStepLimit);
   }
 }
+
+TEST(StepWavefrontPlanner, FullGraphAndPathAreDeterministicAcrossTwentyRuns)
+{
+  const auto snapshot = planner::HeightmapSnapshot::fromPoints(
+    flatGrid(), 0.05, 0.01, 100000U);
+  planner::StepEvaluatorParameters evaluator_parameters;
+  evaluator_parameters.hard_clearance_radius_m = 0.0;
+  evaluator_parameters.preferred_clearance_radius_m = 0.0;
+  const planner::StepEvaluator evaluator(snapshot, evaluator_parameters);
+  planner::StepWavefrontParameters parameters;
+  parameters.post_goal_expansions = 3U;
+  const auto reference = planner::StepWavefrontPlanner(parameters).plan(
+    evaluator, {-0.60, 0.0}, {0.60, 0.0});
+  ASSERT_TRUE(reference.success);
+  for (int repeat = 1; repeat < 20; ++repeat) {
+    const auto candidate = planner::StepWavefrontPlanner(parameters).plan(
+      evaluator, {-0.60, 0.0}, {0.60, 0.0});
+    ASSERT_EQ(candidate.nodes.size(), reference.nodes.size());
+    ASSERT_EQ(candidate.edges.size(), reference.edges.size());
+    EXPECT_EQ(candidate.path_node_ids, reference.path_node_ids);
+    EXPECT_DOUBLE_EQ(candidate.path_metrics.total_cost, reference.path_metrics.total_cost);
+    for (std::size_t index = 0U; index < reference.nodes.size(); ++index) {
+      EXPECT_EQ(candidate.nodes[index].id, reference.nodes[index].id);
+      EXPECT_DOUBLE_EQ(candidate.nodes[index].point.x, reference.nodes[index].point.x);
+      EXPECT_DOUBLE_EQ(candidate.nodes[index].point.y, reference.nodes[index].point.y);
+    }
+    for (std::size_t index = 0U; index < reference.edges.size(); ++index) {
+      EXPECT_EQ(candidate.edges[index].from, reference.edges[index].from);
+      EXPECT_EQ(candidate.edges[index].to, reference.edges[index].to);
+    }
+  }
+}

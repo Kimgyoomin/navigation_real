@@ -31,6 +31,7 @@
 #include "rubi_heightmap_step_wavefront_planner/path_revalidation.hpp"
 #include "rubi_heightmap_step_wavefront_planner/plan_lifecycle.hpp"
 #include "rubi_heightmap_step_wavefront_planner/planner_visualization.hpp"
+#include "rubi_heightmap_step_wavefront_planner/ros/pointcloud2_heightmap_adapter.hpp"
 #include "rubi_heightmap_step_wavefront_planner/step_evaluator.hpp"
 #include "rubi_heightmap_step_wavefront_planner/step_wavefront_planner.hpp"
 
@@ -46,28 +47,6 @@ constexpr std::size_t kMaxTfRetryCount = 3U;
 double milliseconds(const Clock::duration duration) noexcept
 {
   return std::chrono::duration<double, std::milli>(duration).count();
-}
-
-bool hostBigEndian() noexcept
-{
-  const std::uint16_t value = 0x0102U;
-  return *reinterpret_cast<const std::uint8_t *>(&value) == 0x01U;
-}
-
-std::uint32_t swap32(const std::uint32_t value) noexcept
-{
-  return ((value & 0xffU) << 24U) | ((value & 0xff00U) << 8U) |
-         ((value & 0xff0000U) >> 8U) | ((value & 0xff000000U) >> 24U);
-}
-
-float readFloat32(const std::uint8_t * data, const bool message_big_endian)
-{
-  std::uint32_t bits;
-  std::memcpy(&bits, data, sizeof(bits));
-  if (message_big_endian != hostBigEndian()) {bits = swap32(bits);}
-  float value;
-  std::memcpy(&value, &bits, sizeof(value));
-  return value;
 }
 
 std::optional<geometry_msgs::msg::Quaternion> normalizedQuaternion(
@@ -108,6 +87,9 @@ public:
     evaluator_parameters_.height_cost_exponent = height_cost_exponent_;
     evaluator_parameters_.distance_weight = distance_weight_;
     evaluator_parameters_.height_cost_weight = height_cost_weight_;
+    evaluator_parameters_.preferred_clearance_radius_m = preferred_clearance_radius_m_;
+    evaluator_parameters_.clearance_cost_weight = clearance_cost_weight_;
+    evaluator_parameters_.clearance_cost_exponent = clearance_cost_exponent_;
     planner_parameters_.node_sampling_distance_m = node_sampling_distance_m_;
     planner_parameters_.samples_per_expansion = samples_per_expansion_;
     planner_parameters_.merge_radius_m = merge_radius_m_;
@@ -191,6 +173,10 @@ private:
     height_cost_exponent_ = declare_parameter("height_cost_exponent", 2.0);
     distance_weight_ = declare_parameter("distance_weight", 1.0);
     height_cost_weight_ = declare_parameter("height_cost_weight", 5.0);
+    preferred_clearance_radius_m_ = declare_parameter(
+      "preferred_clearance_radius_m", hard_clearance_radius_m_);
+    clearance_cost_weight_ = declare_parameter("clearance_cost_weight", 0.0);
+    clearance_cost_exponent_ = declare_parameter("clearance_cost_exponent", 2.0);
     node_sampling_distance_m_ = declare_parameter("node_sampling_distance_m", 0.30);
     samples_per_expansion_ = sizeParameter("samples_per_expansion", 20);
     merge_radius_m_ = declare_parameter("merge_radius_m", 0.20);
@@ -223,52 +209,12 @@ private:
     return static_cast<std::size_t>(value);
   }
 
-  std::vector<HeightPoint> parseCloud(const sensor_msgs::msg::PointCloud2 & cloud) const
-  {
-    const auto expected_row_step =
-      static_cast<std::uint64_t>(cloud.width) * static_cast<std::uint64_t>(cloud.point_step);
-    if (cloud.height != 1U || cloud.point_step == 0U ||
-      expected_row_step > std::numeric_limits<std::uint32_t>::max() ||
-      static_cast<std::uint64_t>(cloud.row_step) != expected_row_step ||
-      cloud.data.size() != cloud.row_step || cloud.width == 0U)
-    {
-      throw std::invalid_argument("PointCloud2 must be a non-empty unorganized exact row");
-    }
-    auto fieldOffset = [&](const std::string & name) {
-        for (const auto & field : cloud.fields) {
-          if (field.name == name) {
-            if (field.datatype != sensor_msgs::msg::PointField::FLOAT32 ||
-              field.count != 1U || field.offset + sizeof(float) > cloud.point_step)
-            {
-              throw std::invalid_argument(name + " must be FLOAT32 count=1 within point_step");
-            }
-            return field.offset;
-          }
-        }
-        throw std::invalid_argument("PointCloud2 is missing " + name);
-      };
-    const auto x_offset = fieldOffset("x");
-    const auto y_offset = fieldOffset("y");
-    const auto z_offset = fieldOffset("z");
-    std::vector<HeightPoint> points;
-    points.reserve(cloud.width);
-    for (std::size_t index = 0U; index < cloud.width; ++index) {
-      const auto * data = cloud.data.data() + index * cloud.point_step;
-      points.push_back(
-        {
-          readFloat32(data + x_offset, cloud.is_bigendian),
-          readFloat32(data + y_offset, cloud.is_bigendian),
-          readFloat32(data + z_offset, cloud.is_bigendian)});
-    }
-    return points;
-  }
-
   void onCloud(const sensor_msgs::msg::PointCloud2::ConstSharedPtr cloud)
   {
     try {
-      auto snapshot = std::make_shared<HeightmapSnapshot>(
-        HeightmapSnapshot::fromPoints(
-          parseCloud(*cloud), map_resolution_m_, lattice_tolerance_m_, max_grid_cells_));
+      auto snapshot = std::make_shared<const HeightmapSnapshot>(
+        PointCloud2HeightmapAdapter{}.makeSnapshot(
+          *cloud, {map_resolution_m_, lattice_tolerance_m_, max_grid_cells_}));
       bool frame_changed = false;
       bool revalidate = false;
       bool notify = false;
@@ -281,7 +227,7 @@ private:
           return;
         }
         frame_changed = map_ && map_frame_ != cloud->header.frame_id;
-        map_ = std::move(snapshot);
+        map_ = snapshot;
         map_frame_ = cloud->header.frame_id;
         generation = ++map_generation_;
         if (frame_changed) {
@@ -302,8 +248,8 @@ private:
         get_logger(), "Accepted step heightmap generation=%lu frame='%s' observed=%zu "
         "grid=%zux%zu hash=%016lx",
         static_cast<unsigned long>(generation), cloud->header.frame_id.c_str(),
-        map_->observedCount(), map_->sizeX(), map_->sizeY(),
-        static_cast<unsigned long>(map_->contentHash()));
+        snapshot->observedCount(), snapshot->sizeX(), snapshot->sizeY(),
+        static_cast<unsigned long>(snapshot->contentHash()));
       if (revalidate) {revalidateActivePath();}
       if (notify) {planning_cv_.notify_one();}
     } catch (const std::exception & error) {
@@ -558,8 +504,11 @@ private:
         result, dense, output_frame, stamp, visualization_parameters);
       {
         std::lock_guard<std::mutex> state_lock(state_mutex_);
-        if (request.goal_epoch != goal_epoch_ || output_frame != map_frame_ ||
-          validated_generation != map_generation_)
+        const PlanLifecycleToken token{
+          request.goal_epoch, request.map_generation, request.frame_id};
+        const bool revalidated_latest = validated_generation != request.map_generation;
+        if (validated_generation != map_generation_ || !mayPublish(
+            token, goal_epoch_, map_generation_, map_frame_, revalidated_latest))
         {
           return;
         }
@@ -594,7 +543,8 @@ private:
         "astar_time_ms=%.3f core_total_time_ms=%.3f postprocess_time_ms=%.3f "
         "total_planning_time_ms=%.3f path_pose_count=%zu path_length_xy_m=%.3f "
         "path_height_event_count=%zu path_max_height_jump_m=%.3f "
-        "path_height_score_m=%.3f path_total_cost=%.3f",
+        "path_height_score_m=%.3f path_min_clearance_m=%.3f "
+        "path_clearance_score_m=%.3f path_total_cost=%.3f",
         request.automatic ? "automatic" : "external",
         static_cast<unsigned long>(request.map_generation),
         static_cast<unsigned long>(validated_generation), result.success ? "true" : "false",
@@ -604,7 +554,8 @@ private:
         result.astar_time_ms, result.core_total_time_ms, postprocess_time_ms,
         total_time_ms, path.poses.size(), result.path_metrics.length_xy_m,
         result.path_metrics.height_event_count, result.path_metrics.max_height_jump_m,
-        result.path_metrics.height_score_m, result.path_metrics.total_cost);
+        result.path_metrics.height_score_m, result.path_metrics.minimum_clearance_m,
+        result.path_metrics.clearance_score_m, result.path_metrics.total_cost);
       RCLCPP_INFO(
         get_logger(), "rejection_histogram node=%zu edge=%zu duplicate_edge=%zu "
         "out_of_bounds=%zu unknown=%zu insufficient_clearance_support=%zu "
@@ -684,6 +635,8 @@ private:
   double hard_clearance_radius_m_{0.20}, edge_check_spacing_m_{0.025};
   double max_crossable_height_jump_m_{0.08}, height_noise_floor_m_{0.01};
   double height_cost_exponent_{2.0}, distance_weight_{1.0}, height_cost_weight_{5.0};
+  double preferred_clearance_radius_m_{0.20}, clearance_cost_weight_{0.0};
+  double clearance_cost_exponent_{2.0};
   double node_sampling_distance_m_{0.30}, merge_radius_m_{0.20};
   double neighbor_connection_radius_m_{0.45}, goal_connection_distance_m_{0.45};
   double path_output_spacing_m_{0.05}, node_marker_scale_m_{0.08};
@@ -696,7 +649,7 @@ private:
   StepEvaluatorParameters evaluator_parameters_;
   StepWavefrontParameters planner_parameters_;
   std::unique_ptr<StepWavefrontPlanner> planner_;
-  std::shared_ptr<HeightmapSnapshot> map_;
+  std::shared_ptr<const HeightmapSnapshot> map_;
   std::string map_frame_;
   std::uint64_t map_generation_{0U}, goal_epoch_{0U};
   std::optional<geometry_msgs::msg::PoseStamped> pending_goal_, last_goal_;

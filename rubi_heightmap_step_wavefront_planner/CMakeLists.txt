@@ -20,10 +20,14 @@ find_package(visualization_msgs REQUIRED)
 add_library(${PROJECT_NAME}_core
   src/heightmap_snapshot.cpp
   src/step_evaluator.cpp
-  src/step_wavefront_planner.cpp
+  src/graph/spatial_index_2d.cpp
+  src/graph/wavefront_graph_builder.cpp
+  src/search/astar_search.cpp
+  src/planning/step_wavefront_planner.cpp
   src/path_revalidation.cpp
   src/plan_lifecycle.cpp
 )
+set_target_properties(${PROJECT_NAME}_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_features(${PROJECT_NAME}_core PUBLIC cxx_std_17)
 target_include_directories(${PROJECT_NAME}_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -39,10 +43,17 @@ target_link_libraries(${PROJECT_NAME}_visualization ${PROJECT_NAME}_core)
 ament_target_dependencies(${PROJECT_NAME}_visualization
   builtin_interfaces geometry_msgs std_msgs visualization_msgs)
 
+add_library(${PROJECT_NAME}_ros_adapter STATIC src/ros/pointcloud2_heightmap_adapter.cpp)
+target_compile_features(${PROJECT_NAME}_ros_adapter PUBLIC cxx_std_17)
+target_include_directories(${PROJECT_NAME}_ros_adapter PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+target_link_libraries(${PROJECT_NAME}_ros_adapter ${PROJECT_NAME}_core)
+ament_target_dependencies(${PROJECT_NAME}_ros_adapter sensor_msgs)
+
 add_executable(step_wavefront_planner_node src/planner_node.cpp)
 target_compile_features(step_wavefront_planner_node PUBLIC cxx_std_17)
 target_link_libraries(step_wavefront_planner_node
-  ${PROJECT_NAME}_core ${PROJECT_NAME}_visualization)
+  ${PROJECT_NAME}_core ${PROJECT_NAME}_visualization ${PROJECT_NAME}_ros_adapter)
 ament_target_dependencies(step_wavefront_planner_node
   geometry_msgs nav_msgs rclcpp sensor_msgs std_msgs tf2 tf2_geometry_msgs
   tf2_ros visualization_msgs)
@@ -71,12 +82,20 @@ if(BUILD_TESTING)
   foreach(test_name
       test_heightmap_snapshot
       test_step_evaluator
+      test_spatial_index_2d
+      test_astar_search
+      test_clearance_sweep
       test_step_wavefront_planner
       test_path_revalidation
       test_plan_lifecycle)
     ament_add_gtest(${test_name} test/${test_name}.cpp)
     target_link_libraries(${test_name} ${PROJECT_NAME}_core)
   endforeach()
+
+  ament_add_gtest(test_pointcloud2_heightmap_adapter
+    test/test_pointcloud2_heightmap_adapter.cpp)
+  target_link_libraries(test_pointcloud2_heightmap_adapter ${PROJECT_NAME}_ros_adapter)
+  ament_target_dependencies(test_pointcloud2_heightmap_adapter sensor_msgs)
 
   ament_add_gtest(test_planner_visualization test/test_planner_visualization.cpp)
   target_link_libraries(test_planner_visualization ${PROJECT_NAME}_visualization)

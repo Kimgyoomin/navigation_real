@@ -6,6 +6,12 @@ import yaml
 CONFIG = Path(__file__).resolve().parents[1] / 'config' / 'step_wavefront_v0.yaml'
 
 
+def _parameters(path):
+    with path.open(encoding='utf-8') as stream:
+        return yaml.safe_load(stream)[
+            'rubi_heightmap_step_wavefront_planner']['ros__parameters']
+
+
 def test_step_wavefront_v0_contract():
     with CONFIG.open(encoding='utf-8') as stream:
         parameters = yaml.safe_load(stream)[
@@ -50,3 +56,19 @@ def test_rviz_has_only_top_level_supported_displays():
     assert 'rviz_default_plugins/PointCloud2' in classes
     assert 'rviz_default_plugins/Path' in classes
     assert classes.count('rviz_default_plugins/MarkerArray') == 3
+
+
+def test_phase1_profiles_only_vary_risk_preferences():
+    aggressive = _parameters(CONFIG.parent / 'step_wavefront_phase1_aggressive.yaml')
+    safe = _parameters(CONFIG.parent / 'step_wavefront_phase1_safe.yaml')
+    frozen = {
+        'map_resolution_m', 'max_crossable_height_jump_m',
+        'node_sampling_distance_m', 'samples_per_expansion', 'merge_radius_m',
+        'neighbor_connection_radius_m', 'goal_connection_distance_m',
+    }
+    for name in frozen:
+        assert aggressive[name] == safe[name]
+    assert aggressive['height_cost_weight'] < safe['height_cost_weight']
+    assert aggressive['preferred_clearance_radius_m'] < safe[
+        'preferred_clearance_radius_m']
+    assert aggressive['clearance_cost_weight'] < safe['clearance_cost_weight']

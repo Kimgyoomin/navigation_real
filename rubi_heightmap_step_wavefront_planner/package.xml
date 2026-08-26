@@ -3,7 +3,7 @@
   <name>rubi_heightmap_step_wavefront_planner</name>
   <version>0.1.0</version>
   <description>Height-discontinuity-aware standalone Wavefront route planner.</description>
-  <maintainer email="kim@example.com">kim</maintainer>
+  <maintainer email="kimgyoomin1999@gmail.com">Kimgyoomin</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
@@ -17,6 +17,10 @@
   <depend>tf2_geometry_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>visualization_msgs</depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>rviz2</exec_depend>
 
   <test_depend>ament_cmake_gtest</test_depend>
   <test_depend>ament_cmake_pytest</test_depend>

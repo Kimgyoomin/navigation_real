@@ -101,13 +101,17 @@ class TestPlannerNode(unittest.TestCase):
         points = []
         for y in range(-16, 17):
             for x in range(-24, 25):
-                if kind == 'unknown' and x == 0:
+                if kind in ('unknown', 'unknown_a', 'unknown_b') and x == 0:
                     continue
                 z = 0.0
                 if kind == 'crossable' and x >= 0:
                     z = 0.045
                 if kind == 'over' and x >= 0:
                     z = 0.081
+                if kind == 'outside' and x == 20 and y == 15:
+                    z = 0.081
+                if kind == 'unknown_b' and x == 20 and y == 15:
+                    z = 0.01
                 points.append((0.05 * x, 0.05 * y, z))
         return point_cloud2.create_cloud_xyz32(Header(frame_id=MAP), points)
 
@@ -172,6 +176,37 @@ class TestPlannerNode(unittest.TestCase):
         expected = (math.sin(0.35), math.cos(0.35))
         self.assertAlmostEqual(
             abs(final.z * expected[0] + final.w * expected[1]), 1.0, places=6)
+
+        # Same-frame updates outside the remaining corridor, cost-only changes,
+        # and identical hashes retain the active Path without republishing it.
+        retained_count = len(self.paths)
+        self.cloud_pub.publish(self._cloud('outside'))
+        self._spin_for(0.25)
+        self.assertEqual(len(self.paths), retained_count)
+        self.cloud_pub.publish(self._cloud('outside'))
+        self._spin_for(0.25)
+        self.assertEqual(len(self.paths), retained_count)
+        self.cloud_pub.publish(self._cloud('crossable'))
+        self._spin_for(0.25)
+        self.assertEqual(len(self.paths), retained_count)
+
+        # Unknown/support failures require two distinct changed snapshots.
+        self.cloud_pub.publish(self._cloud('unknown_a'))
+        self._spin_for(0.25)
+        self.assertEqual(len(self.paths), retained_count)
+        self.cloud_pub.publish(self._cloud('unknown_b'))
+        self._wait(lambda: len(self.paths) > retained_count)
+        self.assertEqual(len(self.paths[-1].poses), 0)
+
+        # Restore an active path for the remaining independent contracts.
+        flat = self._publish_and_wait_path('flat', True)
+        self.assertGreater(len(flat.poses), 0)
+
+        invalidated_count = len(self.paths)
+        self.cloud_pub.publish(self._cloud('over'))
+        self._wait(lambda: len(self.paths) > invalidated_count)
+        self.assertEqual(len(self.paths[-1].poses), 0)
+        flat = self._publish_and_wait_path('flat', True)
 
         crossable = self._publish_and_wait_path('crossable', True)
         self.assertGreater(len(crossable.poses), 0)

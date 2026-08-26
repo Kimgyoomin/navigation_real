@@ -128,3 +128,29 @@ TEST(StepEvaluator, EnforcesUnknownClearanceDiscontinuityCornerAndBoundary)
     planner::StepEvaluator(flat, parameters(0.20)).evaluateNode({1.0, 0.0}).reason,
     planner::StepInvalidReason::kInsufficientClearanceSupport);
 }
+
+TEST(StepEvaluator, OptionalPreferredClearanceAddsOnlySoftNonnegativeRisk)
+{
+  const auto snapshot = planner::HeightmapSnapshot::fromPoints(
+    grid([](int x, int) {return x >= 0 ? 0.081 : 0.0;}), 0.05, 0.01, 10000U);
+  auto baseline_parameters = parameters(0.05);
+  baseline_parameters.preferred_clearance_radius_m = 0.05;
+  const auto baseline = planner::StepEvaluator(snapshot, baseline_parameters).evaluateEdge(
+    {-0.20, -0.30}, {-0.20, 0.30});
+  ASSERT_TRUE(baseline.valid);
+  EXPECT_DOUBLE_EQ(baseline.clearance_score_m, 0.0);
+  EXPECT_NEAR(baseline.cost, baseline.length_xy_m, 1.0e-12);
+
+  auto safe_parameters = baseline_parameters;
+  safe_parameters.preferred_clearance_radius_m = 0.30;
+  safe_parameters.clearance_cost_weight = 5.0;
+  const auto near_wall = planner::StepEvaluator(snapshot, safe_parameters).evaluateEdge(
+    {-0.20, -0.30}, {-0.20, 0.30});
+  const auto far_from_wall = planner::StepEvaluator(snapshot, safe_parameters).evaluateEdge(
+    {-0.50, -0.30}, {-0.50, 0.30});
+  ASSERT_TRUE(near_wall.valid && far_from_wall.valid);
+  EXPECT_GT(near_wall.clearance_score_m, 0.0);
+  EXPECT_GT(near_wall.cost, baseline.cost);
+  EXPECT_DOUBLE_EQ(far_from_wall.clearance_score_m, 0.0);
+  EXPECT_LT(near_wall.minimum_clearance_m, safe_parameters.preferred_clearance_radius_m);
+}

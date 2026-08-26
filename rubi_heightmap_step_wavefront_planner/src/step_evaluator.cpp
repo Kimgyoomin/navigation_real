@@ -40,10 +40,54 @@ StepEvaluator::StepEvaluator(
     !std::isfinite(parameters_.height_cost_exponent) ||
     parameters_.height_cost_exponent < 1.0 ||
     !std::isfinite(parameters_.distance_weight) || parameters_.distance_weight <= 0.0 ||
-    !std::isfinite(parameters_.height_cost_weight) || parameters_.height_cost_weight < 0.0)
+    !std::isfinite(parameters_.height_cost_weight) || parameters_.height_cost_weight < 0.0 ||
+    !std::isfinite(parameters_.preferred_clearance_radius_m) ||
+    parameters_.preferred_clearance_radius_m < parameters_.hard_clearance_radius_m ||
+    !std::isfinite(parameters_.clearance_cost_weight) || parameters_.clearance_cost_weight < 0.0 ||
+    !std::isfinite(parameters_.clearance_cost_exponent) || parameters_.clearance_cost_exponent < 1.0)
   {
     throw std::invalid_argument("invalid StepEvaluator parameters");
   }
+}
+
+double StepEvaluator::nearestHazardDistance(const GridCell center) const
+{
+  const auto index = snapshot_.index(center);
+  if (!index) {return 0.0;}
+  const auto cached = clearance_cache_.find(*index);
+  if (cached != clearance_cache_.end()) {return cached->second;}
+  const double search_radius_m = parameters_.preferred_clearance_radius_m;
+  const int radius_cells = static_cast<int>(std::ceil(search_radius_m / snapshot_.resolution()));
+  double minimum_m = search_radius_m;
+  const Point2D center_point = snapshot_.cellCenter(center);
+  for (int dy = -radius_cells; dy <= radius_cells; ++dy) {
+    for (int dx = -radius_cells; dx <= radius_cells; ++dx) {
+      const GridCell cell{center.x + dx, center.y + dy};
+      const double distance_m = snapshot_.resolution() * std::hypot(dx, dy);
+      if (distance_m > minimum_m + 1.0e-12) {continue;}
+      if (!snapshot_.inBounds(cell) || !snapshot_.observed(cell)) {
+        minimum_m = distance_m; continue;
+      }
+      const auto elevation = snapshot_.elevation(cell);
+      constexpr int kDx[4] = {1, 0, 1, 1};
+      constexpr int kDy[4] = {0, 1, 1, -1};
+      for (int direction = 0; direction < 4; ++direction) {
+        const GridCell neighbor{cell.x + kDx[direction], cell.y + kDy[direction]};
+        const auto neighbor_elevation = snapshot_.elevation(neighbor);
+        if (neighbor_elevation &&
+          std::abs(*neighbor_elevation - *elevation) > parameters_.max_crossable_height_jump_m)
+        {
+          // Match the existing hard-clearance contract, which rejects when the
+          // far cell of an over-limit adjacent pair enters the clearance disk.
+          const Point2D hazard_point = snapshot_.cellCenter(neighbor);
+          minimum_m = std::min(minimum_m, std::hypot(
+            hazard_point.x - center_point.x, hazard_point.y - center_point.y));
+        }
+      }
+    }
+  }
+  clearance_cache_[*index] = minimum_m;
+  return minimum_m;
 }
 
 NodeEvaluation StepEvaluator::evaluateClearance(const GridCell center) const
@@ -109,6 +153,7 @@ NodeEvaluation StepEvaluator::evaluateClearance(const GridCell center) const
   }
   result.valid = true;
   result.reason = StepInvalidReason::kNone;
+  result.minimum_clearance_m = nearestHazardDistance(center);
   return result;
 }
 
@@ -175,6 +220,7 @@ EdgeEvaluation StepEvaluator::evaluateEdge(const Point2D from, const Point2D to)
       std::ceil(result.length_xy_m / parameters_.edge_check_spacing_m)));
   result.sample_count = intervals + 1U;
   std::vector<GridCell> centerline_cells;
+  std::vector<double> sample_clearances_m;
   for (std::size_t index = 0U; index <= intervals; ++index) {
     const double ratio = static_cast<double>(index) / static_cast<double>(intervals);
     const Point2D sample{
@@ -185,6 +231,7 @@ EdgeEvaluation StepEvaluator::evaluateEdge(const Point2D from, const Point2D to)
       result.reason = node.reason;
       return result;
     }
+    sample_clearances_m.push_back(node.minimum_clearance_m);
     const GridCell cell = snapshot_.worldToCell(sample);
     if (centerline_cells.empty() || !(centerline_cells.back() == cell)) {
       centerline_cells.push_back(cell);
@@ -205,6 +252,22 @@ EdgeEvaluation StepEvaluator::evaluateEdge(const Point2D from, const Point2D to)
     }
   }
   result.unique_cell_count = centerline_cells.size();
+  result.minimum_clearance_m = sample_clearances_m.empty() ? 0.0 :
+    *std::min_element(sample_clearances_m.begin(), sample_clearances_m.end());
+  if (parameters_.preferred_clearance_radius_m > parameters_.hard_clearance_radius_m &&
+    parameters_.clearance_cost_weight > 0.0)
+  {
+    const double denominator = parameters_.preferred_clearance_radius_m -
+      parameters_.hard_clearance_radius_m;
+    const double sample_spacing_m = result.length_xy_m /
+      static_cast<double>(std::max<std::size_t>(1U, intervals));
+    for (const double clearance_m : sample_clearances_m) {
+      const double normalized = std::clamp(
+        (parameters_.preferred_clearance_radius_m - clearance_m) / denominator, 0.0, 1.0);
+      result.clearance_score_m += std::pow(normalized, parameters_.clearance_cost_exponent) *
+        sample_spacing_m;
+    }
+  }
   std::optional<double> previous_z;
   for (const auto & cell : centerline_cells) {
     const auto z = snapshot_.elevation(cell);
@@ -233,7 +296,8 @@ EdgeEvaluation StepEvaluator::evaluateEdge(const Point2D from, const Point2D to)
     previous_z = z;
   }
   result.cost = parameters_.distance_weight * result.length_xy_m +
-    parameters_.height_cost_weight * result.height_jump_score_m;
+    parameters_.height_cost_weight * result.height_jump_score_m +
+    parameters_.clearance_cost_weight * result.clearance_score_m;
   result.valid = std::isfinite(result.cost);
   result.reason = result.valid ? StepInvalidReason::kNone : StepInvalidReason::kInvalidInput;
   return result;

@@ -21,7 +21,7 @@ changes are used:
 delta_i = abs(z_i - z_(i-1))
 r_i = clamp((delta_i - h_noise) / (h_max - h_noise), 0, 1)
 S_e = h_max * sum(r_i ^ p)
-C_e = w_d * L_xy + w_h * S_e
+C_e = w_d * L_xy + w_h * S_e + w_c * S_clearance
 ```
 
 Every crossable height event is accumulated; the maximum event alone is not
@@ -43,6 +43,12 @@ The following are hard-invalid and never converted to a large finite cost:
 The A* heuristic is `w_d * EuclideanDistance(node, goal)`. Since height
 penalties are nonnegative and every edge costs at least `w_d * L_xy`, this is
 admissible. Ties are resolved by lower `f`, lower `g`, then lower Node ID.
+
+Optional preferred-clearance risk is disabled by default (`w_c=0` and
+`preferred_clearance_radius_m == hard_clearance_radius_m`). When enabled, it
+adds a continuous nonnegative penalty between the hard and preferred radii;
+terrain inside the hard radius remains rejected. Its hazard definition is
+unknown/out-of-bounds terrain and adjacent-cell discontinuities over 8 cm.
 
 ## Heightmap snapshots
 
@@ -76,6 +82,11 @@ already exists, that budget termination can still yield planning success.
 
 ## Map lifecycle
 
+This package performs active-path safety revalidation and one-shot online
+global replanning on changed complete height-map snapshots. It does not
+incrementally mutate a persistent graph, track dynamic objects, predict
+obstacle motion, or re-optimize for cost-only map changes.
+
 Only the unpassed active-Path corridor is rechecked on a changed same-frame
 snapshot. Step-limit, clearance-violation, and invalid-input failures invalidate
 immediately. Unknown, out-of-bounds, and insufficient-clearance-support failures
@@ -106,6 +117,9 @@ maximum jump, accumulated height score, and total route cost. These measurements
 are diagnostic; this package is not claimed real-time or robot-validated.
 
 ## Build and test
+
+The exported consumer target is
+`rubi_heightmap_step_wavefront_planner::rubi_heightmap_step_wavefront_planner_core`.
 
 ```bash
 cd ~/ros2_ws_nav
