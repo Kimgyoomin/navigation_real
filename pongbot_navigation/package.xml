@@ -21,6 +21,7 @@
   <depend>tf2</depend>
   <depend>tf2_geometry_msgs</depend>
   <depend>tf2_ros</depend>
+  <depend>visualization_msgs</depend>
   <depend>rubi_heightmap_wavefront_planner</depend>
 
   <exec_depend>nav2_bringup</exec_depend>
@@ -39,6 +40,7 @@
   <test_depend>ament_cmake_pytest</test_depend>
   <test_depend>launch_testing</test_depend>
   <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>lifecycle_msgs</test_depend>
   <test_depend>python3-yaml</test_depend>
   <test_depend>rclpy</test_depend>
   <test_depend>sensor_msgs_py</test_depend>

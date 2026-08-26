@@ -18,7 +18,31 @@ find_package(sensor_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(visualization_msgs REQUIRED)
 find_package(rubi_heightmap_wavefront_planner REQUIRED)
+
+add_library(pongbot_navigation_pure_pursuit_core
+  src/pure_pursuit_core.cpp
+)
+target_compile_features(pongbot_navigation_pure_pursuit_core PUBLIC cxx_std_17)
+target_include_directories(pongbot_navigation_pure_pursuit_core PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+
+add_executable(simple_pure_pursuit_controller
+  src/simple_pure_pursuit_controller.cpp
+)
+target_compile_features(simple_pure_pursuit_controller PUBLIC cxx_std_17)
+target_include_directories(simple_pure_pursuit_controller PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+ament_target_dependencies(simple_pure_pursuit_controller
+  geometry_msgs nav_msgs rclcpp tf2 tf2_geometry_msgs tf2_ros visualization_msgs
+)
+target_link_libraries(simple_pure_pursuit_controller
+  pongbot_navigation_pure_pursuit_core)
 
 add_library(pongbot_navigation_heightmap_wavefront_plugin SHARED
   src/heightmap_wavefront_nav2_planner.cpp
@@ -38,13 +62,17 @@ target_link_libraries(pongbot_navigation_heightmap_wavefront_plugin
 
 pluginlib_export_plugin_description_file(nav2_core plugins.xml)
 
-install(TARGETS pongbot_navigation_heightmap_wavefront_plugin
+install(TARGETS
+  pongbot_navigation_heightmap_wavefront_plugin
+  pongbot_navigation_pure_pursuit_core
+  simple_pure_pursuit_controller
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
-  RUNTIME DESTINATION bin
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 install(DIRECTORY include/ DESTINATION include)
 install(FILES plugins.xml DESTINATION share/${PROJECT_NAME})
+install(FILES SIMPLE_PURE_PURSUIT.md DESTINATION share/${PROJECT_NAME})
 
 install(DIRECTORY launch config maps rviz_cfg behavior_trees
   DESTINATION share/${PROJECT_NAME}
@@ -63,11 +91,18 @@ if(BUILD_TESTING)
   target_link_libraries(test_heightmap_wavefront_plugin
     pongbot_navigation_heightmap_wavefront_plugin)
 
+  ament_add_gtest(test_pure_pursuit_core test/test_pure_pursuit_core.cpp)
+  target_link_libraries(test_pure_pursuit_core
+    pongbot_navigation_pure_pursuit_core)
+
   ament_add_pytest_test(
     test_heightmap_nav2_config_contract test/test_heightmap_nav2_config_contract.py)
   add_launch_test(test/test_heightmap_nav2_launch.py TIMEOUT 120)
   set_tests_properties(test_test_heightmap_nav2_launch.py PROPERTIES
     ENVIRONMENT "ROS_DOMAIN_ID=203")
+  add_launch_test(test/test_simple_pure_pursuit_launch.py TIMEOUT 60)
+  set_tests_properties(test_test_simple_pure_pursuit_launch.py PROPERTIES
+    ENVIRONMENT "ROS_DOMAIN_ID=204")
 endif()
 
 ament_package()

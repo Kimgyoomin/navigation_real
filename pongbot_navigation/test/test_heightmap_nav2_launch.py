@@ -11,6 +11,7 @@ import launch
 import launch_ros.actions
 import launch_testing
 import launch_testing.actions
+from lifecycle_msgs.srv import GetState
 from nav2_msgs.action import ComputePathToPose
 from nav_msgs.msg import Path as NavPath
 import pytest
@@ -73,10 +74,13 @@ class TestHeightmapPlannerServer(unittest.TestCase):
             NavPath, '/plan', cls.plans.append, 10)
         cls.client = ActionClient(
             cls.node, ComputePathToPose, '/compute_path_to_pose')
+        cls.lifecycle_client = cls.node.create_client(
+            GetState, '/planner_server/get_state')
 
     @classmethod
     def tearDownClass(cls):
         cls.client.destroy()
+        cls.lifecycle_client.destroy()
         cls.node.destroy_node()
         rclpy.shutdown()
 
@@ -104,6 +108,19 @@ class TestHeightmapPlannerServer(unittest.TestCase):
         self.cloud_pub.publish(self._cloud(kind))
         for _ in range(5):
             rclpy.spin_once(self.node, timeout_sec=0.05)
+
+    def _wait_for_planner_active(self):
+        self.assertTrue(
+            self.lifecycle_client.wait_for_service(timeout_sec=30.0))
+        deadline = time.monotonic() + 30.0
+        while time.monotonic() < deadline:
+            future = self.lifecycle_client.call_async(GetState.Request())
+            rclpy.spin_until_future_complete(
+                self.node, future, timeout_sec=1.0)
+            if future.done() and future.result().current_state.label == 'active':
+                return
+            time.sleep(0.05)
+        self.fail('planner_server did not reach active lifecycle state')
 
     def _request(self, start_xy=(-0.6, 0.0), goal_xy=(0.6, 0.0),
                  frame='map', quaternion=(0.0, 1.0)):
@@ -138,6 +155,7 @@ class TestHeightmapPlannerServer(unittest.TestCase):
     ):
         proc_info.assertWaitForStartup(process=planner_server, timeout=10.0)
         self.assertTrue(self.client.wait_for_server(timeout_sec=30.0))
+        self._wait_for_planner_active()
 
         no_map, _ = self._request()
         self.assertEqual(no_map.status, GoalStatus.STATUS_ABORTED)
