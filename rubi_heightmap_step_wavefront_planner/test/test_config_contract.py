@@ -56,6 +56,32 @@ def test_rviz_has_only_top_level_supported_displays():
     assert 'rviz_default_plugins/PointCloud2' in classes
     assert 'rviz_default_plugins/Path' in classes
     assert classes.count('rviz_default_plugins/MarkerArray') == 3
+    panels = [item['Class'] for item in document['Panels']]
+    assert panels == [
+        'rviz_common/Displays',
+        'rviz_common/Selection',
+        'rviz_common/Tool Properties',
+    ]
+    topics = {
+        item['Topic']['Value'] for item in document['Visualization Manager'][
+            'Displays']
+    }
+    assert topics == {
+        '/fastdem/mapping/cloud_global',
+        '/rubi/heightmap_step_planner/debug/nodes',
+        '/rubi/heightmap_step_planner/debug/edges',
+        '/rubi/heightmap_step_planner/debug/rejected',
+        '/rubi/heightmap_step_planner/path',
+    }
+    tools = document['Visualization Manager']['Tools']
+    tool_topics = {
+        item['Class']: item.get('Topic', {}).get('Value') for item in tools
+    }
+    assert tool_topics['rviz_default_plugins/SetInitialPose'] == '/initialpose'
+    assert tool_topics['rviz_default_plugins/SetGoal'] == '/goal_pose'
+    text = rviz.read_text(encoding='utf-8')
+    assert 'Navigation 2' not in text
+    assert 'nav2_rviz_plugins' not in text
 
 
 def test_phase1_profiles_only_vary_risk_preferences():

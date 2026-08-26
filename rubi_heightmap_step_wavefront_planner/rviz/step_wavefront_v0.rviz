@@ -1,27 +1,142 @@
 Panels:
   - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Selection
+    Name: Selection
+  - Class: rviz_common/Tool Properties
+    Name: Tool Properties
 Visualization Manager:
-  Global Options:
-    Fixed Frame: map
+  Class: ""
   Displays:
-    - Class: rviz_default_plugins/PointCloud2
-      Name: FastDEM Heightmap
-      Topic: /fastdem/mapping/cloud_global
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 70; 130; 255
+      Color Transformer: FlatColor
+      Decay Time: 0
       Enabled: true
-    - Class: rviz_default_plugins/Path
-      Name: Final Path
-      Topic: /rubi/heightmap_step_planner/path
+      Name: FastDEM Elevation
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.03
+      Style: Points
+      Topic:
+        Depth: 1
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /fastdem/mapping/cloud_global
+      Use Fixed Frame: true
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Valid Nodes
+      Namespaces: {}
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /rubi/heightmap_step_planner/debug/nodes
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Valid Edges
+      Namespaces: {}
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /rubi/heightmap_step_planner/debug/edges
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Rejected Nodes / Edges
+      Namespaces: {}
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /rubi/heightmap_step_planner/debug/rejected
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
       Color: 255; 255; 0
       Enabled: true
-    - Class: rviz_default_plugins/MarkerArray
-      Name: Valid Nodes
-      Topic: /rubi/heightmap_step_planner/debug/nodes
-      Enabled: true
-    - Class: rviz_default_plugins/MarkerArray
-      Name: Valid Edges and Path
-      Topic: /rubi/heightmap_step_planner/debug/edges
-      Enabled: true
-    - Class: rviz_default_plugins/MarkerArray
-      Name: Rejections
-      Topic: /rubi/heightmap_step_planner/debug/rejected
-      Enabled: true
+      Head Diameter: 0.1
+      Head Length: 0.2
+      Length: 0.3
+      Line Style: Lines
+      Line Width: 0.08
+      Name: Final Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.04
+      Pose Color: 255; 255; 0
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.05
+      Shaft Length: 0.1
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /rubi/heightmap_step_planner/path
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 20; 22; 28
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+    - Class: rviz_default_plugins/SetInitialPose
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /initialpose
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /goal_pose
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 25
+      Focal Point:
+        X: 8
+        Y: -1
+        Z: 0
+      Name: Current View
+      Near Clip Distance: 0.01
+      Pitch: 0.75
+      Target Frame: map
+      Yaw: 0.75
+Window Geometry:
+  Height: 900
+  Width: 1500

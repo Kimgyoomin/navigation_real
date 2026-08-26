@@ -60,5 +60,24 @@ robot clearance validation.
 - `git diff --check`: PASS.
 - RUBI collision radius: NOT VERIFIED because no URDF/SDF collision model was
   found under the repository source tree.
-- Changes remain uncommitted on `refactor/step-wavefront-phase1`; baseline HEAD
-  is still the recorded commit above.
+- The modular Phase-1 refactor is committed at
+  `e5988cd3f997ea8fb45d78691df3112701c361b6e`. The FastDEM lattice fix is
+  committed as `fdc025d`, followed by the standalone RViz/report commit.
+
+## FastDEM lattice compatibility follow-up
+
+The previous snapshot parser implicitly required `x=i*resolution` and
+`y=j*resolution`. It now derives an order-independent `(min(x), min(y))` origin
+and validates `value=origin+index*resolution`. Shifted, negative, sparse, and
+shuffled fixtures are covered without changing resolution, tolerance, unknown,
+or duplicate-cell behavior. RViz now restores the full standalone panels,
+tools, view, QoS, elevation cloud, graph markers, and Path displays.
+
+Validation on 2026-08-26: clean Release build PASS with no compiler warnings;
+14/14 CTest targets and 38/38 xUnit cases PASS. Source and installed RViz files
+resolve to the same symlink target and have no diff. A FastDEM publisher was
+discovered with Reliable/Volatile QoS, but both the cloud and `/clock` produced
+no samples during repeated timed checks. `map -> base_link` was also absent with
+two disconnected TF trees. Consequently real FastDEM acceptance, live Goal
+planning, and visual RViz confirmation are `BLOCKED_BY_TF` / `NOT VERIFIED`;
+the synthetic ROS launch integration remains PASS.
