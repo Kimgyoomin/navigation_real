@@ -16,8 +16,8 @@ simple_pure_pursuit_controller:
     lookahead_distance_m: 0.35
     nearest_search_backtrack_points: 2
 
-    nominal_linear_velocity_mps: 0.20
-    min_tracking_velocity_mps: 0.05
+    nominal_linear_velocity_mps: 0.55
+    min_tracking_velocity_mps: 0.25
     curvature_velocity_gain: 1.0
 
     # User-provided hard command limits.
@@ -25,8 +25,8 @@ simple_pure_pursuit_controller:
     max_angular_velocity_rps: 1.50
 
     # Conservative bootstrap defaults, not verified hardware policy limits.
-    max_linear_acceleration_mps2: 0.50
-    max_angular_acceleration_rps2: 1.50
+    max_linear_acceleration_mps2: 7.0        # 0.50 -> 7.0
+    max_angular_acceleration_rps2: 7.0       # 1.50 -> 7.0
 
     goal_tolerance_m: 0.20
     max_cross_track_error_m: 0.40
