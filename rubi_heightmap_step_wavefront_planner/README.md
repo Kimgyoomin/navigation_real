@@ -85,22 +85,28 @@ already exists, that budget termination can still yield planning success.
 
 ## Map lifecycle
 
-This package performs active-path safety revalidation and one-shot online
+This package performs active-path safety revalidation and bounded online
 global replanning on changed complete height-map snapshots. It does not
 incrementally mutate a persistent graph, track dynamic objects, predict
 obstacle motion, or re-optimize for cost-only map changes.
 
 Only the unpassed active-Path corridor is rechecked on a changed same-frame
-snapshot. Step-limit, clearance-violation, and invalid-input failures invalidate
-immediately. Unknown, out-of-bounds, and insufficient-clearance-support failures
-require `path_invalid_confirmations` consecutive observations. An invalidation
-publishes a latched empty Path and permits at most one automatic replan in that
-episode. External Goals reset the episode and take priority.
+snapshot. Any terrain-derived invalid observation immediately publishes a
+latched empty Path to suspend motion, but the internal Path is retained while
+the FSM is `VERIFYING_PATH`. `path_invalid_confirmations` consecutive invalid
+snapshots delete the retained Path and start fresh replanning. Conversely,
+`path_recovery_confirmations` consecutive valid snapshots republish the retained
+Path without rebuilding the graph. `kInvalidInput` bypasses verification and
+enters `BLOCKED`.
+
+Failed replanning enters `WAITING_RETRY`. Retry requires the configured period,
+and by default a newer map generation, until `max_replan_attempts` is exhausted.
+An external Goal supersedes every state and resets verification/retry counters.
 
 **Map updates trigger safety revalidation, not cost-only route optimization.**
 If hard validity remains intact, a changed height score alone does not trigger
-automatic replanning. A frame-changing full reset publishes empty Path and all
-three `DELETEALL` MarkerArrays with one timestamp.
+automatic replanning. A frame-changing full reset publishes empty Path, all
+three `DELETEALL` MarkerArrays, and deletes the revalidation marker.
 
 ## Timing
 
@@ -160,6 +166,7 @@ Default topics:
 | Debug | `/rubi/heightmap_step_planner/debug/nodes` | `visualization_msgs/msg/MarkerArray` |
 | Debug | `/rubi/heightmap_step_planner/debug/edges` | `visualization_msgs/msg/MarkerArray` |
 | Debug | `/rubi/heightmap_step_planner/debug/rejected` | `visualization_msgs/msg/MarkerArray` |
+| Debug | `/rubi/heightmap_step_planner/debug/revalidation_failure` | `visualization_msgs/msg/Marker` |
 
 Cloud and Goal use reliable volatile QoS. Path and debug outputs use reliable,
 transient-local, keep-last-one QoS. All output frames are the accepted map
@@ -168,8 +175,9 @@ preserves the validated, normalized Goal orientation transformed into map.
 
 RViz displays valid nodes/edges in green, the final Path in yellow,
 unknown/out-of-bounds rejections in red, clearance rejections in orange, and
-over-limit discontinuity rejections in magenta. Displays are top-level
-PointCloud2, Path, and MarkerArray entries; no Group display is used.
+over-limit discontinuity rejections in magenta, and the currently failing
+revalidation segment as a thick red line. Displays are top-level PointCloud2,
+Path, Marker, and MarkerArray entries; no Group display is used.
 
 ## V0 limitations
 

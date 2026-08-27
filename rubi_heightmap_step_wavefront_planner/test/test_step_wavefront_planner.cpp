@@ -141,6 +141,10 @@ TEST(StepWavefrontPlanner, FullGraphAndPathAreDeterministicAcrossTwentyRuns)
   const auto reference = planner::StepWavefrontPlanner(parameters).plan(
     evaluator, {-0.60, 0.0}, {0.60, 0.0});
   ASSERT_TRUE(reference.success);
+  EXPECT_EQ(
+    reference.path_node_ids,
+    (std::vector<planner::NodeId>{0U, 1U, 7U, 20U, 21U}));
+  EXPECT_DOUBLE_EQ(reference.path_metrics.total_cost, 1.2);
   for (int repeat = 1; repeat < 20; ++repeat) {
     const auto candidate = planner::StepWavefrontPlanner(parameters).plan(
       evaluator, {-0.60, 0.0}, {0.60, 0.0});

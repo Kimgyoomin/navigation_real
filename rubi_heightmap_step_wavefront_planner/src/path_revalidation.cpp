@@ -37,6 +37,11 @@ PathValidationResult validateRemainingPath(
   if (!start_evaluation.valid) {
     result.reason = start_evaluation.reason;
     result.failing_segment = start_index;
+    result.failing_from = start;
+    result.failing_to = start;
+    result.minimum_clearance_m = start_evaluation.minimum_clearance_m;
+    result.max_clearance_height_jump_m = start_evaluation.max_clearance_height_jump_m;
+    result.observed_support_ratio = start_evaluation.observed_support_ratio;
     return result;
   }
   for (std::size_t index = start_index + 1U; index < path.size(); ++index) {
@@ -46,6 +51,12 @@ PathValidationResult validateRemainingPath(
     if (!edge.valid) {
       result.reason = edge.reason;
       result.failing_segment = index - 1U;
+      result.failing_from = {path[index - 1U].x, path[index - 1U].y};
+      result.failing_to = {path[index].x, path[index].y};
+      result.minimum_clearance_m = edge.minimum_clearance_m;
+      result.max_height_jump_m = edge.max_height_jump_m;
+      result.max_clearance_height_jump_m = edge.max_clearance_height_jump_m;
+      result.observed_support_ratio = edge.observed_support_ratio;
       return result;
     }
   }

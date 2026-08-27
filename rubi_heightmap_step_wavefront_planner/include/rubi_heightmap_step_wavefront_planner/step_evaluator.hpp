@@ -56,6 +56,8 @@ struct EdgeEvaluation
   std::size_t unique_cell_count{0U};
   double length_xy_m{0.0};
   double max_height_jump_m{0.0};
+  double max_clearance_height_jump_m{0.0};
+  double observed_support_ratio{0.0};
   std::size_t height_jump_event_count{0U};
   double height_jump_score_m{0.0};
   double minimum_clearance_m{0.0};

@@ -24,6 +24,7 @@ add_library(${PROJECT_NAME}_core
   src/graph/wavefront_graph_builder.cpp
   src/search/astar_search.cpp
   src/planning/step_wavefront_planner.cpp
+  src/planning/planning_fsm.cpp
   src/path_revalidation.cpp
   src/plan_lifecycle.cpp
 )
@@ -91,6 +92,9 @@ if(BUILD_TESTING)
     ament_add_gtest(${test_name} test/${test_name}.cpp)
     target_link_libraries(${test_name} ${PROJECT_NAME}_core)
   endforeach()
+
+  ament_add_gtest(test_planning_fsm test/test_planning_fsm.cpp)
+  target_link_libraries(test_planning_fsm ${PROJECT_NAME}_core)
 
   ament_add_gtest(test_pointcloud2_heightmap_adapter
     test/test_pointcloud2_heightmap_adapter.cpp)

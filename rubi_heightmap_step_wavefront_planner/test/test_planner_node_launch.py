@@ -28,6 +28,7 @@ PATH = '/step_test/path'
 NODES = '/step_test/nodes'
 EDGES = '/step_test/edges'
 REJECTED = '/step_test/rejected'
+FAILURE = '/step_test/revalidation_failure'
 
 
 @pytest.mark.launch_test
@@ -43,6 +44,7 @@ def generate_test_description():
             'input_cloud_topic': CLOUD, 'goal_topic': GOAL,
             'path_topic': PATH, 'debug_nodes_topic': NODES,
             'debug_edges_topic': EDGES, 'debug_rejected_topic': REJECTED,
+            'debug_revalidation_failure_topic': FAILURE,
             'base_frame': BASE, 'hard_clearance_radius_m': 0.10,
             'max_grid_cells': 100000, 'post_goal_expansions': 3,
             'max_graph_build_time_ms': 5000,
@@ -70,12 +72,15 @@ class TestPlannerNode(unittest.TestCase):
         cls.nodes = []
         cls.edges = []
         cls.rejected = []
+        cls.failures = []
         cls.subscriptions = [
             cls.node.create_subscription(Path, PATH, cls.paths.append, latched),
             cls.node.create_subscription(MarkerArray, NODES, cls.nodes.append, latched),
             cls.node.create_subscription(MarkerArray, EDGES, cls.edges.append, latched),
             cls.node.create_subscription(
                 MarkerArray, REJECTED, cls.rejected.append, latched),
+            cls.node.create_subscription(
+                Marker, FAILURE, cls.failures.append, latched),
         ]
 
     @classmethod
@@ -203,13 +208,52 @@ class TestPlannerNode(unittest.TestCase):
         self._spin_for(0.25)
         self.assertEqual(len(self.paths), retained_count)
 
-        # Unknown/support failures require two distinct changed snapshots.
+        # The first terrain-derived invalid snapshot stops public motion but
+        # retains the internal Path. Two valid confirmations recover it.
+        suspended_count = len(self.paths)
         self.cloud_pub.publish(self._cloud('unknown_a'))
+        self._wait(lambda: (
+            len(self.paths) > suspended_count
+            and len(self.paths[-1].poses) == 0
+            and self.failures
+            and self.failures[-1].action == Marker.ADD
+        ))
+        stopped_count = len(self.paths)
+        self.cloud_pub.publish(self._cloud('outside'))
         self._spin_for(0.25)
-        self.assertEqual(len(self.paths), retained_count)
+        self.assertEqual(len(self.paths), stopped_count)
+        self.cloud_pub.publish(self._cloud('flat'))
+        self._wait(lambda: (
+            len(self.paths) > stopped_count
+            and len(self.paths[-1].poses) > 0
+            and self.failures[-1].action == Marker.DELETE
+        ))
+        proc_output.assertWaitFor(
+            expected_output='--PATH_RECOVERED[', process=planner,
+            timeout=5.0)
+
+        # Two invalid snapshots confirm deletion. The first automatic plan on
+        # the invalid map fails; a newer flat map plus the retry period starts
+        # a bounded retry and returns to TRACKING.
+        confirmed_count = len(self.paths)
+        self.cloud_pub.publish(self._cloud('unknown_a'))
+        self._wait(lambda: (
+            len(self.paths) > confirmed_count
+            and len(self.paths[-1].poses) == 0))
         self.cloud_pub.publish(self._cloud('unknown_b'))
-        self._wait(lambda: len(self.paths) > retained_count)
-        self.assertEqual(len(self.paths[-1].poses), 0)
+        proc_output.assertWaitFor(
+            expected_output='--PATH_INVALID_CONFIRMED[', process=planner,
+            timeout=5.0)
+        proc_output.assertWaitFor(
+            expected_output='--PLAN_FAILED[replan_failed]--> WAITING_RETRY',
+            process=planner, timeout=10.0)
+        self.cloud_pub.publish(self._cloud('flat'))
+        self._wait(lambda: (
+            len(self.paths) > confirmed_count
+            and len(self.paths[-1].poses) > 0), timeout=15.0)
+        proc_output.assertWaitFor(
+            expected_output='--RETRY_READY[', process=planner,
+            timeout=5.0)
 
         # Restore an active path for the remaining independent contracts.
         flat = self._publish_and_wait_path('flat', True)

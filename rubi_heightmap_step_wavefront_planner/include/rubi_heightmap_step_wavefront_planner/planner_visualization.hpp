@@ -6,6 +6,7 @@
 
 #include "builtin_interfaces/msg/time.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
+#include "visualization_msgs/msg/marker.hpp"
 
 #include "rubi_heightmap_step_wavefront_planner/path_revalidation.hpp"
 #include "rubi_heightmap_step_wavefront_planner/step_wavefront_planner.hpp"
@@ -39,6 +40,17 @@ VisualizationSnapshot makeVisualization(
   const VisualizationParameters & parameters);
 
 visualization_msgs::msg::MarkerArray makeDeleteAllMarkers(
+  const std::string & frame_id,
+  const builtin_interfaces::msg::Time & stamp);
+
+visualization_msgs::msg::Marker makeRevalidationFailureMarker(
+  const TerrainPoint & from,
+  const TerrainPoint & to,
+  const std::string & frame_id,
+  const builtin_interfaces::msg::Time & stamp,
+  double width_m);
+
+visualization_msgs::msg::Marker makeDeleteRevalidationFailureMarker(
   const std::string & frame_id,
   const builtin_interfaces::msg::Time & stamp);
 

@@ -11,10 +11,12 @@
   measured RUBI hardware limit.
 - Every planning request builds a fresh deterministic sparse graph. No persistent
   graph is incrementally updated.
-- Changed maps revalidate only the remaining active path. Hard invalidation is
-  immediate; soft unknown/support failures use confirmation count. Cost-only
-  changes retain the path and do not optimize it again.
-- At most one automatic fresh replan follows invalidation. External goals win.
+- Changed maps revalidate only the remaining active path. Every terrain-derived
+  invalid result suspends motion immediately; deletion/replanning requires the
+  configured consecutive-invalid confirmation count. Consecutive valid maps can
+  recover and republish the retained Path. Cost-only changes retain the path.
+- Automatic fresh replanning has a bounded retry budget, period gate, and an
+  optional newer-map requirement. External goals always supersede it.
 - There is no dynamic-object tracking or prediction.
 - This is a standalone global planner. Nav2 and controller behavior are outside
   this package's Phase 1 scope.

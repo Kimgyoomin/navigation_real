@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <limits>
 #include <vector>
 
 #include "rubi_heightmap_step_wavefront_planner/step_evaluator.hpp"
@@ -20,6 +21,12 @@ struct PathValidationResult
   bool valid{false};
   StepInvalidReason reason{StepInvalidReason::kInvalidInput};
   std::size_t failing_segment{0U};
+  Point2D failing_from;
+  Point2D failing_to;
+  double minimum_clearance_m{std::numeric_limits<double>::quiet_NaN()};
+  double max_height_jump_m{std::numeric_limits<double>::quiet_NaN()};
+  double max_clearance_height_jump_m{std::numeric_limits<double>::quiet_NaN()};
+  double observed_support_ratio{std::numeric_limits<double>::quiet_NaN()};
 };
 
 std::size_t nearestPathIndex(

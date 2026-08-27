@@ -22,6 +22,7 @@ confined to the adapter, visualization, and runtime node targets.
 | `WavefrontGraphBuilder` | FIFO ring proposals and accepted graph topology |
 | `AStarSearch` | deterministic optimal search on that graph |
 | `StepWavefrontPlanner` | orchestration and path metrics |
+| `PlanningFsm` | explicit verification, recovery, and bounded retry lifecycle |
 | `PlannerNode` | TF, request worker, publication, and map/goal epochs |
 
 The callback mutex owns the immutable map pointer together with its generation,
@@ -32,5 +33,7 @@ single worker.
 
 Each accepted new complete snapshot increments `map_generation`. A frame change
 fully resets Path and Markers. A same-frame update only revalidates the unpassed
-path. An invalid path can schedule one fresh-graph automatic request; an external
-goal increments `goal_epoch` and has priority.
+path. The first invalid observation suspends public motion while retaining the
+Path. Confirmation deletes it and begins fresh replanning; recovery confirmation
+republishes it. Failed replans are gated by period, map generation, and a bounded
+attempt budget. An external goal increments `goal_epoch` and has priority.

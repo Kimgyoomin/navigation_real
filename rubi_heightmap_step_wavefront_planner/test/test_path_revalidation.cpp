@@ -1,3 +1,4 @@
+#include <cmath>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -42,7 +43,13 @@ TEST(PathRevalidation, PassedSegmentIgnoredAndFutureStepRejected)
   const auto snapshot = planner::HeightmapSnapshot::fromPoints(
     revalidationGrid(true, false), 0.05, 0.01, 10000U);
   const planner::StepEvaluator evaluator(snapshot, parameters);
-  EXPECT_FALSE(planner::validateRemainingPath(path, 1U, evaluator).valid);
+  const auto result = planner::validateRemainingPath(path, 1U, evaluator);
+  EXPECT_FALSE(result.valid);
+  EXPECT_EQ(result.failing_segment, 1U);
+  EXPECT_DOUBLE_EQ(result.failing_from.x, 0.0);
+  EXPECT_DOUBLE_EQ(result.failing_to.x, 0.4);
+  EXPECT_GT(result.max_height_jump_m, 0.08);
+  EXPECT_TRUE(std::isfinite(result.observed_support_ratio));
   EXPECT_EQ(planner::nearestPathIndex(path, {0.39, 0.0}, 1U), 2U);
   EXPECT_EQ(planner::nearestPathIndex(path, {-0.4, 0.0}, 2U), 2U);
 }

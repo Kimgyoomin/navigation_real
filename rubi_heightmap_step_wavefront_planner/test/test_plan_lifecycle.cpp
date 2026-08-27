@@ -4,18 +4,6 @@
 
 namespace planner = rubi_heightmap_step_wavefront_planner;
 
-TEST(PlanLifecycle, SoftFailureRecoversOrConfirmsAndStepIsImmediate)
-{
-  planner::SoftFailureTracker tracker;
-  EXPECT_FALSE(tracker.observe(planner::StepInvalidReason::kUnknown, 2U));
-  tracker.reset();
-  EXPECT_FALSE(tracker.observe(planner::StepInvalidReason::kUnknown, 2U));
-  EXPECT_TRUE(tracker.observe(planner::StepInvalidReason::kUnknown, 2U));
-  tracker.reset();
-  EXPECT_TRUE(tracker.observe(planner::StepInvalidReason::kStepLimit, 2U));
-  EXPECT_TRUE(tracker.observe(planner::StepInvalidReason::kClearanceViolation, 2U));
-}
-
 TEST(PlanLifecycle, StaleGoalMapAndFrameCannotPublish)
 {
   const planner::PlanLifecycleToken token{2U, 3U, "map"};

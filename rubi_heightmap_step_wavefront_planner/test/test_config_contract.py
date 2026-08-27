@@ -41,6 +41,10 @@ def test_step_wavefront_v0_contract():
         'post_goal_expansions': 50,
         'path_output_spacing_m': 0.05,
         'path_invalid_confirmations': 2,
+        'path_recovery_confirmations': 2,
+        'max_replan_attempts': 5,
+        'replan_retry_period_s': 0.5,
+        'replan_retry_requires_new_map': True,
         'max_rejected_markers': 5000,
     }
     for name, value in expected.items():
@@ -56,6 +60,7 @@ def test_rviz_has_only_top_level_supported_displays():
     assert 'rviz_default_plugins/PointCloud2' in classes
     assert 'rviz_default_plugins/Path' in classes
     assert classes.count('rviz_default_plugins/MarkerArray') == 3
+    assert classes.count('rviz_default_plugins/Marker') == 1
     panels = [item['Class'] for item in document['Panels']]
     assert panels == [
         'rviz_common/Displays',
@@ -71,6 +76,7 @@ def test_rviz_has_only_top_level_supported_displays():
         '/rubi/heightmap_step_planner/debug/nodes',
         '/rubi/heightmap_step_planner/debug/edges',
         '/rubi/heightmap_step_planner/debug/rejected',
+        '/rubi/heightmap_step_planner/debug/revalidation_failure',
         '/rubi/heightmap_step_planner/path',
     }
     tools = document['Visualization Manager']['Tools']

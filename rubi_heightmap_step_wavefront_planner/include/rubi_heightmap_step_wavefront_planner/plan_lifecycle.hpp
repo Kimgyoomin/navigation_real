@@ -1,24 +1,10 @@
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
 #include <string>
 
-#include "rubi_heightmap_step_wavefront_planner/step_evaluator.hpp"
-
 namespace rubi_heightmap_step_wavefront_planner
 {
-
-bool isImmediateInvalidation(StepInvalidReason reason) noexcept;
-
-struct SoftFailureTracker
-{
-  StepInvalidReason last_reason{StepInvalidReason::kNone};
-  std::size_t streak{0U};
-
-  bool observe(StepInvalidReason reason, std::size_t confirmations) noexcept;
-  void reset() noexcept;
-};
 
 struct PlanLifecycleToken
 {

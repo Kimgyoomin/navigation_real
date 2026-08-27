@@ -41,3 +41,24 @@ TEST(PlannerVisualization, FullResetIsSingleDeleteAllWithFrameAndStamp)
   EXPECT_EQ(clear.markers[0].header.frame_id, "map");
   EXPECT_EQ(clear.markers[0].header.stamp.sec, 42);
 }
+
+TEST(PlannerVisualization, RevalidationFailureIsThickRedLineAndCanBeDeleted)
+{
+  builtin_interfaces::msg::Time stamp;
+  stamp.sec = 7;
+  const auto marker = planner::makeRevalidationFailureMarker(
+    {1.0, 2.0, 0.1}, {3.0, 4.0, 0.2}, "map", stamp, 0.12);
+  EXPECT_EQ(marker.type, visualization_msgs::msg::Marker::LINE_LIST);
+  EXPECT_EQ(marker.action, visualization_msgs::msg::Marker::ADD);
+  EXPECT_DOUBLE_EQ(marker.scale.x, 0.12);
+  EXPECT_FLOAT_EQ(marker.color.r, 1.0F);
+  EXPECT_FLOAT_EQ(marker.color.g, 0.0F);
+  ASSERT_EQ(marker.points.size(), 2U);
+  EXPECT_DOUBLE_EQ(marker.points[0].x, 1.0);
+  EXPECT_DOUBLE_EQ(marker.points[1].z, 0.2);
+
+  const auto clear = planner::makeDeleteRevalidationFailureMarker("map", stamp);
+  EXPECT_EQ(clear.action, visualization_msgs::msg::Marker::DELETE);
+  EXPECT_EQ(clear.ns, marker.ns);
+  EXPECT_EQ(clear.id, marker.id);
+}

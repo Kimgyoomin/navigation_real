@@ -144,4 +144,32 @@ visualization_msgs::msg::MarkerArray makeDeleteAllMarkers(
   return output;
 }
 
+visualization_msgs::msg::Marker makeRevalidationFailureMarker(
+  const TerrainPoint & from,
+  const TerrainPoint & to,
+  const std::string & frame_id,
+  const builtin_interfaces::msg::Time & stamp,
+  const double width_m)
+{
+  auto output = marker(
+    frame_id, stamp, "step_wavefront_revalidation_failure", 0,
+    visualization_msgs::msg::Marker::LINE_LIST);
+  output.scale.x = width_m;
+  output.color = color(1.0F, 0.0F, 0.0F);
+  output.points.push_back(point({from.x, from.y}, from.z));
+  output.points.push_back(point({to.x, to.y}, to.z));
+  return output;
+}
+
+visualization_msgs::msg::Marker makeDeleteRevalidationFailureMarker(
+  const std::string & frame_id,
+  const builtin_interfaces::msg::Time & stamp)
+{
+  auto output = marker(
+    frame_id, stamp, "step_wavefront_revalidation_failure", 0,
+    visualization_msgs::msg::Marker::LINE_LIST);
+  output.action = visualization_msgs::msg::Marker::DELETE;
+  return output;
+}
+
 }  // namespace rubi_heightmap_step_wavefront_planner

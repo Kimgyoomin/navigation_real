@@ -227,8 +227,13 @@ EdgeEvaluation StepEvaluator::evaluateEdge(const Point2D from, const Point2D to)
       from.x + ratio * (to.x - from.x),
       from.y + ratio * (to.y - from.y)};
     const NodeEvaluation node = evaluateNode(sample);
+    result.max_clearance_height_jump_m = std::max(
+      result.max_clearance_height_jump_m, node.max_clearance_height_jump_m);
+    result.observed_support_ratio = index == 0U ? node.observed_support_ratio :
+      std::min(result.observed_support_ratio, node.observed_support_ratio);
     if (!node.valid) {
       result.reason = node.reason;
+      result.minimum_clearance_m = node.minimum_clearance_m;
       return result;
     }
     sample_clearances_m.push_back(node.minimum_clearance_m);
