@@ -40,12 +40,13 @@ def generate_launch_description():
         # GenZ-ICP config
         DeclareLaunchArgument("bagfile", default_value=""),
         DeclareLaunchArgument("config_file", default_value="localization_corridor.yaml"),
-        DeclareLaunchArgument("map_path", default_value="/home/rclab/ros2_ws/src/navigation_real/FAST_LIO_ROS2/PCD/RUBI_glim_map.pcd"),
+        DeclareLaunchArgument("map_path", default_value="/home/rclab/ros2_ws/src/navigation_real/FAST_LIO_LOCALIZATION2/PCD/1f_fast_lio_260731_segmented.pcd"),
 
         # Frame policy
         DeclareLaunchArgument("map_frame", default_value="map"),
         DeclareLaunchArgument("odom_frame", default_value="camera_init"),
-        DeclareLaunchArgument("base_frame", default_value="livox_frame"),
+        # DeclareLaunchArgument("base_frame", default_value="livox_frame"),
+        DeclareLaunchArgument("base_frame", default_value="base_link"),
 
         # Localization TF policy
         DeclareLaunchArgument("publish_map_to_odom_tf", default_value="true"),
@@ -105,6 +106,23 @@ def generate_launch_description():
         ],
     )
 
+    base_link_to_livox_frame = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="base_link_to_livox_frame",
+        output="screen",
+        arguments=[
+            "--x", "0.101",
+            "--y", "0.0",
+            "--z", "-0.1169",
+            "--roll", "0.0",
+            "--pitch", "0.0",
+            "--yaw", "0.0",
+            "--frame-id", "base_link",
+            "--child-frame-id", "livox_frame",
+        ],
+    )
+
     rviz_node = Node(
         package="rviz2",
         executable="rviz2",
@@ -141,4 +159,4 @@ def generate_launch_description():
         ),
     )
 
-    return LaunchDescription(declared_arguments + [odometry_node, localization_node, rviz_node, bag_play])
+    return LaunchDescription(declared_arguments + [base_link_to_livox_frame,odometry_node, localization_node, rviz_node, bag_play])

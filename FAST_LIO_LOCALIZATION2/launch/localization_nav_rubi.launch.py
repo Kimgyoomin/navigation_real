@@ -151,6 +151,18 @@ def generate_launch_description():
         yaw="0.0",
     )
 
+    body_to_livox_frame = static_transform_node(
+        name="body_to_livox_frame",
+        frame_id="body",
+        child_frame_id="livox_frame",
+        x="-0.011",
+        y="0.02329",
+        z="-0.04412",
+        roll="0.0",
+        pitch="0.0",
+        yaw="0.0",
+    )
+
     robot_body_to_base_link = static_transform_node(
         name="robot_body_to_base_link",
         frame_id="BODY",
@@ -179,6 +191,7 @@ def generate_launch_description():
         declared_arguments
         + [
             localization,
+            body_to_livox_frame,
             body_to_robot_body,
             robot_body_to_base_link,
             rviz,

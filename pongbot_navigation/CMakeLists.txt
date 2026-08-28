@@ -3,7 +3,7 @@ project(pongbot_navigation)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY launch config maps rviz_cfg
+install(DIRECTORY launch config maps rviz_cfg behavior_trees
   DESTINATION share/${PROJECT_NAME}
 )
 

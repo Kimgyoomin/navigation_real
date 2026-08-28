@@ -13,8 +13,7 @@ controller_server:
     use_sim_time: false
 
     controller_frequency: 10.0
-    # odom_topic: /Odometry
-    odom_topic: genz/odometry
+    odom_topic: /Odometry
 
     min_x_velocity_threshold: 0.01
     min_y_velocity_threshold: 0.001
@@ -182,7 +181,7 @@ local_costmap:
         observation_sources: "livox_cloud"
 
         livox_cloud:
-          topic: /livox/lidar
+          topic: /livox/lidar_PointCloud2
           data_type: "PointCloud2"
 
           marking: true
@@ -259,7 +258,7 @@ global_costmap:
         observation_sources: "livox_cloud"
 
         livox_cloud:
-          topic: /livox/lidar
+          topic: /livox/lidar_PointCloud2
           data_type: "PointCloud2"
 
           marking: true
@@ -304,6 +303,4 @@ bt_navigator:
     use_sim_time: false
     global_frame: map
     robot_base_frame: base_link
-    # odom_topic: /Odometry
-    odom_topic: genz/odometry
-    default_nav_to_pose_bt_xml: "$(find-pkg-share pongbot_navigation)/behavior_trees/navigate_to_pose_rubi.xml"
+    odom_topic: /Odometry
