@@ -1,7 +1,7 @@
 rubi_heightmap_step_wavefront_planner:
   ros__parameters:
     use_sim_time: false
-    input_cloud_topic: /fastdem/mapping/cloud_global
+    input_cloud_topic: /rubi/offline_heightmap
     goal_topic: /goal_pose
     path_topic: /rubi/heightmap_step_planner/path
     debug_nodes_topic: /rubi/heightmap_step_planner/debug/nodes
@@ -45,7 +45,7 @@ rubi_heightmap_step_wavefront_planner:
     path_recovery_confirmations: 2
     max_replan_attempts: 5
     replan_retry_period_s: 0.5
-    replan_retry_requires_new_map: true
+    replan_retry_requires_new_map: false
     node_marker_scale_m: 0.08
     edge_marker_width_m: 0.025
     path_marker_width_m: 0.08

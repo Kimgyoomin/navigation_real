@@ -29,6 +29,7 @@ NODES = '/step_test/nodes'
 EDGES = '/step_test/edges'
 REJECTED = '/step_test/rejected'
 FAILURE = '/step_test/revalidation_failure'
+QUERY_SNAP = '/step_test/query_snap'
 
 
 @pytest.mark.launch_test
@@ -45,6 +46,10 @@ def generate_test_description():
             'path_topic': PATH, 'debug_nodes_topic': NODES,
             'debug_edges_topic': EDGES, 'debug_rejected_topic': REJECTED,
             'debug_revalidation_failure_topic': FAILURE,
+            'debug_query_snap_topic': QUERY_SNAP,
+            'snap_start_to_valid_map': True,
+            'snap_goal_to_valid_map': True,
+            'start_snap_radius_m': 0.30, 'goal_snap_radius_m': 0.25,
             'base_frame': BASE, 'hard_clearance_radius_m': 0.10,
             'max_grid_cells': 100000, 'post_goal_expansions': 3,
             'max_graph_build_time_ms': 5000,
@@ -73,6 +78,7 @@ class TestPlannerNode(unittest.TestCase):
         cls.edges = []
         cls.rejected = []
         cls.failures = []
+        cls.query_snaps = []
         cls.subscriptions = [
             cls.node.create_subscription(Path, PATH, cls.paths.append, latched),
             cls.node.create_subscription(MarkerArray, NODES, cls.nodes.append, latched),
@@ -81,6 +87,8 @@ class TestPlannerNode(unittest.TestCase):
                 MarkerArray, REJECTED, cls.rejected.append, latched),
             cls.node.create_subscription(
                 Marker, FAILURE, cls.failures.append, latched),
+            cls.node.create_subscription(
+                MarkerArray, QUERY_SNAP, cls.query_snaps.append, latched),
         ]
 
     @classmethod
@@ -117,15 +125,18 @@ class TestPlannerNode(unittest.TestCase):
                     z = 0.081
                 if kind == 'unknown_b' and x == 20 and y == 15:
                     z = 0.01
+                if kind == 'query_holes' and y == 0 and x in (-12, 12):
+                    continue
                 points.append((0.05 * x, 0.05 * y, z))
         return point_cloud2.create_cloud_xyz32(Header(frame_id=MAP), points)
 
-    def _goal(self):
+    def _goal(self, x=0.60, y=0.0, yaw=0.70):
         message = PoseStamped()
         message.header.frame_id = MAP
-        message.pose.position.x = 0.60
-        message.pose.orientation.z = 3.0 * math.sin(0.35)
-        message.pose.orientation.w = 3.0 * math.cos(0.35)
+        message.pose.position.x = x
+        message.pose.position.y = y
+        message.pose.orientation.z = 3.0 * math.sin(0.5 * yaw)
+        message.pose.orientation.w = 3.0 * math.cos(0.5 * yaw)
         return message
 
     def _assert_full_reset(self, checkpoint, expected_frame):
@@ -194,6 +205,67 @@ class TestPlannerNode(unittest.TestCase):
         expected = (math.sin(0.35), math.cos(0.35))
         self.assertAlmostEqual(
             abs(final.z * expected[0] + final.w * expected[1]), 1.0, places=6)
+
+        # Both exact endpoint cells are unknown. The bounded resolver projects
+        # them onto strict evaluator-valid lattice anchors before graph build.
+        query_checkpoint = len(self.paths)
+        marker_checkpoint = len(self.query_snaps)
+        self.cloud_pub.publish(self._cloud('query_holes'))
+        self._spin_for(0.25)
+        snapped_goal_yaw = 1.1
+        self.goal_pub.publish(self._goal(yaw=snapped_goal_yaw))
+        self._wait(lambda: (
+            len(self.paths) > query_checkpoint
+            and len(self.paths[-1].poses) > 0
+            and any(
+                marker.type == Marker.LINE_LIST and len(marker.points) == 4
+                for output in self.query_snaps[marker_checkpoint:]
+                for marker in output.markers)))
+        snapped = self.paths[-1]
+        self.assertNotAlmostEqual(
+            snapped.poses[0].pose.position.x, -0.60, places=5)
+        self.assertNotAlmostEqual(
+            snapped.poses[-1].pose.position.x, 0.60, places=5)
+        self.assertLess(math.hypot(
+            snapped.poses[0].pose.position.x + 0.60,
+            snapped.poses[0].pose.position.y), 0.30 + 1.0e-6)
+        self.assertLess(math.hypot(
+            snapped.poses[-1].pose.position.x - 0.60,
+            snapped.poses[-1].pose.position.y), 0.25 + 1.0e-6)
+        snapped_orientation = snapped.poses[-1].pose.orientation
+        self.assertAlmostEqual(
+            abs(
+                snapped_orientation.z * math.sin(0.5 * snapped_goal_yaw)
+                + snapped_orientation.w * math.cos(0.5 * snapped_goal_yaw)),
+            1.0, places=6)
+        self.assertTrue(any(
+            marker.type == Marker.LINE_LIST and len(marker.points) == 4
+            for output in self.query_snaps[marker_checkpoint:]
+            for marker in output.markers))
+        proc_output.assertWaitFor(
+            expected_output='start_snapped=true', process=planner, timeout=5.0)
+        proc_output.assertWaitFor(
+            expected_output='goal_snapped=true', process=planner, timeout=5.0)
+
+        # A query with no strict-valid cell inside the fixed radius fails before
+        # graph construction; the diagnostic summary therefore has zero nodes.
+        failed_query_checkpoint = len(self.paths)
+        self.goal_pub.publish(self._goal(x=5.0, yaw=0.4))
+        self._wait(lambda: (
+            len(self.paths) > failed_query_checkpoint
+            and len(self.paths[-1].poses) == 0))
+        proc_output.assertWaitFor(
+            expected_output='Goal query resolution failed:',
+            process=planner, timeout=5.0)
+        proc_output.assertWaitFor(
+            expected_output=(
+                'message=goal_query_resolution_failed nodes=0 edges=0'),
+            process=planner, timeout=5.0)
+
+        # Restore the legacy exact-valid fixture for lifecycle tests below.
+        flat = self._publish_and_wait_path('flat', True)
+        self.assertAlmostEqual(flat.poses[0].pose.position.x, -0.60, places=5)
+        self.assertAlmostEqual(flat.poses[-1].pose.position.x, 0.60, places=5)
 
         # Same-frame updates outside the remaining corridor, cost-only changes,
         # and identical hashes retain the active Path without republishing it.

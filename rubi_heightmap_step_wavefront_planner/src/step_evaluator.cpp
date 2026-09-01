@@ -5,6 +5,8 @@
 #include <limits>
 #include <stdexcept>
 
+#include "rubi_heightmap_step_wavefront_planner/terrain/height_evidence.hpp"
+
 namespace rubi_heightmap_step_wavefront_planner
 {
 
@@ -18,6 +20,13 @@ std::string_view toString(const StepInvalidReason reason) noexcept
     case StepInvalidReason::kClearanceViolation: return "clearance_violation";
     case StepInvalidReason::kStepLimit: return "step_limit";
     case StepInvalidReason::kInvalidInput: return "invalid_input";
+    case StepInvalidReason::kCostmapOutOfBounds: return "costmap_out_of_bounds";
+    case StepInvalidReason::kCostmapUnknown: return "costmap_unknown";
+    case StepInvalidReason::kCostmapCollision: return "costmap_collision";
+    case StepInvalidReason::kInsufficientHeightEvidence: return "insufficient_height_evidence";
+    case StepInvalidReason::kHeightEvidenceGap: return "height_evidence_gap";
+    case StepInvalidReason::kIsolatedNode: return "isolated_node";
+    case StepInvalidReason::kTrgCollision: return "trg_collision";
   }
   return "invalid_input";
 }
@@ -48,6 +57,36 @@ StepEvaluator::StepEvaluator(
   {
     throw std::invalid_argument("invalid StepEvaluator parameters");
   }
+}
+
+StepEvaluator::StepEvaluator(
+  const HeightmapSnapshot & heightmap, const CostmapSnapshot & costmap,
+  const StepEvaluatorParameters parameters)
+: StepEvaluator(heightmap, parameters)
+{
+  if (!std::isfinite(parameters_.inflation_cost_weight) ||
+    parameters_.inflation_cost_weight < 0.0 ||
+    !std::isfinite(parameters_.inflation_cost_exponent) ||
+    parameters_.inflation_cost_exponent < 1.0 ||
+    !std::isfinite(parameters_.node_evidence_radius_m) ||
+    parameters_.node_evidence_radius_m < 0.0 ||
+    parameters_.node_min_observed_cells == 0U ||
+    !std::isfinite(parameters_.node_max_nearest_evidence_distance_m) ||
+    parameters_.node_max_nearest_evidence_distance_m < 0.0 ||
+    !std::isfinite(parameters_.node_height_outlier_threshold_m) ||
+    parameters_.node_height_outlier_threshold_m < 0.0 ||
+    !std::isfinite(parameters_.node_max_height_outlier_ratio) ||
+    parameters_.node_max_height_outlier_ratio < 0.0 ||
+    parameters_.node_max_height_outlier_ratio > 1.0 ||
+    !std::isfinite(parameters_.edge_height_query_radius_m) ||
+    parameters_.edge_height_query_radius_m < 0.0 ||
+    !std::isfinite(parameters_.edge_max_height_evidence_gap_m) ||
+    parameters_.edge_max_height_evidence_gap_m <= 0.0)
+  {
+    throw std::invalid_argument("invalid hybrid StepEvaluator parameters");
+  }
+  costmap_ = &costmap;
+  mode_ = StepEvaluationMode::kCostmapHeightHybrid;
 }
 
 double StepEvaluator::nearestHazardDistance(const GridCell center) const
@@ -162,7 +201,46 @@ NodeEvaluation StepEvaluator::evaluateNode(const Point2D point) const
   if (!std::isfinite(point.x) || !std::isfinite(point.y)) {
     return NodeEvaluation{};
   }
-  return evaluateClearance(snapshot_.worldToCell(point));
+  return mode_ == StepEvaluationMode::kCostmapHeightHybrid ?
+    evaluateHybridNode(point) : evaluateClearance(snapshot_.worldToCell(point));
+}
+
+NodeEvaluation StepEvaluator::evaluateHybridNode(const Point2D point) const
+{
+  NodeEvaluation result;
+  ++instrumentation_.costmap_queries;
+  const auto cell = costmap_->worldToCell(point);
+  if (!cell || !costmap_->inBounds(*cell)) {
+    result.reason = StepInvalidReason::kCostmapOutOfBounds;
+    return result;
+  }
+  const std::uint8_t raw_cost = *costmap_->cost(*cell);
+  result.raw_cost = raw_cost;
+  if (raw_cost == 255U) {
+    result.reason = StepInvalidReason::kCostmapUnknown;
+    return result;
+  }
+  if (raw_cost >= 253U) {
+    result.reason = StepInvalidReason::kCostmapCollision;
+    return result;
+  }
+  ++instrumentation_.height_evidence_queries;
+  const HeightEvidence evidence = queryNodeHeightEvidence(
+    snapshot_, point, parameters_.node_evidence_radius_m,
+    parameters_.node_min_observed_cells,
+    parameters_.node_max_nearest_evidence_distance_m,
+    parameters_.node_height_outlier_threshold_m,
+    parameters_.node_max_height_outlier_ratio);
+  result.height_evidence_available = evidence.observed_cell_count > 0U;
+  result.observed_support_ratio = evidence.valid ? 1.0 : 0.0;
+  if (!evidence.valid) {
+    result.reason = StepInvalidReason::kInsufficientHeightEvidence;
+    return result;
+  }
+  result.valid = true;
+  result.reason = StepInvalidReason::kNone;
+  result.elevation_m = evidence.nearest_elevation_m;
+  return result;
 }
 
 std::vector<GridCell> StepEvaluator::supercover(const Point2D from, const Point2D to) const
@@ -208,6 +286,9 @@ std::vector<GridCell> StepEvaluator::supercover(const Point2D from, const Point2
 
 EdgeEvaluation StepEvaluator::evaluateEdge(const Point2D from, const Point2D to) const
 {
+  if (mode_ == StepEvaluationMode::kCostmapHeightHybrid) {
+    return evaluateHybridEdge(from, to);
+  }
   EdgeEvaluation result;
   if (!std::isfinite(from.x) || !std::isfinite(from.y) ||
     !std::isfinite(to.x) || !std::isfinite(to.y))
@@ -303,6 +384,97 @@ EdgeEvaluation StepEvaluator::evaluateEdge(const Point2D from, const Point2D to)
   result.cost = parameters_.distance_weight * result.length_xy_m +
     parameters_.height_cost_weight * result.height_jump_score_m +
     parameters_.clearance_cost_weight * result.clearance_score_m;
+  result.valid = std::isfinite(result.cost);
+  result.reason = result.valid ? StepInvalidReason::kNone : StepInvalidReason::kInvalidInput;
+  return result;
+}
+
+EdgeEvaluation StepEvaluator::evaluateHybridEdge(const Point2D from, const Point2D to) const
+{
+  EdgeEvaluation result;
+  if (!std::isfinite(from.x) || !std::isfinite(from.y) ||
+    !std::isfinite(to.x) || !std::isfinite(to.y))
+  {
+    return result;
+  }
+  result.length_xy_m = std::hypot(to.x - from.x, to.y - from.y);
+  const std::size_t intervals = std::max<std::size_t>(
+    1U, static_cast<std::size_t>(
+      std::ceil(result.length_xy_m / parameters_.edge_check_spacing_m)));
+  result.sample_count = intervals + 1U;
+  const double sample_spacing_m = result.length_xy_m / static_cast<double>(intervals);
+  std::vector<HeightEvidenceSample> height_profile;
+  for (std::size_t sample_index = 0U; sample_index <= intervals; ++sample_index) {
+    ++instrumentation_.edge_samples_total;
+    ++instrumentation_.costmap_queries;
+    const double ratio = static_cast<double>(sample_index) / static_cast<double>(intervals);
+    const Point2D sample{from.x + ratio * (to.x - from.x),
+      from.y + ratio * (to.y - from.y)};
+    const auto cost_cell = costmap_->worldToCell(sample);
+    if (!cost_cell || !costmap_->inBounds(*cost_cell)) {
+      result.reason = StepInvalidReason::kCostmapOutOfBounds;
+      return result;
+    }
+    const std::uint8_t raw_cost = *costmap_->cost(*cost_cell);
+    result.maximum_raw_cost = std::max(result.maximum_raw_cost, raw_cost);
+    if (raw_cost == 255U) {
+      result.reason = StepInvalidReason::kCostmapUnknown;
+      return result;
+    }
+    if (raw_cost >= 253U) {
+      result.reason = StepInvalidReason::kCostmapCollision;
+      return result;
+    }
+    if (sample_index > 0U) {
+      const double normalized = static_cast<double>(raw_cost) / 252.0;
+      result.inflation_score_m +=
+        std::pow(normalized, parameters_.inflation_cost_exponent) * sample_spacing_m;
+    }
+    ++instrumentation_.height_evidence_queries;
+    const auto height = queryEdgeHeight(
+      snapshot_, sample, parameters_.edge_height_query_radius_m);
+    if (!height) {
+      ++result.height_evidence_missing_samples;
+      result.reason = StepInvalidReason::kInsufficientHeightEvidence;
+      return result;
+    }
+    if (!height_profile.empty() && height_profile.back().source_cell == height->source_cell) {
+      continue;
+    }
+    if (!height_profile.empty()) {
+      const Point2D previous = snapshot_.cellCenter(height_profile.back().source_cell);
+      const Point2D current = snapshot_.cellCenter(height->source_cell);
+      if (std::hypot(current.x - previous.x, current.y - previous.y) >
+        parameters_.edge_max_height_evidence_gap_m + 1.0e-12)
+      {
+        result.reason = StepInvalidReason::kHeightEvidenceGap;
+        return result;
+      }
+    }
+    height_profile.push_back(*height);
+  }
+  result.unique_cell_count = height_profile.size();
+  for (std::size_t index = 1U; index < height_profile.size(); ++index) {
+    const double jump = std::abs(
+      height_profile[index].elevation_m - height_profile[index - 1U].elevation_m);
+    result.max_height_jump_m = std::max(result.max_height_jump_m, jump);
+    if (jump > parameters_.max_crossable_height_jump_m) {
+      result.reason = StepInvalidReason::kStepLimit;
+      return result;
+    }
+    if (jump > parameters_.height_noise_floor_m) {
+      ++result.height_jump_event_count;
+      const double normalized = std::clamp(
+        (jump - parameters_.height_noise_floor_m) /
+        (parameters_.max_crossable_height_jump_m - parameters_.height_noise_floor_m),
+        0.0, 1.0);
+      result.height_jump_score_m += parameters_.max_crossable_height_jump_m *
+        std::pow(normalized, parameters_.height_cost_exponent);
+    }
+  }
+  result.cost = parameters_.distance_weight * result.length_xy_m +
+    parameters_.inflation_cost_weight * result.inflation_score_m +
+    parameters_.height_cost_weight * result.height_jump_score_m;
   result.valid = std::isfinite(result.cost);
   result.reason = result.valid ? StepInvalidReason::kNone : StepInvalidReason::kInvalidInput;
   return result;

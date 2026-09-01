@@ -70,6 +70,26 @@ visible to this planner by design.
 5,000,000 cells form a square about 111.8 m on each side. Inspect the runtime
 `grid=XxY` log before changing this safety cap.
 
+## Bounded planning-query snapping
+
+After TF conversion and before graph construction, `PlanningQueryResolver`
+validates the exact Start and Goal through the complete `StepEvaluator` node
+contract. An already-valid query is passed through without any coordinate
+change. When enabled for an invalid query, the resolver examines cell centers
+inside the configured metric radius and selects the nearest evaluator-valid
+candidate. Equal-distance candidates use lower grid X, then lower grid Y, so
+the result is deterministic. Start and Goal are resolved independently; Goal
+XY may move, but the normalized user Goal orientation is preserved on the last
+Path pose.
+
+The C++ defaults disable snapping for backward compatibility. The V0 and
+offline profiles explicitly enable it with a 0.30 m Start radius and 0.25 m
+Goal radius. Radius zero is exact-query behavior, and a failed bounded search
+does not invoke graph construction. The radius is never expanded automatically.
+
+Snapping does not make unknown terrain traversable. It only relocates the
+planning query to the nearest terrain-valid node within a bounded search radius.
+
 ## Deterministic graph and post-goal expansion
 
 FIFO nodes produce 20 uniformly spaced proposals on a deterministic ring.
@@ -105,8 +125,8 @@ An external Goal supersedes every state and resets verification/retry counters.
 
 **Map updates trigger safety revalidation, not cost-only route optimization.**
 If hard validity remains intact, a changed height score alone does not trigger
-automatic replanning. A frame-changing full reset publishes empty Path, all
-three `DELETEALL` MarkerArrays, and deletes the revalidation marker.
+automatic replanning. A frame-changing full reset publishes an empty Path,
+`DELETEALL` on every MarkerArray debug topic, and deletes the revalidation marker.
 
 ## Timing
 
@@ -156,6 +176,62 @@ ros2 launch rubi_heightmap_step_wavefront_planner \
   step_wavefront_v0.launch.py
 ```
 
+## Hybrid Grid-vs-TRG comparison tool
+
+`hybrid_planner_comparison_node` is a non-commanding experiment executable. It
+copies one full Nav2 master raw-costmap snapshot and one immutable FastDEM
+heightmap snapshot when a comparison-only Goal arrives, then runs both an
+implicit 8-connected Grid A* and an explicit sampled graph + A* against the
+same map pair and cost contract. It never publishes `/cmd_vel` and does not
+launch Nav2, localization, Livox, or FastDEM.
+
+```bash
+ros2 launch rubi_heightmap_step_wavefront_planner \
+  hybrid_grid_trg_comparison.launch.py
+```
+
+The comparison Goal topic is `/rubi/planner_comparison/goal`. Grid and sampling
+Paths are published below `/rubi/planner_comparison/{grid,sampling}/path`, with
+separate node/edge MarkerArrays and a combined rejected-proposal topic.
+
+Three explicit execution modes are available: `grid_only`, `sampling_only`,
+and controller-free `both`. The dedicated navigation launches connect exactly
+one shared Simple Pure Pursuit controller to the selected path. See
+[`docs/LAB_DEMO_WORKFLOW.md`](docs/LAB_DEMO_WORKFLOW.md) for commands and the
+mandatory `/cmd_vel` ownership check. Never send a Nav2 BT/DWB Goal while a
+hybrid navigation controller is active.
+
+Raw costs 253, 254, and 255 are hard-invalid. Costs 1..252 remain traversable
+and contribute a normalized integral inflation penalty. Height evidence is
+nearest-observed and bounded; a local median/outlier test accepts nodes without
+smoothing their elevation. Ordered edge evidence accumulates the unchanged
+Phase-1 crossable-step score and rejects jumps above 8 cm. The exact edge cost
+is:
+
+```text
+w_distance * length_xy
+  + w_inflation * inflation_score
+  + w_height * height_jump_score
+```
+
+The `trg_random_ring` policy independently reconstructs the original TRG-style
+fixed-radius proposal, local evidence acceptance, connected-node commit, and
+frontier expansion behavior. No TRG source was copied. RB-TRG is only a design
+reference for future body-aware transition scoring; ordered node-pair/body-risk
+state is deliberately absent here.
+
+The V3 comparison profile uses `original_trg_random_ring`. It fixes the
+upstream-style accepted-sample target, upper-median/outlier collision test,
+nearest-z assignment, robot-size merge, FIFO Frontier expansion, isolated-node
+Invalid transition, and clean pass while retaining the RUBI Hybrid evaluator
+for edges. Exact matches and intentional deviations are documented in
+[`docs/TRG_CONSTRUCTION_ADAPTATION.md`](docs/TRG_CONSTRUCTION_ADAPTATION.md).
+
+If explored samples encounter raw 253/254/255, diagnostics print coordinate,
+raw cost, nearby height evidence, and the warning `comparison input is
+confounded by Costmap obstacle marking`. The tool does not silently disable or
+alter the Nav2 obstacle layer.
+
 Default topics:
 
 | Direction | Topic | Type |
@@ -167,6 +243,7 @@ Default topics:
 | Debug | `/rubi/heightmap_step_planner/debug/edges` | `visualization_msgs/msg/MarkerArray` |
 | Debug | `/rubi/heightmap_step_planner/debug/rejected` | `visualization_msgs/msg/MarkerArray` |
 | Debug | `/rubi/heightmap_step_planner/debug/revalidation_failure` | `visualization_msgs/msg/Marker` |
+| Debug | `/rubi/heightmap_step_planner/debug/query_snap` | `visualization_msgs/msg/MarkerArray` |
 
 Cloud and Goal use reliable volatile QoS. Path and debug outputs use reliable,
 transient-local, keep-last-one QoS. All output frames are the accepted map
@@ -177,7 +254,9 @@ RViz displays valid nodes/edges in green, the final Path in yellow,
 unknown/out-of-bounds rejections in red, clearance rejections in orange, and
 over-limit discontinuity rejections in magenta, and the currently failing
 revalidation segment as a thick red line. Displays are top-level PointCloud2,
-Path, Marker, and MarkerArray entries; no Group display is used.
+Path, Marker, and MarkerArray entries; no Group display is used. Query Snap uses
+cyan/magenta effective Start/Goal spheres, gray/orange requested spheres only
+when snapping occurs, and thin requested-to-effective lines.
 
 ## V0 limitations
 
@@ -185,3 +264,6 @@ This planner targets flat indoor floor mixed with discrete low discontinuities.
 It does not establish robot safety, physical step capability, global optimality
 outside its constructed graph, or real-time performance. Dynamic obstacle
 stopping remains the responsibility of a controller/local safety layer.
+Query snapping does not correct large unknown regions, poor SLAM coverage, map
+registration error, incorrect obstacle geometry, path zig-zag, turn-aware
+planning, smoothing, body collision, or FastDEM self-return.

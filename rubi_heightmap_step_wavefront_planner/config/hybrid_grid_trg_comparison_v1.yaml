@@ -1,0 +1,70 @@
+rubi_hybrid_planner_comparison:
+  ros__parameters:
+    use_sim_time: false
+    planner_run_mode: both
+    detailed_timing: false
+    input_costmap_topic: /global_costmap/costmap_raw
+    input_heightmap_topic: /fastdem/mapping/cloud_global
+    comparison_goal_topic: /rubi/planner_comparison/goal
+    base_frame: base_link
+    required_map_frame: map
+    max_costmap_age_s: 1.0
+    max_heightmap_age_s: 2.5
+    max_input_stamp_skew_s: 2.0
+    transform_timeout_s: 0.20
+    map_resolution_m: 0.05
+    lattice_tolerance_m: 0.01
+    max_grid_cells: 5000000
+    costmap_unknown_is_blocked: true
+
+    evaluation.edge_check_spacing_m: 0.025
+    evaluation.max_crossable_height_jump_m: 0.08
+    evaluation.height_noise_floor_m: 0.01
+    evaluation.height_cost_exponent: 2.0
+    evaluation.distance_weight: 1.0
+    evaluation.height_cost_weight: 5.0
+    evaluation.inflation_cost_weight: 5.0
+    evaluation.inflation_cost_exponent: 1.0
+    node_evidence_radius_m: 0.10
+    node_min_observed_cells: 3
+    node_max_nearest_evidence_distance_m: 0.075
+    node_height_outlier_threshold_m: 0.08
+    node_max_height_outlier_ratio: 0.30
+    edge_height_query_radius_m: 0.075
+    edge_max_height_evidence_gap_m: 0.10
+
+    grid_allow_diagonal: true
+    grid_max_expanded_states: 500000
+    grid_max_planning_time_ms: 5000
+    grid_visualization_max_cells: 10000
+    grid_visualization_stride: 1
+
+    sampling.policy: original_trg_random_ring
+    sampling.trg_expand_distance_m: 0.30
+    sampling.trg_robot_size_m: 0.35                 # 0.20 -> 0.35
+    sampling.trg_sample_num: 8                      # 20 -> 8
+    sampling.trg_max_trial_samples: 1000
+    sampling.trg_height_threshold_m: 0.08
+    sampling.trg_collision_threshold: 0.10
+    sampling.trg_random_seed: 42
+    sampling.trg_randomize_seed: false
+    sampling.trg_neighbor_connection_radius_m: 0.30
+    sampling.goal_connection_distance_m: 0.45
+    sampling.max_nodes: 4000
+    sampling.max_expansions: 4000
+    sampling.max_graph_build_time_ms: 5000
+    sampling.post_goal_expansions: 50
+
+    # Compatibility declarations retained for deterministic_ring and V2 profiles.
+    sampling_policy: trg_random_ring
+    sampling_random_seed: 42
+    max_sampling_trials_per_expansion: 1000
+    node_sampling_distance_m: 0.30
+    samples_per_expansion: 20
+    merge_radius_m: 0.20
+    neighbor_connection_radius_m: 0.45
+    goal_connection_distance_m: 0.45
+    max_nodes: 4000
+    max_expansions: 4000
+    max_graph_build_time_ms: 5000
+    post_goal_expansions: 50

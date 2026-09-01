@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
@@ -12,6 +13,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "geometry_msgs/msg/pose_stamped.hpp"
@@ -33,6 +35,7 @@
 #include "rubi_heightmap_step_wavefront_planner/plan_lifecycle.hpp"
 #include "rubi_heightmap_step_wavefront_planner/planner_visualization.hpp"
 #include "rubi_heightmap_step_wavefront_planner/planning/planning_fsm.hpp"
+#include "rubi_heightmap_step_wavefront_planner/planning/planning_query_resolver.hpp"
 #include "rubi_heightmap_step_wavefront_planner/ros/pointcloud2_heightmap_adapter.hpp"
 #include "rubi_heightmap_step_wavefront_planner/step_evaluator.hpp"
 #include "rubi_heightmap_step_wavefront_planner/step_wavefront_planner.hpp"
@@ -49,6 +52,17 @@ constexpr std::size_t kMaxTfRetryCount = 3U;
 double milliseconds(const Clock::duration duration) noexcept
 {
   return std::chrono::duration<double, std::milli>(duration).count();
+}
+
+std::string machineToken(std::string message)
+{
+  for (char & character : message) {
+    const auto unsigned_character = static_cast<unsigned char>(character);
+    if (!std::isalnum(unsigned_character)) {
+      character = '_';
+    }
+  }
+  return message.empty() ? "none" : message;
 }
 
 std::optional<geometry_msgs::msg::Quaternion> normalizedQuaternion(
@@ -123,6 +137,8 @@ public:
       debug_rejected_topic_, output_qos);
     revalidation_failure_publisher_ = create_publisher<visualization_msgs::msg::Marker>(
       debug_revalidation_failure_topic_, output_qos);
+    query_snap_publisher_ = create_publisher<visualization_msgs::msg::MarkerArray>(
+      debug_query_snap_topic_, output_qos);
     cloud_subscription_ = create_subscription<sensor_msgs::msg::PointCloud2>(
       input_cloud_topic_, rclcpp::QoS(1).reliable().durability_volatile(),
       std::bind(&PlannerNode::onCloud, this, std::placeholders::_1));
@@ -178,11 +194,25 @@ private:
     debug_revalidation_failure_topic_ = declare_parameter(
       "debug_revalidation_failure_topic",
       "/rubi/heightmap_step_planner/debug/revalidation_failure");
+    debug_query_snap_topic_ = declare_parameter(
+      "debug_query_snap_topic", "/rubi/heightmap_step_planner/debug/query_snap");
     base_frame_ = declare_parameter("base_frame", "base_link");
     map_resolution_m_ = declare_parameter("map_resolution_m", 0.05);
     lattice_tolerance_m_ = declare_parameter("lattice_tolerance_m", 0.01);
     max_grid_cells_ = sizeParameter("max_grid_cells", 5000000);
     transform_timeout_s_ = declare_parameter("transform_timeout_s", 0.20);
+    snap_start_to_valid_map_ = declare_parameter("snap_start_to_valid_map", false);
+    snap_goal_to_valid_map_ = declare_parameter("snap_goal_to_valid_map", false);
+    start_snap_radius_m_ = declare_parameter("start_snap_radius_m", 0.30);
+    goal_snap_radius_m_ = declare_parameter("goal_snap_radius_m", 0.25);
+    for (const auto & radius : {
+        std::pair<const char *, double>{"start_snap_radius_m", start_snap_radius_m_},
+        std::pair<const char *, double>{"goal_snap_radius_m", goal_snap_radius_m_}})
+    {
+      if (!std::isfinite(radius.second) || radius.second < 0.0) {
+        throw std::invalid_argument(std::string(radius.first) + " must be finite and >= 0");
+      }
+    }
     hard_clearance_radius_m_ = declare_parameter("hard_clearance_radius_m", 0.20);
     edge_check_spacing_m_ = declare_parameter("edge_check_spacing_m", 0.025);
     max_crossable_height_jump_m_ = declare_parameter("max_crossable_height_jump_m", 0.08);
@@ -369,6 +399,7 @@ private:
     publishEmptyPath(frame, stamp);
     revalidation_failure_publisher_->publish(
       makeDeleteRevalidationFailureMarker(frame, stamp));
+    query_snap_publisher_->publish(makeDeleteAllMarkers(frame, stamp));
     output_lock.unlock();
     if (notify) {planning_cv_.notify_one();}
   }
@@ -625,12 +656,62 @@ private:
       if (!map_orientation) {throw std::invalid_argument("Transformed Goal quaternion is invalid");}
       goal_in_map.pose.orientation = *map_orientation;
       const double tf_time_ms = milliseconds(Clock::now() - tf_start);
-      const Point2D start{
+      const Point2D requested_start{
         start_transform.transform.translation.x,
         start_transform.transform.translation.y};
-      const Point2D goal{goal_in_map.pose.position.x, goal_in_map.pose.position.y};
+      const Point2D requested_goal{
+        goal_in_map.pose.position.x, goal_in_map.pose.position.y};
       const StepEvaluator evaluator(*request.map, evaluator_parameters_);
-      PlanResult result = planner_->plan(evaluator, start, goal);
+      const PlanningQueryResolutionAttempt start_attempt = query_resolver_.resolveDetailed(
+        *request.map, evaluator, requested_start, start_snap_radius_m_,
+        snap_start_to_valid_map_);
+      const PlanningQueryResolutionAttempt goal_attempt = query_resolver_.resolveDetailed(
+        *request.map, evaluator, requested_goal, goal_snap_radius_m_,
+        snap_goal_to_valid_map_);
+
+      if (start_attempt.resolution && goal_attempt.resolution) {
+        const auto & resolved_start = *start_attempt.resolution;
+        const auto & resolved_goal = *goal_attempt.resolution;
+        RCLCPP_INFO(
+          get_logger(), "query_resolution start_requested=(%.3f,%.3f) "
+          "start_effective=(%.3f,%.3f) start_snapped=%s start_snap_m=%.3f "
+          "start_reason=%s start_candidates=%zu goal_requested=(%.3f,%.3f) "
+          "goal_effective=(%.3f,%.3f) goal_snapped=%s goal_snap_m=%.3f "
+          "goal_reason=%s goal_candidates=%zu",
+          resolved_start.requested.x, resolved_start.requested.y,
+          resolved_start.effective.x, resolved_start.effective.y,
+          resolved_start.snapped ? "true" : "false", resolved_start.snap_distance_m,
+          std::string(toString(resolved_start.requested_reason)).c_str(),
+          resolved_start.evaluated_candidate_count,
+          resolved_goal.requested.x, resolved_goal.requested.y,
+          resolved_goal.effective.x, resolved_goal.effective.y,
+          resolved_goal.snapped ? "true" : "false", resolved_goal.snap_distance_m,
+          std::string(toString(resolved_goal.requested_reason)).c_str(),
+          resolved_goal.evaluated_candidate_count);
+      }
+
+      PlanResult result;
+      if (!start_attempt.resolution) {
+        result.message = "start_query_resolution_failed";
+        RCLCPP_WARN(
+          get_logger(), "Start query resolution failed: requested=(%.3f,%.3f) "
+          "initial_reason=%s search_radius_m=%.3f evaluated_candidates=%zu",
+          requested_start.x, requested_start.y,
+          std::string(toString(start_attempt.requested_reason)).c_str(),
+          start_snap_radius_m_, start_attempt.evaluated_candidate_count);
+      } else if (!goal_attempt.resolution) {
+        result.message = "goal_query_resolution_failed";
+        RCLCPP_WARN(
+          get_logger(), "Goal query resolution failed: requested=(%.3f,%.3f) "
+          "initial_reason=%s search_radius_m=%.3f evaluated_candidates=%zu",
+          requested_goal.x, requested_goal.y,
+          std::string(toString(goal_attempt.requested_reason)).c_str(),
+          goal_snap_radius_m_, goal_attempt.evaluated_candidate_count);
+      } else {
+        result = planner_->plan(
+          evaluator, start_attempt.resolution->effective,
+          goal_attempt.resolution->effective);
+      }
       const auto postprocess_start = Clock::now();
       std::vector<TerrainPoint> dense;
       if (result.success) {dense = densify(result, *request.map);}
@@ -700,6 +781,9 @@ private:
         nodes_publisher_->publish(visualization.nodes);
         edges_publisher_->publish(visualization.edges);
         rejected_publisher_->publish(visualization.rejected);
+        query_snap_publisher_->publish(makeQuerySnapMarkers(
+            start_attempt.resolution, goal_attempt.resolution,
+            output_frame, stamp));
         if (result.success) {
           revalidation_failure_publisher_->publish(
             makeDeleteRevalidationFailureMarker(output_frame, stamp));
@@ -707,6 +791,16 @@ private:
       }
       const double postprocess_time_ms = milliseconds(Clock::now() - postprocess_start);
       const double total_time_ms = milliseconds(Clock::now() - total_start);
+      std::string diagnostic_message = result.message;
+      if (diagnostic_message == "start is invalid") {
+        diagnostic_message = "graph_build_invalid_start";
+      } else if (diagnostic_message == "goal is invalid") {
+        diagnostic_message = "graph_build_invalid_goal";
+      } else if (diagnostic_message.empty()) {
+        diagnostic_message = result.success ? "plan_succeeded" : "planning_failed";
+      } else {
+        diagnostic_message = machineToken(diagnostic_message);
+      }
       std::array<std::size_t, 7U> reason_counts{};
       std::size_t node_rejections = 0U;
       std::size_t edge_rejections = 0U;
@@ -720,7 +814,7 @@ private:
       }
       RCLCPP_INFO(
         get_logger(), "request_type=%s planned_generation=%lu validated_generation=%lu "
-        "success=%s termination=%s nodes=%zu edges=%zu expansions=%zu "
+        "success=%s termination=%s message=%s nodes=%zu edges=%zu expansions=%zu "
         "queue_wait_time_ms=%.3f tf_time_ms=%.3f graph_build_time_ms=%.3f "
         "astar_time_ms=%.3f core_total_time_ms=%.3f postprocess_time_ms=%.3f "
         "total_planning_time_ms=%.3f path_pose_count=%zu path_length_xy_m=%.3f "
@@ -730,7 +824,8 @@ private:
         request.automatic ? "automatic" : "external",
         static_cast<unsigned long>(request.map_generation),
         static_cast<unsigned long>(validated_generation), result.success ? "true" : "false",
-        std::string(toString(result.termination)).c_str(), result.nodes.size(),
+        std::string(toString(result.termination)).c_str(), diagnostic_message.c_str(),
+        result.nodes.size(),
         result.edges.size(), result.expansions, queue_wait_time_ms, tf_time_ms,
         result.graph_build_time_ms,
         result.astar_time_ms, result.core_total_time_ms, postprocess_time_ms,
@@ -798,13 +893,14 @@ private:
     nodes_publisher_->publish(clear);
     edges_publisher_->publish(clear);
     rejected_publisher_->publish(clear);
+    query_snap_publisher_->publish(clear);
     revalidation_failure_publisher_->publish(
       makeDeleteRevalidationFailureMarker(safe_frame, stamp));
   }
 
   std::string input_cloud_topic_, goal_topic_, path_topic_;
   std::string debug_nodes_topic_, debug_edges_topic_, debug_rejected_topic_;
-  std::string debug_revalidation_failure_topic_, base_frame_;
+  std::string debug_revalidation_failure_topic_, debug_query_snap_topic_, base_frame_;
   double map_resolution_m_{0.05}, lattice_tolerance_m_{0.01}, transform_timeout_s_{0.20};
   double hard_clearance_radius_m_{0.20}, edge_check_spacing_m_{0.025};
   double max_crossable_height_jump_m_{0.08}, height_noise_floor_m_{0.01};
@@ -816,15 +912,18 @@ private:
   double path_output_spacing_m_{0.05}, node_marker_scale_m_{0.08};
   double edge_marker_width_m_{0.025}, path_marker_width_m_{0.08};
   double rejected_marker_scale_m_{0.07}, replan_retry_period_s_{0.5};
+  double start_snap_radius_m_{0.30}, goal_snap_radius_m_{0.25};
   std::size_t max_grid_cells_{5000000U}, samples_per_expansion_{20U};
   std::size_t max_nodes_{4000U}, max_expansions_{4000U}, max_graph_build_time_ms_{5000U};
   std::size_t post_goal_expansions_{50U}, path_invalid_confirmations_{2U};
   std::size_t path_recovery_confirmations_{2U}, max_replan_attempts_{5U};
   std::size_t max_rejected_markers_{5000U};
   bool replan_retry_requires_new_map_{true};
+  bool snap_start_to_valid_map_{false}, snap_goal_to_valid_map_{false};
   StepEvaluatorParameters evaluator_parameters_;
   StepWavefrontParameters planner_parameters_;
   std::unique_ptr<StepWavefrontPlanner> planner_;
+  PlanningQueryResolver query_resolver_;
   std::shared_ptr<const HeightmapSnapshot> map_;
   std::string map_frame_;
   std::uint64_t map_generation_{0U}, goal_epoch_{0U};
@@ -848,6 +947,7 @@ private:
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr rejected_publisher_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr
     revalidation_failure_publisher_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr query_snap_publisher_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_subscription_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_subscription_;
 };

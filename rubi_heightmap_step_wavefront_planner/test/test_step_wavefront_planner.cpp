@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include "rubi_heightmap_step_wavefront_planner/step_wavefront_planner.hpp"
+#include "rubi_heightmap_step_wavefront_planner/planning/planning_query_resolver.hpp"
 
 namespace planner = rubi_heightmap_step_wavefront_planner;
 
@@ -141,6 +142,22 @@ TEST(StepWavefrontPlanner, FullGraphAndPathAreDeterministicAcrossTwentyRuns)
   const auto reference = planner::StepWavefrontPlanner(parameters).plan(
     evaluator, {-0.60, 0.0}, {0.60, 0.0});
   ASSERT_TRUE(reference.success);
+  const planner::PlanningQueryResolver resolver;
+  const auto resolved_start = resolver.resolve(
+    snapshot, evaluator, {-0.60, 0.0}, 0.30, true);
+  const auto resolved_goal = resolver.resolve(
+    snapshot, evaluator, {0.60, 0.0}, 0.25, true);
+  ASSERT_TRUE(resolved_start && resolved_goal);
+  EXPECT_FALSE(resolved_start->snapped);
+  EXPECT_FALSE(resolved_goal->snapped);
+  const auto through_resolver = planner::StepWavefrontPlanner(parameters).plan(
+    evaluator, resolved_start->effective, resolved_goal->effective);
+  EXPECT_EQ(through_resolver.termination, reference.termination);
+  EXPECT_EQ(through_resolver.nodes.size(), reference.nodes.size());
+  EXPECT_EQ(through_resolver.edges.size(), reference.edges.size());
+  EXPECT_EQ(through_resolver.path_node_ids, reference.path_node_ids);
+  EXPECT_DOUBLE_EQ(
+    through_resolver.path_metrics.total_cost, reference.path_metrics.total_cost);
   EXPECT_EQ(
     reference.path_node_ids,
     (std::vector<planner::NodeId>{0U, 1U, 7U, 20U, 21U}));
