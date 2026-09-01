@@ -15,10 +15,10 @@ controller_server:
     controller_frequency: 10.0
     odom_topic: /Odometry
 
-    min_x_velocity_threshold: 0.01
+    min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.001
-    min_theta_velocity_threshold: 0.05
-    failure_tolerance: 0.0
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.0                                # rubi_simulation 설정
 
     controller_plugins: ["FollowPath"]
 
@@ -38,67 +38,44 @@ controller_server:
       stateful: true
 
     FollowPath:
-      # plugin: "dwb_core::DWBLocalPlanner"
-      # RotationShimController를 위해 아래 블록 추가
-      # controller_server가 직접 로드하는 외부 controller
-      plugin: "nav2_rotation_shim_controller::RotationShimController"
-
-      # Rotation Shim이 내부에서 로드할 실제 path tracker
-      # Humble에서는 반드시 문자열이다.
-      primary_controller: "dwb_core::DWBLocalPlanner"
-
-      # RUBI의 제한적인 제자리 회전을 고려한 초기 실험값
-      angular_dist_threshold: 0.50
-      angular_disengage_threshold: 0.20
-
-      forward_sampling_distance: 0.40
-
-      rotate_to_heading_angular_vel: 0.50
-      max_angular_accel: 1.00
-
-      simulate_ahead_time: 1.00
-
-      rotate_to_goal_heading: false
-      closed_loop: true
-
-      # 여기부터는 기존 DWB 설정을 같은 위치에 그대로 둔다.
+      plugin: "dwb_core::DWBLocalPlanner"
       trajectory_generator_name: "dwb_plugins::StandardTrajectoryGenerator"
 
       debug_trajectory_details: true
 
       # RUBI를 non-holonomic으로 사용
-      min_vel_x: 0.0       # -0.1 -> 0.0
+      min_vel_x: 0.0
       max_vel_x: 0.7
       min_vel_y: 0.0
       max_vel_y: 0.0
-      max_vel_theta: 1.5        # 0.8 -> 1.2 -> 3.0 -> 5.0 -> 1.5
+      max_vel_theta: 5.0
 
       min_speed_xy: 0.0
       max_speed_xy: 0.7
       min_speed_theta: 0.0
 
       # RUBI 시뮬레이션 초기 보수값
-      acc_lim_x: 7.0           # 0.5 -> 1.5 -> 5.0 -> 1.5 -> 5.0 -> 7.0
+      acc_lim_x: 10.0                         # 0.5 -> 1.5 -> 5.0 -> 1.5 -> 5.0 -> 7.0
       acc_lim_y: 0.0
-      acc_lim_theta: 7.0      # 1.5 ->  7.0
+      acc_lim_theta: 7.0                      # 1.5 ->  7.0
 
-      decel_lim_x: -7.0        # -1.0 -> -1.2 - > -5.0 -> -7.0 
+      decel_lim_x: -10.0                      
       decel_lim_y: 0.0
-      decel_lim_theta: -7.0  # -1.5 -> -7.0  
+      decel_lim_theta: -7.0                   # -1.5 -> -7.0
 
-      vx_samples: 20
-      vy_samples: 0
+      vx_samples: 20                          # 15 -> 20
+      vy_samples: 1
       vtheta_samples: 41
 
-      sim_time: 2.0                 # 2.5 -> 4.0 -> 1.5 -> 2.0
+      sim_time: 2.5                           # 2.5 -> 2.0  
       linear_granularity: 0.05
       angular_granularity: 0.025
 
-      transform_tolerance: 0.50     # 0.3 -> 0.5
-      xy_goal_tolerance: 0.15       # 0.25 -> 0.15
-      trans_stopped_velocity: 0.25  # 0.05 -> 0.25
+      transform_tolerance: 0.50               # 0.3 -> 0.5
+      xy_goal_tolerance: 0.15                 # 0.25 -> 0.15
+      trans_stopped_velocity: 0.25            # 0.05 -> 0.25
 
-      # short_circuit_trajectory_evaluation: true
+      short_circuit_trajectory_evaluation: true
       stateful: true
 
       critics:
@@ -112,23 +89,18 @@ controller_server:
 
       BaseObstacle.scale: 0.02
 
-      PathAlign.scale: 32.0                    # basic 32.0 8.0 -> 1.0 -> 32.0
-      PathAlign.forward_point_distance: 0.1   # 0.15 -> 0.1
+      PathAlign.scale: 32.0                       # 8.0 -> 32.0
+      PathAlign.forward_point_distance: 0.1       # 0.15 -> 0.1
 
-      GoalAlign.scale: 24.0
-      GoalAlign.forward_point_distance: 0.1   # 0.15 -> 0.1
+      GoalAlign.scale: 20.0
+      GoalAlign.forward_point_distance: 0.1       # 0.15 -> 0.1
 
-      PathDist.scale: 32.0                     # basic 24.0 -> 1.0 -> 32.0
-      GoalDist.scale: 24.0
+      PathDist.scale: 32.0                        # 24 -> 32
+      GoalDist.scale: 20.0
 
       RotateToGoal.scale: 32.0
       RotateToGoal.slowing_factor: 5.0
       RotateToGoal.lookahead_time: -1.0
-
-      # 튜닝 중 모든 critic 값을 확인
-      short_circuit_trajectory_evaluation: true
-      publish_evaluation: true
-      publish_trajectories: true
 
 
 local_costmap:
@@ -140,18 +112,18 @@ local_costmap:
       robot_base_frame: base_link
 
       rolling_window: true
-      width: 6                        # 8 -> 6 -> 4
-      height: 6                       # 8 -> 6 -> 4
+      width: 8
+      height: 8
       resolution: 0.05
 
-      update_frequency: 5.0           # 10.0 ->
-      publish_frequency: 5.0
+      update_frequency: 5.0
+      publish_frequency: 2.0
       transform_tolerance: 0.30
 
       track_unknown_space: false
 
-      robot_radius: 0.25
-      footprint_padding: 0.01
+      robot_radius: 0.30                          # 0.25 -> 0.30
+      footprint_padding: 0.05                     # 0.02 -> 0.05
 
       plugins:
         - "static_layer"
@@ -169,11 +141,6 @@ local_costmap:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
 
-        # layer-level 필터도 지정
-        min_obstacle_height: -0.2
-        max_obstacle_height: 2.0
-
-
         footprint_clearing_enabled: true
         combination_method: 1
         tf_filter_tolerance: 0.30
@@ -181,31 +148,31 @@ local_costmap:
         observation_sources: "livox_cloud"
 
         livox_cloud:
-          topic: /livox/lidar_PointCloud2
+          topic: /livox/lidar
           data_type: "PointCloud2"
 
           marking: true
           clearing: true
 
-          obstacle_min_range: 0.1                 # 0.3 -> 0.1          # 0.1 -> 0.3 -> 0.1
+          obstacle_min_range: 0.20
           obstacle_max_range: 4.0
 
-          raytrace_min_range: 0.0          
+          raytrace_min_range: 0.0
           raytrace_max_range: 4.0
 
           # 아래 값은 예시다.
           # camera_init 기준 실제 지면 높이에 맞춰 반드시 수정할 것.
-          min_obstacle_height: -0.15     # -2.0 -> -0.3
-          max_obstacle_height: 1.0
+          min_obstacle_height: -0.2                         # 0.1 -> -0.2
+          max_obstacle_height: 1.0                          # 3.5 -> 1.0
 
-          observation_persistence: 0.0    # 5.0 -> 0.0
+          observation_persistence: 5.0
           expected_update_rate: 0.0
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
-        inflation_radius: 0.50
-        cost_scaling_factor: 3.0        # 5.0 -> 2.0 -> 3.0
+        inflation_radius: 0.5                                 # 0.35 -> 0.5
+        cost_scaling_factor: 3.0                              # 5.0 -> 2.0 -> 3.0
 
       # 초기 RViz 디버깅용. 검증 후 false로 바꿔도 됨.
       always_send_full_costmap: true
@@ -220,16 +187,16 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_link
 
-      update_frequency: 5.0
-      publish_frequency: 5.0
+      update_frequency: 5.0                           # 2.0 -> 5.0
+      publish_frequency: 5.0                          # 1.0 -> 5.0
       transform_tolerance: 1.0
 
       resolution: 0.05
       track_unknown_space: true
       rolling_window: false
 
-      robot_radius: 0.25
-      footprint_padding: 0.01
+      robot_radius: 0.30                                # 0.25 -> 0.30
+      footprint_padding: 0.05                           # 0.02 -> 0.05
 
       plugins:
         - "static_layer"
@@ -247,10 +214,6 @@ global_costmap:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
 
-        # layer-level 필터도 지정
-        min_obstacle_height: -0.2
-        max_obstacle_height: 2.0
-
         footprint_clearing_enabled: true
         combination_method: 1
         tf_filter_tolerance: 0.30
@@ -258,32 +221,33 @@ global_costmap:
         observation_sources: "livox_cloud"
 
         livox_cloud:
-          topic: /livox/lidar_PointCloud2
+          topic: /livox/lidar
           data_type: "PointCloud2"
 
           marking: true
-          clearing: true
+          clearing: false                               # true -> false
 
-          obstacle_min_range: 0.1                 # 0.3 -> 0.1
+          obstacle_min_range: 0.20
           obstacle_max_range: 4.0
 
-          raytrace_min_range: 0.0
+          raytrace_min_range: 0.0                       # 0.30 -> 0.0
           raytrace_max_range: 5.0
 
           # 아래 값은 예시다.
           # camera_init 기준 실제 지면 높이에 맞춰 반드시 수정할 것.
-          min_obstacle_height: -0.3              # 0.1 -> -0.3
-          max_obstacle_height: 2.5
-          observation_persistence: 0.0    # 5.0 -> 0.0            # 0.0 -> 0.5 -> 2.0 -> 0.0
+          min_obstacle_height: -0.3                       # 0.1 -> -0.3
+          max_obstacle_height: 2.5                        # 3.5 -> 2.5
+
+          observation_persistence: 0.5                    # 0.0 -> 0.5
           expected_update_rate: 0.0
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
-        inflation_radius: 0.70                # 0.55 -> 0.70
-        cost_scaling_factor: 1.0              # 3.0 -> 2.0 -> 1.0
+        inflation_radius: 0.55
+        cost_scaling_factor: 3.0
 
-      always_send_full_costmap: true
+      always_send_full_costmap: false
 
 
 smoother_server:
