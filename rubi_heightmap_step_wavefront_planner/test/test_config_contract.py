@@ -103,7 +103,7 @@ def test_v3_original_trg_profile_contract():
         'sampling.policy': 'original_trg_random_ring',
         'sampling.trg_expand_distance_m': 0.30,
         'sampling.trg_robot_size_m': 0.20,
-        'sampling.trg_sample_num': 20,
+        'sampling.trg_sample_num': 8,
         'sampling.trg_max_trial_samples': 1000,
         'sampling.trg_height_threshold_m': 0.08,
         'sampling.trg_collision_threshold': 0.10,

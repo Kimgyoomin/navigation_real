@@ -11,6 +11,7 @@
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>nav2_msgs</depend>
+  <depend>nav2_costmap_2d</depend>
   <depend>rclcpp</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
@@ -21,6 +22,8 @@
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+  <exec_depend>nav2_map_server</exec_depend>
   <exec_depend>pongbot_navigation</exec_depend>
   <exec_depend>rviz2</exec_depend>
 
@@ -28,6 +31,7 @@
   <test_depend>ament_cmake_pytest</test_depend>
   <test_depend>launch_testing</test_depend>
   <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>lifecycle_msgs</test_depend>
   <test_depend>python3-yaml</test_depend>
   <test_depend>sensor_msgs_py</test_depend>
 

@@ -40,9 +40,11 @@ rubi_hybrid_planner_comparison:
     grid_visualization_stride: 1
 
     sampling.policy: original_trg_random_ring
-    sampling.trg_expand_distance_m: 0.40            # 0.3 -> 0.4
-    sampling.trg_robot_size_m: 0.35                 # 0.20 -> 0.35
-    sampling.trg_sample_num: 8                      # 20 -> 8
+    # Keep the merge radius below the fixed sampling radius. Otherwise every
+    # root-ring candidate can be rewired into the source instead of becoming a node.
+    sampling.trg_expand_distance_m: 0.30
+    sampling.trg_robot_size_m: 0.20
+    sampling.trg_sample_num: 8
     sampling.trg_max_trial_samples: 1000
     sampling.trg_height_threshold_m: 0.08
     sampling.trg_collision_threshold: 0.10

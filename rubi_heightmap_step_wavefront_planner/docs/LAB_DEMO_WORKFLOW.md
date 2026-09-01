@@ -1,5 +1,10 @@
 # Hybrid Grid/TRG lab demo workflow
 
+The hybrid launches are self-contained for the PGM map and static+inflation
+global costmap. Do not launch `rubi_navigation_dwb.launch.py` alongside them.
+Localization (`map -> base_link`) and FastDEM remain external prerequisites.
+See `HYBRID_SELF_CONTAINED_BRINGUP.md` for the complete contract.
+
 ## Safety contract
 
 `grid_only` and `sampling_only` each start exactly one

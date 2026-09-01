@@ -10,6 +10,7 @@ find_package(builtin_interfaces REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
+find_package(nav2_costmap_2d REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -74,15 +75,22 @@ ament_target_dependencies(hybrid_planner_comparison_node
   geometry_msgs nav2_msgs nav_msgs rclcpp sensor_msgs tf2 tf2_geometry_msgs
   tf2_ros visualization_msgs)
 
+# Humble's nav2_costmap_2d executable hard-codes /costmap/costmap and ignores
+# launch name/namespace remaps. This thin main selects the required stable FQN
+# while using Nav2's unmodified Costmap2DROS implementation.
+add_executable(hybrid_global_costmap_node src/hybrid_global_costmap_main.cpp)
+target_compile_features(hybrid_global_costmap_node PUBLIC cxx_std_17)
+ament_target_dependencies(hybrid_global_costmap_node nav2_costmap_2d rclcpp)
+
 install(DIRECTORY include/ DESTINATION include)
 install(TARGETS ${PROJECT_NAME}_core step_wavefront_planner_node
-  hybrid_planner_comparison_node
+  hybrid_planner_comparison_node hybrid_global_costmap_node
   EXPORT export_${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
   INCLUDES DESTINATION include)
-install(DIRECTORY config launch rviz DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config launch maps rviz DESTINATION share/${PROJECT_NAME})
 install(DIRECTORY docs DESTINATION share/${PROJECT_NAME})
 install(PROGRAMS
   scripts/run_grid_navigation.sh
@@ -140,15 +148,20 @@ if(BUILD_TESTING)
   target_link_libraries(test_planner_visualization ${PROJECT_NAME}_visualization)
 
   ament_add_pytest_test(test_config_contract test/test_config_contract.py)
+  ament_add_pytest_test(test_hybrid_map_install test/test_hybrid_map_install.py)
+  ament_add_pytest_test(test_hybrid_costmap_config test/test_hybrid_costmap_config.py)
   add_launch_test(test/test_runtime_profile_launch.py TIMEOUT 60)
   add_launch_test(test/test_planner_node_launch.py TIMEOUT 90)
   add_launch_test(test/test_hybrid_comparison_launch.py TIMEOUT 90)
+  add_launch_test(test/test_hybrid_costmap_bringup_launch.py TIMEOUT 120)
   set_tests_properties(test_test_runtime_profile_launch.py PROPERTIES
     ENVIRONMENT "ROS_DOMAIN_ID=201")
   set_tests_properties(test_test_planner_node_launch.py PROPERTIES
     ENVIRONMENT "ROS_DOMAIN_ID=202")
   set_tests_properties(test_test_hybrid_comparison_launch.py PROPERTIES
     ENVIRONMENT "ROS_DOMAIN_ID=203")
+  set_tests_properties(test_test_hybrid_costmap_bringup_launch.py PROPERTIES
+    ENVIRONMENT "ROS_DOMAIN_ID=204")
 endif()
 
 ament_package()
