@@ -31,3 +31,18 @@ TEST(CostmapSnapshot, RejectsMalformedGeometryAndData)
     planner::CostmapSnapshot::fromData(1U, 1U, 0.0, 0.0, 0.0, {0U}),
     std::invalid_argument);
 }
+
+TEST(CostmapSnapshot, ContentHashDeduplicatesAndDetectsGeometryOrCellChanges)
+{
+  const auto first = planner::CostmapSnapshot::fromData(
+    3U, 2U, 0.05, -1.0, 2.0, {0U, 1U, 2U, 3U, 4U, 5U});
+  const auto same = planner::CostmapSnapshot::fromData(
+    3U, 2U, 0.05, -1.0, 2.0, {0U, 1U, 2U, 3U, 4U, 5U});
+  const auto changed_cell = planner::CostmapSnapshot::fromData(
+    3U, 2U, 0.05, -1.0, 2.0, {0U, 1U, 254U, 3U, 4U, 5U});
+  const auto changed_origin = planner::CostmapSnapshot::fromData(
+    3U, 2U, 0.05, -0.95, 2.0, {0U, 1U, 2U, 3U, 4U, 5U});
+  EXPECT_EQ(first.contentHash(), same.contentHash());
+  EXPECT_NE(first.contentHash(), changed_cell.contentHash());
+  EXPECT_NE(first.contentHash(), changed_origin.contentHash());
+}

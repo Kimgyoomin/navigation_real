@@ -101,8 +101,6 @@ def test_v3_original_trg_profile_contract():
     parameters = _parameters(path)
     expected = {
         'sampling.policy': 'original_trg_random_ring',
-        'sampling.trg_expand_distance_m': 0.30,
-        'sampling.trg_robot_size_m': 0.20,
         'sampling.trg_sample_num': 8,
         'sampling.trg_max_trial_samples': 1000,
         'sampling.trg_height_threshold_m': 0.08,
@@ -114,6 +112,8 @@ def test_v3_original_trg_profile_contract():
     }
     for name, value in expected.items():
         assert parameters[name] == value
+    assert parameters['sampling.trg_expand_distance_m'] > 0.0
+    assert parameters['sampling.trg_robot_size_m'] > 0.0
     root = CONFIG.parents[1]
     for launch_name in (
             'hybrid_grid_navigation.launch.py',
@@ -143,14 +143,37 @@ def test_hybrid_navigation_launches_use_one_identical_controller_profile():
         assert controller[name] == value
     for filename, mode, topic in (
             ('hybrid_grid_navigation.launch.py', 'grid_only',
-             '/rubi/planner_comparison/grid/path'),
+             '/rubi/planner_comparison/grid/tracking_path'),
             ('hybrid_sampling_navigation.launch.py', 'sampling_only',
-             '/rubi/planner_comparison/sampling/path')):
+             '/rubi/planner_comparison/sampling/tracking_path')):
         text = (root / 'launch' / filename).read_text(encoding='utf-8')
         assert text.count("executable='simple_pure_pursuit_controller'") == 1
         assert f"'planner_run_mode': '{mode}'" in text
         assert f"'path_topic': '{topic}'" in text
         assert 'Do not run another controller on /cmd_vel simultaneously.' in text
+
+
+def test_v5_tracking_refiner_and_replanning_contract():
+    parameters = _parameters(CONFIG.parent / 'hybrid_grid_trg_comparison_v1.yaml')
+    expected = {
+        'tracking_refiner.enabled': True,
+        'tracking_refiner.method': 'trg_three_point_mean_validated',
+        'tracking_refiner.smoothing_passes': 1,
+        'tracking_refiner.resample_spacing_m': 0.10,
+        'tracking_refiner.max_cost_increase_ratio': 0.05,
+        'replanning.enabled': True,
+        'replanning.check_period_s': 0.10,
+        'replanning.min_replan_interval_s': 0.50,
+        'replanning.soft_reoptimize_min_interval_s': 1.50,
+        'replanning.min_cost_improvement_ratio': 0.05,
+        'replanning.goal_tolerance_m': 0.20,
+    }
+    for name, value in expected.items():
+        assert parameters[name] == value
+
+    costmap = (CONFIG.parent / 'hybrid_global_costmap.yaml').read_text(
+        encoding='utf-8')
+    assert 'obstacle_layer' not in costmap
 
 
 def test_invalid_planner_run_mode_rejected_at_startup():

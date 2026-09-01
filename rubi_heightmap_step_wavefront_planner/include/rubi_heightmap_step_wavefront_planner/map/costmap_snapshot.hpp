@@ -23,6 +23,7 @@ public:
   std::size_t sizeX() const noexcept {return size_x_;}
   std::size_t sizeY() const noexcept {return size_y_;}
   std::size_t cellCount() const noexcept {return costs_.size();}
+  std::uint64_t contentHash() const noexcept {return content_hash_;}
 
   bool inBounds(GridCell cell) const noexcept;
   std::optional<std::size_t> index(GridCell cell) const noexcept;
@@ -38,6 +39,7 @@ private:
   std::size_t size_x_{0U};
   std::size_t size_y_{0U};
   std::vector<std::uint8_t> costs_;
+  std::uint64_t content_hash_{0U};
 };
 
 }  // namespace rubi_heightmap_step_wavefront_planner

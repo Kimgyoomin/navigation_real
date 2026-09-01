@@ -30,7 +30,9 @@ add_library(${PROJECT_NAME}_core
   src/planning/step_wavefront_planner.cpp
   src/planning/planning_fsm.cpp
   src/planning/planning_query_resolver.cpp
+  src/planning/path_cost_evaluator.cpp
   src/planning/step_grid_astar_planner.cpp
+  src/planning/tracking_path_refiner.cpp
   src/path_revalidation.cpp
   src/plan_lifecycle.cpp
 )
@@ -126,8 +128,10 @@ if(BUILD_TESTING)
       test_trg_sampling_policy
       test_original_trg_construction
       test_grid_sampling_contract
+      test_path_cost_evaluator
       test_path_revalidation
-      test_plan_lifecycle)
+      test_plan_lifecycle
+      test_tracking_path_refiner)
     ament_add_gtest(${test_name} test/${test_name}.cpp)
     target_link_libraries(${test_name} ${PROJECT_NAME}_core)
   endforeach()

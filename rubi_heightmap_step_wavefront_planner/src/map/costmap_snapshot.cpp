@@ -7,6 +7,20 @@
 
 namespace rubi_heightmap_step_wavefront_planner
 {
+namespace
+{
+constexpr std::uint64_t kFnvOffset = 14695981039346656037ULL;
+constexpr std::uint64_t kFnvPrime = 1099511628211ULL;
+
+void hashBytes(std::uint64_t & hash, const void * data, const std::size_t size) noexcept
+{
+  const auto * bytes = static_cast<const unsigned char *>(data);
+  for (std::size_t index = 0U; index < size; ++index) {
+    hash ^= bytes[index];
+    hash *= kFnvPrime;
+  }
+}
+}  // namespace
 
 CostmapSnapshot CostmapSnapshot::fromData(
   const std::size_t size_x, const std::size_t size_y, const double resolution_m,
@@ -26,6 +40,14 @@ CostmapSnapshot CostmapSnapshot::fromData(
   snapshot.origin_x_ = origin_x;
   snapshot.origin_y_ = origin_y;
   snapshot.costs_ = std::move(costs);
+  std::uint64_t hash = kFnvOffset;
+  hashBytes(hash, &snapshot.size_x_, sizeof(snapshot.size_x_));
+  hashBytes(hash, &snapshot.size_y_, sizeof(snapshot.size_y_));
+  hashBytes(hash, &snapshot.resolution_m_, sizeof(snapshot.resolution_m_));
+  hashBytes(hash, &snapshot.origin_x_, sizeof(snapshot.origin_x_));
+  hashBytes(hash, &snapshot.origin_y_, sizeof(snapshot.origin_y_));
+  hashBytes(hash, snapshot.costs_.data(), snapshot.costs_.size());
+  snapshot.content_hash_ = hash;
   return snapshot;
 }
 

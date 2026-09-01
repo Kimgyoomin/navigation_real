@@ -1,5 +1,25 @@
 # Hybrid Grid/TRG lab demo workflow
 
+## Raw and tracking path contract
+
+`grid/path` and `sampling/path` remain the unmodified global-planner research
+outputs. Both planners feed the same validated tracking refiner: one sequential
+TRG three-point-mean pass, terrain-elevation re-query, Hybrid evaluator node and
+edge gates, a 5% cost-increase gate, 0.10 m resampling, and final full-path
+validation. Pure Pursuit subscribes only to `grid/tracking_path` or
+`sampling/tracking_path`; endpoints and the requested Goal orientation remain
+unchanged.
+
+Distinct map content triggers validation of the remaining tracking path. A hard
+costmap, height-evidence, or over-8-cm step failure first publishes an empty
+tracking path so Pure Pursuit stops, then replans from the latest robot pose to
+the retained Goal. A still-valid update is reoptimized at a limited rate and is
+adopted only at 5% or greater cost improvement. Timestamp-only republishes are
+deduplicated and update freshness without causing path churn.
+
+ObstacleLayer remains **MANUAL / OUT OF V5 SCOPE**. If added later, any changed
+raw costmap content enters the same validation and replanning mechanism.
+
 The hybrid launches are self-contained for the PGM map and static+inflation
 global costmap. Do not launch `rubi_navigation_dwb.launch.py` alongside them.
 Localization (`map -> base_link`) and FastDEM remain external prerequisites.
@@ -25,6 +45,12 @@ The controller profile is shared by both modes in
 `config/hybrid_navigation_controller.yaml`. It intentionally copies the
 currently used local Simple Pure Pursuit hardware profile; this experiment did
 not retune it.
+
+For a controlled follow-up experiment, keep every other controller parameter
+fixed and compare `lookahead_distance_m` at `0.35` (the current baseline),
+`0.60`, and `0.70`. V5 does not select a new default or change velocity and
+acceleration limits; record real-robot tracking evidence before adopting one of
+these values.
 
 ## Prerequisites
 

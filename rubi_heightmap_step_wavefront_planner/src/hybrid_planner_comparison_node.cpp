@@ -21,7 +21,9 @@
 #include "visualization_msgs/msg/marker_array.hpp"
 
 #include "rubi_heightmap_step_wavefront_planner/planner_visualization.hpp"
+#include "rubi_heightmap_step_wavefront_planner/planning/path_cost_evaluator.hpp"
 #include "rubi_heightmap_step_wavefront_planner/planning/step_grid_astar_planner.hpp"
+#include "rubi_heightmap_step_wavefront_planner/planning/tracking_path_refiner.hpp"
 #include "rubi_heightmap_step_wavefront_planner/ros/nav2_costmap_adapter.hpp"
 #include "rubi_heightmap_step_wavefront_planner/ros/pointcloud2_heightmap_adapter.hpp"
 #include "rubi_heightmap_step_wavefront_planner/step_wavefront_planner.hpp"
@@ -32,6 +34,17 @@ namespace rubi_heightmap_step_wavefront_planner
 namespace
 {
 enum class PlannerRunMode {kGridOnly, kSamplingOnly, kBoth};
+
+struct ActivePlanState
+{
+  bool active{false};
+  std::vector<TerrainPoint> raw_path;
+  std::vector<TerrainPoint> tracking_path;
+  double tracking_cost{0.0};
+  std::size_t nearest_index{0U};
+  std::uint64_t costmap_generation{0U};
+  std::uint64_t heightmap_generation{0U};
+};
 
 PlannerRunMode parseRunMode(const std::string & value)
 {
@@ -83,6 +96,10 @@ public:
       "/rubi/planner_comparison/grid/path", output_qos);
     sampling_path_publisher_ = create_publisher<nav_msgs::msg::Path>(
       "/rubi/planner_comparison/sampling/path", output_qos);
+    grid_tracking_path_publisher_ = create_publisher<nav_msgs::msg::Path>(
+      "/rubi/planner_comparison/grid/tracking_path", output_qos);
+    sampling_tracking_path_publisher_ = create_publisher<nav_msgs::msg::Path>(
+      "/rubi/planner_comparison/sampling/tracking_path", output_qos);
     grid_nodes_publisher_ = create_publisher<visualization_msgs::msg::MarkerArray>(
       "/rubi/planner_comparison/grid/nodes", output_qos);
     grid_expanded_publisher_ = create_publisher<visualization_msgs::msg::MarkerArray>(
@@ -105,6 +122,12 @@ public:
       trace_timer_ = create_wall_timer(
         std::chrono::milliseconds(100),
         std::bind(&HybridPlannerComparisonNode::updateRobotTrace, this));
+    }
+    if (replanning_enabled_) {
+      replan_timer_ = create_wall_timer(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::duration<double>(replanning_check_period_s_)),
+        std::bind(&HybridPlannerComparisonNode::processPendingReplan, this));
     }
     RCLCPP_INFO(
       get_logger(), "Hybrid planner ready; mode=%s goal_topic='%s' planner_cmd_vel_publishers=0",
@@ -259,6 +282,47 @@ private:
     sampling_parameters_.post_goal_expansions = positiveSize(
       "sampling.post_goal_expansions",
       static_cast<std::int64_t>(sampling_parameters_.post_goal_expansions));
+
+    tracking_refiner_parameters_.enabled = declare_parameter(
+      "tracking_refiner.enabled", true);
+    const std::string refiner_method = declare_parameter(
+      "tracking_refiner.method", "trg_three_point_mean_validated");
+    if (refiner_method != "trg_three_point_mean_validated") {
+      throw std::invalid_argument("unsupported tracking_refiner.method");
+    }
+    tracking_refiner_parameters_.smoothing_passes = positiveSize(
+      "tracking_refiner.smoothing_passes", 1);
+    tracking_refiner_parameters_.resample_spacing_m = declare_parameter(
+      "tracking_refiner.resample_spacing_m", 0.10);
+    tracking_refiner_parameters_.max_cost_increase_ratio = declare_parameter(
+      "tracking_refiner.max_cost_increase_ratio", 0.05);
+
+    replanning_enabled_ = declare_parameter("replanning.enabled", true);
+    replanning_check_period_s_ = declare_parameter("replanning.check_period_s", 0.10);
+    replanning_min_interval_s_ = declare_parameter(
+      "replanning.min_replan_interval_s", 0.50);
+    soft_reoptimize_min_interval_s_ = declare_parameter(
+      "replanning.soft_reoptimize_min_interval_s", 1.50);
+    replan_on_heightmap_change_ = declare_parameter(
+      "replanning.on_heightmap_change", true);
+    replan_on_costmap_change_ = declare_parameter(
+      "replanning.on_costmap_change", true);
+    stop_before_hard_replan_ = declare_parameter(
+      "replanning.stop_before_hard_replan", true);
+    min_cost_improvement_ratio_ = declare_parameter(
+      "replanning.min_cost_improvement_ratio", 0.05);
+    replanning_goal_tolerance_m_ = declare_parameter(
+      "replanning.goal_tolerance_m", 0.20);
+    retry_failed_plan_ = declare_parameter("replanning.retry_failed_plan", true);
+    failed_retry_interval_s_ = declare_parameter(
+      "replanning.failed_retry_interval_s", 1.0);
+    if (replanning_check_period_s_ <= 0.0 || replanning_min_interval_s_ < 0.0 ||
+      soft_reoptimize_min_interval_s_ < 0.0 || min_cost_improvement_ratio_ < 0.0 ||
+      min_cost_improvement_ratio_ > 1.0 || replanning_goal_tolerance_m_ < 0.0 ||
+      failed_retry_interval_s_ <= 0.0)
+    {
+      throw std::invalid_argument("invalid replanning parameters");
+    }
   }
 
   void onCostmap(const nav2_msgs::msg::Costmap::ConstSharedPtr message)
@@ -267,10 +331,15 @@ private:
       auto snapshot = std::make_shared<const CostmapSnapshot>(
         Nav2CostmapAdapter{}.makeSnapshot(*message));
       std::lock_guard<std::mutex> lock(snapshot_mutex_);
-      costmap_ = std::move(snapshot);
+      const bool content_changed = !costmap_ ||
+        snapshot->contentHash() != costmap_content_hash_;
       costmap_frame_ = message->header.frame_id;
       costmap_stamp_ = messageTime(*message);
+      if (!content_changed) {return;}
+      costmap_content_hash_ = snapshot->contentHash();
+      costmap_ = std::move(snapshot);
       ++costmap_generation_;
+      if (replan_on_costmap_change_) {pending_costmap_change_ = true;}
     } catch (const std::exception & error) {
       RCLCPP_ERROR(get_logger(), "Rejected raw costmap: %s", error.what());
     }
@@ -282,10 +351,15 @@ private:
       auto snapshot = std::make_shared<const HeightmapSnapshot>(
         PointCloud2HeightmapAdapter{}.makeSnapshot(*message, heightmap_adapter_parameters_));
       std::lock_guard<std::mutex> lock(snapshot_mutex_);
-      heightmap_ = std::move(snapshot);
+      const bool content_changed = !heightmap_ ||
+        snapshot->contentHash() != heightmap_content_hash_;
       heightmap_frame_ = message->header.frame_id;
       heightmap_stamp_ = messageTime(*message);
+      if (!content_changed) {return;}
+      heightmap_content_hash_ = snapshot->contentHash();
+      heightmap_ = std::move(snapshot);
       ++heightmap_generation_;
+      if (replan_on_heightmap_change_) {pending_heightmap_change_ = true;}
     } catch (const std::exception & error) {
       RCLCPP_ERROR(get_logger(), "Rejected heightmap: %s", error.what());
     }
@@ -304,13 +378,13 @@ private:
   }
 
   nav_msgs::msg::Path pathMessage(
-    const PlanResult & result, const geometry_msgs::msg::Quaternion & goal_orientation,
+    const std::vector<TerrainPoint> & terrain,
+    const geometry_msgs::msg::Quaternion & goal_orientation,
     const rclcpp::Time & stamp) const
   {
     nav_msgs::msg::Path output;
     output.header.frame_id = required_map_frame_;
     output.header.stamp = stamp;
-    const auto terrain = terrainPath(result);
     for (std::size_t index = 0U; index < terrain.size(); ++index) {
       geometry_msgs::msg::PoseStamped pose;
       pose.header = output.header;
@@ -329,6 +403,13 @@ private:
       output.poses.push_back(std::move(pose));
     }
     return output;
+  }
+
+  nav_msgs::msg::Path pathMessage(
+    const PlanResult & result, const geometry_msgs::msg::Quaternion & goal_orientation,
+    const rclcpp::Time & stamp) const
+  {
+    return pathMessage(terrainPath(result), goal_orientation, stamp);
   }
 
   void logDiagnostics(
@@ -515,8 +596,190 @@ private:
     }
   }
 
+  void logRefiner(
+    const char * mode, const TrackingPathRefinerResult & result) const
+  {
+    RCLCPP_INFO(
+      get_logger(),
+      "\n[TRACKING PATH REFINER]\nmode=%s raw_points=%zu smoothing_attempts=%zu "
+      "smoothing_accepts=%zu smoothing_rejects=%zu tracking_points=%zu "
+      "raw_cost=%.6f tracking_cost=%.6f raw_max_heading_change_rad=%.6f "
+      "tracking_max_heading_change_rad=%.6f fallback=%s",
+      mode, result.raw_point_count, result.smoothing_attempts,
+      result.smoothing_accepts, result.smoothing_rejects,
+      result.tracking_point_count, result.raw_cost, result.tracking_cost,
+      result.raw_max_heading_change_rad, result.tracking_max_heading_change_rad,
+      result.used_raw_fallback ? "true" : "false");
+  }
+
+  void logSoftDecision(
+    const char * mode, const double current_cost, const double candidate_cost,
+    const double improvement, const bool candidate_valid) const
+  {
+    RCLCPP_INFO(
+      get_logger(),
+      "[REPLAN RESULT] mode=%s current_valid=true candidate_valid=%s "
+      "old_tracking_cost=%.6f new_tracking_cost=%.6f improvement_ratio=%.6f "
+      "required_ratio=%.6f action=keep_current_path",
+      mode, candidate_valid ? "true" : "false", current_cost, candidate_cost,
+      improvement, min_cost_improvement_ratio_);
+  }
+
+  void processPendingReplan()
+  {
+    bool pending = false;
+    std::shared_ptr<const CostmapSnapshot> costmap;
+    std::shared_ptr<const HeightmapSnapshot> heightmap;
+    std::uint64_t costmap_generation = 0U;
+    std::uint64_t heightmap_generation = 0U;
+    {
+      std::lock_guard<std::mutex> lock(snapshot_mutex_);
+      pending = pending_costmap_change_ || pending_heightmap_change_;
+      costmap = costmap_;
+      heightmap = heightmap_;
+      costmap_generation = costmap_generation_;
+      heightmap_generation = heightmap_generation_;
+    }
+    if (!goal_active_) {
+      if (pending) {
+        std::lock_guard<std::mutex> lock(snapshot_mutex_);
+        pending_costmap_change_ = false;
+        pending_heightmap_change_ = false;
+      }
+      return;
+    }
+    const bool stopped =
+      (grid_active_.active && grid_active_.tracking_path.empty()) ||
+      (sampling_active_.active && sampling_active_.tracking_path.empty());
+    const double since_failed = (now() - last_failed_replan_time_).seconds();
+    const bool retry = retry_failed_plan_ && stopped &&
+      since_failed >= failed_retry_interval_s_;
+    if ((!pending && !retry) || !costmap || !heightmap) {return;}
+
+    geometry_msgs::msg::TransformStamped transform;
+    try {
+      transform = tf_buffer_->lookupTransform(
+        required_map_frame_, base_frame_, tf2::TimePointZero,
+        tf2::durationFromSec(transform_timeout_s_));
+    } catch (const std::exception & error) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 2000, "Automatic replan waiting for TF: %s", error.what());
+      return;
+    }
+    const Point2D robot{transform.transform.translation.x, transform.transform.translation.y};
+    if (std::hypot(robot.x - effective_goal_.x, robot.y - effective_goal_.y) <=
+      replanning_goal_tolerance_m_)
+    {
+      goal_active_ = false;
+      grid_active_.active = false;
+      sampling_active_.active = false;
+      std::lock_guard<std::mutex> lock(snapshot_mutex_);
+      pending_costmap_change_ = false;
+      pending_heightmap_change_ = false;
+      return;
+    }
+
+    StepEvaluator evaluator(*heightmap, *costmap, evaluator_parameters_);
+    bool hard_invalid = retry;
+    StepInvalidReason invalid_reason = StepInvalidReason::kNone;
+    std::size_t failing_segment = 0U;
+    auto validate = [&](ActivePlanState & state) {
+        if (!state.active || state.tracking_path.empty()) {return;}
+        state.nearest_index = nearestPathIndex(
+          state.tracking_path, robot, state.nearest_index);
+        const auto validation = validateRemainingPath(
+          state.tracking_path, state.nearest_index, evaluator);
+        if (!validation.valid && !hard_invalid) {
+          hard_invalid = true;
+          invalid_reason = validation.reason;
+          failing_segment = validation.failing_segment;
+        }
+      };
+    validate(grid_active_);
+    validate(sampling_active_);
+
+    const rclcpp::Time current = now();
+    if (hard_invalid && !hard_stop_latched_ && stop_before_hard_replan_) {
+      const auto stamp = now();
+      if (grid_active_.active) {
+        grid_active_.tracking_path.clear();
+        grid_tracking_path_publisher_->publish(pathMessage(
+            std::vector<TerrainPoint>{}, active_goal_map_.pose.orientation, stamp));
+      }
+      if (sampling_active_.active) {
+        sampling_active_.tracking_path.clear();
+        sampling_tracking_path_publisher_->publish(pathMessage(
+            std::vector<TerrainPoint>{}, active_goal_map_.pose.orientation, stamp));
+      }
+      hard_stop_latched_ = true;
+      RCLCPP_WARN(
+        get_logger(),
+        "[REPLAN EVENT] trigger=map_content_changed mode=%s "
+        "costmap_generation=%lu heightmap_generation=%lu remaining_path_valid=false "
+        "invalid_reason=%s failing_segment=%zu action=stop_then_replan",
+        run_mode_text_.c_str(), static_cast<unsigned long>(costmap_generation),
+        static_cast<unsigned long>(heightmap_generation),
+        std::string(toString(invalid_reason)).c_str(), failing_segment);
+    }
+
+    if ((current - last_replan_time_).seconds() < replanning_min_interval_s_) {return;}
+    if (!hard_invalid &&
+      (current - last_soft_replan_time_).seconds() < soft_reoptimize_min_interval_s_)
+    {
+      return;
+    }
+    automatic_plan_processed_ = false;
+    executeGoal(
+      std::make_shared<geometry_msgs::msg::PoseStamped>(active_goal_map_),
+      true, hard_invalid);
+    if (!automatic_plan_processed_) {return;}
+    if (hard_invalid) {
+      const bool success =
+        (!grid_active_.active || !grid_active_.tracking_path.empty()) &&
+        (!sampling_active_.active || !sampling_active_.tracking_path.empty());
+      RCLCPP_INFO(
+        get_logger(), "[REPLAN RESULT] mode=%s success=%s "
+        "costmap_generation=%lu heightmap_generation=%lu "
+        "grid_raw_points=%zu grid_tracking_points=%zu "
+        "sampling_raw_points=%zu sampling_tracking_points=%zu action=%s",
+        run_mode_text_.c_str(), success ? "true" : "false",
+        static_cast<unsigned long>(costmap_generation),
+        static_cast<unsigned long>(heightmap_generation),
+        grid_active_.raw_path.size(), grid_active_.tracking_path.size(),
+        sampling_active_.raw_path.size(), sampling_active_.tracking_path.size(),
+        success ? "resume_tracking" : "remain_stopped");
+    }
+    last_replan_time_ = current;
+    if (!hard_invalid) {last_soft_replan_time_ = current;}
+    if ((grid_active_.active && grid_active_.tracking_path.empty()) ||
+      (sampling_active_.active && sampling_active_.tracking_path.empty()))
+    {
+      last_failed_replan_time_ = current;
+    } else {
+      hard_stop_latched_ = false;
+    }
+    std::lock_guard<std::mutex> lock(snapshot_mutex_);
+    last_processed_costmap_generation_ = costmap_generation_;
+    last_processed_heightmap_generation_ = heightmap_generation_;
+    pending_costmap_change_ = false;
+    pending_heightmap_change_ = false;
+  }
+
   void onGoal(const geometry_msgs::msg::PoseStamped::ConstSharedPtr goal)
   {
+    executeGoal(goal, false, false);
+  }
+
+  void executeGoal(
+    const geometry_msgs::msg::PoseStamped::ConstSharedPtr goal,
+    const bool automatic, const bool hard_replan)
+  {
+    std::lock_guard<std::mutex> planning_lock(planning_mutex_);
+    if (!automatic) {
+      std::lock_guard<std::mutex> lock(snapshot_mutex_);
+      pending_costmap_change_ = false;
+      pending_heightmap_change_ = false;
+    }
     std::shared_ptr<const CostmapSnapshot> costmap;
     std::shared_ptr<const HeightmapSnapshot> heightmap;
     std::string costmap_frame;
@@ -580,7 +843,31 @@ private:
       }
       const Point2D start = costmap->cellCenter(*start_cell);
       const Point2D target = costmap->cellCenter(*goal_cell);
-      resetRobotTrace(target);
+      if (!automatic) {resetRobotTrace(target);}
+      goal_active_ = true;
+      active_goal_map_ = goal_in_map;
+      effective_goal_ = target;
+
+      std::optional<double> old_grid_cost;
+      std::optional<double> old_sampling_cost;
+      StepEvaluator current_evaluator(*heightmap, *costmap, evaluator_parameters_);
+      const Point2D robot_position{
+        start_transform.transform.translation.x,
+        start_transform.transform.translation.y};
+      if (grid_active_.active && !grid_active_.tracking_path.empty()) {
+        grid_active_.nearest_index = nearestPathIndex(
+          grid_active_.tracking_path, robot_position, grid_active_.nearest_index);
+        const auto evaluation = evaluatePolyline(
+          grid_active_.tracking_path, grid_active_.nearest_index, current_evaluator);
+        if (evaluation.valid) {old_grid_cost = evaluation.total_cost;}
+      }
+      if (sampling_active_.active && !sampling_active_.tracking_path.empty()) {
+        sampling_active_.nearest_index = nearestPathIndex(
+          sampling_active_.tracking_path, robot_position, sampling_active_.nearest_index);
+        const auto evaluation = evaluatePolyline(
+          sampling_active_.tracking_path, sampling_active_.nearest_index, current_evaluator);
+        if (evaluation.valid) {old_sampling_cost = evaluation.total_cost;}
+      }
       std::optional<PlanResult> grid;
       std::optional<PlanResult> sampling;
       if (grid_planner_) {
@@ -595,28 +882,89 @@ private:
       const VisualizationParameters visualization_parameters;
       PlanResult combined;
       if (grid) {
-        grid_path_publisher_->publish(pathMessage(*grid, goal_in_map.pose.orientation, stamp));
-        auto visualization = makeVisualization(
-          *grid, terrainPath(*grid), required_map_frame_, stamp,
-          grid_visualization_parameters_);
-        recolor(visualization.nodes, 0.0F, 0.8F, 1.0F);
-        recolor(visualization.edges, 0.0F, 0.45F, 1.0F);
-        grid_nodes_publisher_->publish(visualization.nodes);
-        grid_expanded_publisher_->publish(visualization.nodes);
-        grid_edges_publisher_->publish(visualization.edges);
-        grid_search_edges_publisher_->publish(visualization.edges);
+        const auto raw = terrainPath(*grid);
+        StepEvaluator evaluator(*heightmap, *costmap, evaluator_parameters_);
+        const auto refined = TrackingPathRefiner(tracking_refiner_parameters_).refine(
+          raw, evaluator);
+        const double candidate_cost = refined.tracking_cost;
+        const double improvement = old_grid_cost && *old_grid_cost > 1.0e-12 ?
+          (*old_grid_cost - candidate_cost) / *old_grid_cost : 0.0;
+        const bool accept = grid->success && refined.success &&
+          (!automatic || hard_replan || !old_grid_cost ||
+          hasMinimumCostImprovement(
+            *old_grid_cost, candidate_cost, min_cost_improvement_ratio_));
+        if (accept) {
+          grid_path_publisher_->publish(pathMessage(raw, goal_in_map.pose.orientation, stamp));
+          grid_tracking_path_publisher_->publish(pathMessage(
+              refined.path, goal_in_map.pose.orientation, stamp));
+          grid_active_ = ActivePlanState{true, raw, refined.path, candidate_cost, 0U,
+            costmap_generation, heightmap_generation};
+          auto visualization = makeVisualization(
+            *grid, raw, required_map_frame_, stamp, grid_visualization_parameters_);
+          recolor(visualization.nodes, 0.0F, 0.8F, 1.0F);
+          recolor(visualization.edges, 0.0F, 0.45F, 1.0F);
+          grid_nodes_publisher_->publish(visualization.nodes);
+          grid_expanded_publisher_->publish(visualization.nodes);
+          grid_edges_publisher_->publish(visualization.edges);
+          grid_search_edges_publisher_->publish(visualization.edges);
+          logRefiner("grid", refined);
+          if (automatic && !hard_replan) {
+            RCLCPP_INFO(
+              get_logger(), "[REPLAN RESULT] mode=grid success=true "
+              "new_tracking_cost=%.6f improvement_ratio=%.6f action=replace_path",
+              candidate_cost, improvement);
+          }
+        } else if (automatic && !hard_replan && old_grid_cost) {
+          logSoftDecision("grid", *old_grid_cost, candidate_cost, improvement, refined.success);
+        } else if (!grid->success || !refined.success) {
+          grid_active_.active = true;
+          grid_active_.tracking_path.clear();
+          grid_tracking_path_publisher_->publish(pathMessage(
+              std::vector<TerrainPoint>{}, goal_in_map.pose.orientation, stamp));
+        }
         combined.rejected = grid->rejected;
       }
       if (sampling) {
-        sampling_path_publisher_->publish(pathMessage(
-            *sampling, goal_in_map.pose.orientation, stamp));
-        auto visualization = makeVisualization(
-          *sampling, terrainPath(*sampling), required_map_frame_, stamp,
-          visualization_parameters);
-        recolor(visualization.edges, 1.0F, 0.45F, 0.0F);
-        sampling_nodes_publisher_->publish(visualization.nodes);
-        sampling_edges_publisher_->publish(visualization.edges);
-        sampling_rejected_publisher_->publish(visualization.rejected);
+        const auto raw = terrainPath(*sampling);
+        StepEvaluator evaluator(*heightmap, *costmap, evaluator_parameters_);
+        const auto refined = TrackingPathRefiner(tracking_refiner_parameters_).refine(
+          raw, evaluator);
+        const double candidate_cost = refined.tracking_cost;
+        const double improvement = old_sampling_cost && *old_sampling_cost > 1.0e-12 ?
+          (*old_sampling_cost - candidate_cost) / *old_sampling_cost : 0.0;
+        const bool accept = sampling->success && refined.success &&
+          (!automatic || hard_replan || !old_sampling_cost ||
+          hasMinimumCostImprovement(
+            *old_sampling_cost, candidate_cost, min_cost_improvement_ratio_));
+        if (accept) {
+          sampling_path_publisher_->publish(pathMessage(
+              raw, goal_in_map.pose.orientation, stamp));
+          sampling_tracking_path_publisher_->publish(pathMessage(
+              refined.path, goal_in_map.pose.orientation, stamp));
+          sampling_active_ = ActivePlanState{true, raw, refined.path, candidate_cost, 0U,
+            costmap_generation, heightmap_generation};
+          auto visualization = makeVisualization(
+            *sampling, raw, required_map_frame_, stamp, visualization_parameters);
+          recolor(visualization.edges, 1.0F, 0.45F, 0.0F);
+          sampling_nodes_publisher_->publish(visualization.nodes);
+          sampling_edges_publisher_->publish(visualization.edges);
+          sampling_rejected_publisher_->publish(visualization.rejected);
+          logRefiner("sampling", refined);
+          if (automatic && !hard_replan) {
+            RCLCPP_INFO(
+              get_logger(), "[REPLAN RESULT] mode=sampling success=true "
+              "new_tracking_cost=%.6f improvement_ratio=%.6f action=replace_path",
+              candidate_cost, improvement);
+          }
+        } else if (automatic && !hard_replan && old_sampling_cost) {
+          logSoftDecision(
+            "sampling", *old_sampling_cost, candidate_cost, improvement, refined.success);
+        } else if (!sampling->success || !refined.success) {
+          sampling_active_.active = true;
+          sampling_active_.tracking_path.clear();
+          sampling_tracking_path_publisher_->publish(pathMessage(
+              std::vector<TerrainPoint>{}, goal_in_map.pose.orientation, stamp));
+        }
         combined.rejected.insert(
           combined.rejected.end(), sampling->rejected.begin(), sampling->rejected.end());
       }
@@ -657,8 +1005,15 @@ private:
           "sampling_total_ms=%.6f sampling_over_grid_ratio=%.6f",
           grid->core_total_time_ms, sampling->core_total_time_ms, ratio);
       }
+      automatic_plan_processed_ = true;
+      if (!automatic) {
+        last_replan_time_ = stamp;
+        last_soft_replan_time_ = stamp;
+        hard_stop_latched_ = false;
+      }
     } catch (const std::exception & error) {
       RCLCPP_ERROR(get_logger(), "Comparison planning failed: %s", error.what());
+      automatic_plan_processed_ = true;
     }
   }
 
@@ -674,6 +1029,7 @@ private:
   GridAStarParameters grid_parameters_;
   VisualizationParameters grid_visualization_parameters_;
   StepWavefrontParameters sampling_parameters_;
+  TrackingPathRefinerParameters tracking_refiner_parameters_;
   std::unique_ptr<StepGridAStarPlanner> grid_planner_;
   std::unique_ptr<StepWavefrontPlanner> sampling_planner_;
   std::mutex snapshot_mutex_;
@@ -683,6 +1039,26 @@ private:
   rclcpp::Time costmap_stamp_{0, 0, RCL_ROS_TIME};
   rclcpp::Time heightmap_stamp_{0, 0, RCL_ROS_TIME};
   std::uint64_t costmap_generation_{0U}, heightmap_generation_{0U};
+  std::uint64_t costmap_content_hash_{0U}, heightmap_content_hash_{0U};
+  std::uint64_t last_processed_costmap_generation_{0U};
+  std::uint64_t last_processed_heightmap_generation_{0U};
+  bool pending_costmap_change_{false}, pending_heightmap_change_{false};
+  bool replanning_enabled_{true};
+  bool replan_on_heightmap_change_{true}, replan_on_costmap_change_{true};
+  bool stop_before_hard_replan_{true}, retry_failed_plan_{true};
+  bool goal_active_{false}, hard_stop_latched_{false};
+  bool automatic_plan_processed_{false};
+  double replanning_check_period_s_{0.10}, replanning_min_interval_s_{0.50};
+  double soft_reoptimize_min_interval_s_{1.50};
+  double min_cost_improvement_ratio_{0.05}, replanning_goal_tolerance_m_{0.20};
+  double failed_retry_interval_s_{1.0};
+  ActivePlanState grid_active_, sampling_active_;
+  geometry_msgs::msg::PoseStamped active_goal_map_;
+  Point2D effective_goal_;
+  rclcpp::Time last_replan_time_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time last_soft_replan_time_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time last_failed_replan_time_{0, 0, RCL_ROS_TIME};
+  std::mutex planning_mutex_;
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
   rclcpp::Subscription<nav2_msgs::msg::Costmap>::SharedPtr costmap_subscription_;
@@ -690,6 +1066,8 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_subscription_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr grid_path_publisher_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr sampling_path_publisher_;
+  rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr grid_tracking_path_publisher_;
+  rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr sampling_tracking_path_publisher_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr grid_nodes_publisher_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr grid_expanded_publisher_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr grid_edges_publisher_;
@@ -700,6 +1078,7 @@ private:
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr sampling_rejected_publisher_;
   rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr robot_trace_publisher_;
   rclcpp::TimerBase::SharedPtr trace_timer_;
+  rclcpp::TimerBase::SharedPtr replan_timer_;
   std::mutex trace_mutex_;
   nav_msgs::msg::Path robot_trace_;
   std::optional<Point2D> trace_goal_;

@@ -42,8 +42,8 @@ rubi_hybrid_planner_comparison:
     sampling.policy: original_trg_random_ring
     # Keep the merge radius below the fixed sampling radius. Otherwise every
     # root-ring candidate can be rewired into the source instead of becoming a node.
-    sampling.trg_expand_distance_m: 0.30
-    sampling.trg_robot_size_m: 0.20
+    sampling.trg_expand_distance_m: 0.60            # 0.3 -> 0.6
+    sampling.trg_robot_size_m: 0.30
     sampling.trg_sample_num: 8
     sampling.trg_max_trial_samples: 1000
     sampling.trg_height_threshold_m: 0.08
@@ -56,6 +56,24 @@ rubi_hybrid_planner_comparison:
     sampling.max_expansions: 4000
     sampling.max_graph_build_time_ms: 5000
     sampling.post_goal_expansions: 50
+
+    tracking_refiner.enabled: true
+    tracking_refiner.method: trg_three_point_mean_validated
+    tracking_refiner.smoothing_passes: 1
+    tracking_refiner.resample_spacing_m: 0.10
+    tracking_refiner.max_cost_increase_ratio: 0.05
+
+    replanning.enabled: true
+    replanning.check_period_s: 0.10
+    replanning.min_replan_interval_s: 0.50
+    replanning.soft_reoptimize_min_interval_s: 1.50
+    replanning.on_heightmap_change: true
+    replanning.on_costmap_change: true
+    replanning.stop_before_hard_replan: true
+    replanning.min_cost_improvement_ratio: 0.05
+    replanning.goal_tolerance_m: 0.20
+    replanning.retry_failed_plan: true
+    replanning.failed_retry_interval_s: 1.0
 
     # Compatibility declarations retained for deterministic_ring and V2 profiles.
     sampling_policy: trg_random_ring

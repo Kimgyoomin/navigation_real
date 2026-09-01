@@ -47,6 +47,7 @@ def generate_test_description():
             'node_evidence_radius_m': 0.06,
             'node_min_observed_cells': 1,
             'node_max_nearest_evidence_distance_m': 0.04,
+            'node_max_height_outlier_ratio': 1.0,
             'edge_height_query_radius_m': 0.04,
             'edge_max_height_evidence_gap_m': 0.08,
             'node_sampling_distance_m': 0.15,
@@ -71,6 +72,7 @@ def generate_test_description():
         'max_costmap_age_s': 10.0, 'max_heightmap_age_s': 10.0,
         'node_evidence_radius_m': 0.06, 'node_min_observed_cells': 1,
         'node_max_nearest_evidence_distance_m': 0.04,
+        'node_max_height_outlier_ratio': 1.0,
         'edge_height_query_radius_m': 0.04,
         'edge_max_height_evidence_gap_m': 0.08,
         'node_sampling_distance_m': 0.15, 'merge_radius_m': 0.08,
@@ -137,6 +139,8 @@ class TestHybridComparison(unittest.TestCase):
             PoseStamped, SAMPLING_GOAL, volatile)
         cls.grid_paths = []
         cls.sampling_paths = []
+        cls.grid_tracking_paths = []
+        cls.sampling_tracking_paths = []
         cls.subscriptions = [
             cls.node.create_subscription(
                 Path, '/rubi/planner_comparison/grid/path',
@@ -144,6 +148,12 @@ class TestHybridComparison(unittest.TestCase):
             cls.node.create_subscription(
                 Path, '/rubi/planner_comparison/sampling/path',
                 cls.sampling_paths.append, latched),
+            cls.node.create_subscription(
+                Path, '/rubi/planner_comparison/grid/tracking_path',
+                cls.grid_tracking_paths.append, latched),
+            cls.node.create_subscription(
+                Path, '/rubi/planner_comparison/sampling/tracking_path',
+                cls.sampling_tracking_paths.append, latched),
         ]
 
     @classmethod
@@ -159,7 +169,9 @@ class TestHybridComparison(unittest.TestCase):
             rclpy.spin_once(self.node, timeout_sec=0.05)
         self.assertTrue(predicate())
 
-    def _publish_inputs(self, costmap_pub, heightmap_pub):
+    def _publish_inputs(
+            self, costmap_pub, heightmap_pub, blocked=False,
+            height_step=False):
         now = self.node.get_clock().now().to_msg()
         costmap = Costmap()
         costmap.header.frame_id = 'map'
@@ -169,7 +181,10 @@ class TestHybridComparison(unittest.TestCase):
         costmap.metadata.resolution = 0.05
         costmap.metadata.origin.orientation.w = 1.0
         costmap.data = [0] * (25 * 15)
-        points = [(0.025 + 0.05 * x, 0.025 + 0.05 * y, 0.0)
+        if blocked:
+            costmap.data[7 * 25 + 11] = 254
+        points = [(0.025 + 0.05 * x, 0.025 + 0.05 * y,
+                   0.10 if height_step and x >= 12 else 0.0)
                   for y in range(15) for x in range(25)]
         cloud = point_cloud2.create_cloud_xyz32(
             Header(stamp=now, frame_id='map'), points)
@@ -194,6 +209,8 @@ class TestHybridComparison(unittest.TestCase):
         grid_before, sampling_before = len(self.grid_paths), len(self.sampling_paths)
         self.grid_goal_pub.publish(self._goal())
         self._spin_until(lambda: len(self.grid_paths) > grid_before)
+        self._spin_until(lambda: self.grid_tracking_paths and
+                         self.grid_tracking_paths[-1].poses)
         for _ in range(10):
             rclpy.spin_once(self.node, timeout_sec=0.02)
         self.assertEqual(len(self.sampling_paths), sampling_before)
@@ -205,6 +222,8 @@ class TestHybridComparison(unittest.TestCase):
         grid_before, sampling_before = len(self.grid_paths), len(self.sampling_paths)
         self.sampling_goal_pub.publish(self._goal())
         self._spin_until(lambda: len(self.sampling_paths) > sampling_before)
+        self._spin_until(lambda: self.sampling_tracking_paths and
+                         self.sampling_tracking_paths[-1].poses)
         for _ in range(10):
             rclpy.spin_once(self.node, timeout_sec=0.02)
         self.assertEqual(len(self.grid_paths), grid_before)
@@ -220,6 +239,10 @@ class TestHybridComparison(unittest.TestCase):
         self._spin_until(lambda: (
             self.grid_paths and self.grid_paths[-1].poses
             and self.sampling_paths and self.sampling_paths[-1].poses))
+        self._spin_until(lambda: (
+            self.grid_tracking_paths and self.grid_tracking_paths[-1].poses
+            and self.sampling_tracking_paths and
+            self.sampling_tracking_paths[-1].poses))
         for path in (self.grid_paths[-1], self.sampling_paths[-1]):
             self.assertEqual(path.header.frame_id, 'map')
             final = path.poses[-1].pose.orientation
@@ -232,6 +255,58 @@ class TestHybridComparison(unittest.TestCase):
         proc_output.assertWaitFor(expected_output='planner=sampling success=true', timeout=5.0)
         self.assertEqual(
             len(self.node.get_publishers_info_by_topic('/cmd_vel')), 0)
+
+    def test_4_content_dedup_and_hard_costmap_update_auto_replan(self, proc_output):
+        settle = time.monotonic() + 0.5
+        while time.monotonic() < settle:
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+        before = len(self.grid_tracking_paths)
+        self._publish_inputs(self.grid_costmap_pub, self.grid_heightmap_pub)
+        deadline = time.monotonic() + 1.8
+        while time.monotonic() < deadline:
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+        self.assertEqual(len(self.grid_tracking_paths), before)
+
+        self._publish_inputs(
+            self.grid_costmap_pub, self.grid_heightmap_pub, blocked=True)
+        self._spin_until(lambda: any(
+            not path.poses for path in self.grid_tracking_paths[before:]), timeout=10.0)
+        self._spin_until(lambda: (
+            self.grid_tracking_paths and self.grid_tracking_paths[-1].poses), timeout=10.0)
+        proc_output.assertWaitFor(
+            expected_output='action=stop_then_replan', timeout=5.0)
+
+    def test_5_over_limit_height_update_stops_until_map_recovers(self, proc_output):
+        self._publish_inputs(self.grid_costmap_pub, self.grid_heightmap_pub)
+        before = len(self.grid_tracking_paths)
+        self.grid_goal_pub.publish(self._goal())
+        self._spin_until(lambda: (
+            len(self.grid_tracking_paths) > before and
+            self.grid_tracking_paths[-1].poses), timeout=10.0)
+
+        update_start = len(self.grid_tracking_paths)
+        self._publish_inputs(
+            self.grid_costmap_pub, self.grid_heightmap_pub,
+            height_step=True)
+        self._spin_until(lambda: any(
+            not path.poses for path in self.grid_tracking_paths[update_start:]),
+            timeout=10.0)
+        stop_index = next(
+            index for index, path in enumerate(
+                self.grid_tracking_paths[update_start:], start=update_start)
+            if not path.poses)
+        settle = time.monotonic() + 1.2
+        while time.monotonic() < settle:
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+        self.assertFalse(any(
+            path.poses for path in self.grid_tracking_paths[stop_index + 1:]))
+        proc_output.assertWaitFor(
+            expected_output='invalid_reason=step_limit', timeout=5.0)
+
+        self._publish_inputs(self.grid_costmap_pub, self.grid_heightmap_pub)
+        self._spin_until(lambda: (
+            len(self.grid_tracking_paths) > stop_index + 1 and
+            self.grid_tracking_paths[-1].poses), timeout=10.0)
 
 
 @launch_testing.post_shutdown_test()

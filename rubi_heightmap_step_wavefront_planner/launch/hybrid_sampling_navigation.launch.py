@@ -64,7 +64,7 @@ def generate_launch_description():
              name='simple_pure_pursuit_controller', output='screen',
              condition=IfCondition(launch_controller),
              parameters=[controller_params, {'use_sim_time': use_sim_time,
-                                               'path_topic': '/rubi/planner_comparison/sampling/path'}]),
+                                               'path_topic': '/rubi/planner_comparison/sampling/tracking_path'}]),
         Node(package='rviz2', executable='rviz2', name='hybrid_sampling_rviz',
              arguments=['-d', rviz_config], condition=IfCondition(launch_rviz),
              parameters=[{'use_sim_time': use_sim_time}], output='screen'),
