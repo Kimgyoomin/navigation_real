@@ -1,22 +1,40 @@
 simple_pure_pursuit_controller:
   ros__parameters:
     use_sim_time: false
+
+
     path_topic: /rubi/planner_comparison/grid/path
     cmd_vel_topic: /cmd_vel
+    
+    
     map_frame: map
     base_frame: base_link
+    
+    
     control_frequency_hz: 20.0
     transform_timeout_s: 0.03
     path_timeout_s: 0.0
-    lookahead_distance_m: 0.35
+    
+    
+    lookahead_distance_m: 0.60      # 0.35 -> 0.60
+    
+    
     nearest_search_backtrack_points: 2
-    nominal_linear_velocity_mps: 0.55
+    
+    
+    nominal_linear_velocity_mps: 0.70       # 0.55 -> 0.70
     min_tracking_velocity_mps: 0.25
-    curvature_velocity_gain: 1.0
+    curvature_velocity_gain: 0.50           # 1.0 -> 0.5
+
+
     max_linear_velocity_mps: 0.70
     max_angular_velocity_rps: 1.50
+    
+    
     max_linear_acceleration_mps2: 7.0
     max_angular_acceleration_rps2: 7.0
+    
+    
     goal_tolerance_m: 0.20
     max_cross_track_error_m: 0.40
     heading_slowdown_threshold_rad: 0.70
