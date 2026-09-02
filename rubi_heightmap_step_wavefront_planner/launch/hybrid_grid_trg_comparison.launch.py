@@ -62,7 +62,7 @@ def generate_launch_description():
 
                             # Benchmark contract :
                             # one Goal -> one paired Grid / Sampling result
-                            'replanning.enables': False, 
+                            'replanning.enabled': False, 
                         }],
         ),
         Node(
