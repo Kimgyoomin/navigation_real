@@ -52,10 +52,18 @@ def generate_launch_description():
             executable='hybrid_planner_comparison_node',
             name='rubi_hybrid_planner_comparison',
             output='screen',
+            # parameters=[params_file, {
+            #     'use_sim_time': use_sim_time,
+            #     'planner_run_mode': 'both',
+            # }],
             parameters=[params_file, {
-                'use_sim_time': use_sim_time,
-                'planner_run_mode': 'both',
-            }],
+                            'use_sim_time': use_sim_time,
+                            'planner_run_mode': 'both',
+
+                            # Benchmark contract :
+                            # one Goal -> one paired Grid / Sampling result
+                            'replanning.enables': False, 
+                        }],
         ),
         Node(
             package='rviz2', executable='rviz2', name='hybrid_comparison_rviz',

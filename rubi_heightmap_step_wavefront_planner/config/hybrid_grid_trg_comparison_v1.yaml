@@ -1,6 +1,10 @@
 rubi_hybrid_planner_comparison:
   ros__parameters:
+    # =========================================================
+    # Runtime / Input
+    # =========================================================
     use_sim_time: false
+
     planner_run_mode: both
     detailed_timing: false
     input_costmap_topic: /global_costmap/costmap_raw
@@ -18,39 +22,57 @@ rubi_hybrid_planner_comparison:
     costmap_unknown_is_blocked: true
 
     evaluation.edge_check_spacing_m: 0.025
-    evaluation.max_crossable_height_jump_m: 0.08
+
+    # 최대 10cm 정도로 해 놨음
+    evaluation.max_crossable_height_jump_m: 0.10          # 0.08 -> 0.10
     evaluation.height_noise_floor_m: 0.01
     evaluation.height_cost_exponent: 2.0
     evaluation.distance_weight: 1.0
     evaluation.height_cost_weight: 5.0
     evaluation.inflation_cost_weight: 5.0
     evaluation.inflation_cost_exponent: 1.0
+
+    # =========================================================
+    # Common node / height evidence
+    # =========================================================
     node_evidence_radius_m: 0.10
     node_min_observed_cells: 3
     node_max_nearest_evidence_distance_m: 0.075
+    
     node_height_outlier_threshold_m: 0.08
     node_max_height_outlier_ratio: 0.30
+    
     edge_height_query_radius_m: 0.075
     edge_max_height_evidence_gap_m: 0.10
 
+    # =========================================================
+    # GRID A*
+    # =========================================================
     grid_allow_diagonal: true
+
     grid_max_expanded_states: 500000
     grid_max_planning_time_ms: 5000
+    
     grid_visualization_max_cells: 10000
     grid_visualization_stride: 1
 
+    # =========================================================
+    # TRG / SAMPLING A*
+    # =========================================================
     sampling.policy: original_trg_random_ring
     # Keep the merge radius below the fixed sampling radius. Otherwise every
     # root-ring candidate can be rewired into the source instead of becoming a node.
-    sampling.trg_expand_distance_m: 0.60            # 0.3 -> 0.6
+    sampling.trg_expand_distance_m: 0.40            # 0.3 -> 0.6 -> 0.4
     sampling.trg_robot_size_m: 0.30
     sampling.trg_sample_num: 8
     sampling.trg_max_trial_samples: 1000
-    sampling.trg_height_threshold_m: 0.08
+    sampling.trg_height_threshold_m: 0.10           # 0.08 -> 0.10
     sampling.trg_collision_threshold: 0.10
     sampling.trg_random_seed: 42
     sampling.trg_randomize_seed: false
-    sampling.trg_neighbor_connection_radius_m: 0.30
+
+    # robotSize보다 커야 추가 graph connectivity가 실질적으로 동작
+    sampling.trg_neighbor_connection_radius_m: 0.45             # 0.30 -> 0.45
     sampling.goal_connection_distance_m: 0.45
     sampling.max_nodes: 4000
     sampling.max_expansions: 4000
