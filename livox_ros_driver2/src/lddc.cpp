@@ -27,6 +27,8 @@
 #include "comm/comm.h"
 
 #include <inttypes.h>
+#include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <iomanip>
 #include <math.h>
@@ -169,7 +171,14 @@ void Lddc::PollingLidarPointCloudData(uint8_t index, LidarDevice *lidar) {
     if (kPointCloud2Msg == transfer_format_) {
       PublishPointcloud2(p_queue, index);
     } else if (kLivoxCustomMsg == transfer_format_) {
+#ifdef BUILDING_ROS2
+      // FAST-LIO consumes CustomMsg for exact per-point timing. Nav2 consumes
+      // PointCloud2. Both messages are serialized from the same packet, whose
+      // points already have the configured Livox extrinsic applied.
+      PublishCustomAndPointcloud2(p_queue, index);
+#else
       PublishCustomPointcloud(p_queue, index);
+#endif
     } else if (kPclPxyziMsg == transfer_format_) {
       PublishPclMsg(p_queue, index);
     }
@@ -229,6 +238,55 @@ void Lddc::PublishCustomPointcloud(LidarDataQueue *queue, uint8_t index) {
     PublishCustomPointData(livox_msg, index);
   }
 }
+
+#ifdef BUILDING_ROS2
+void Lddc::PublishCustomAndPointcloud2(LidarDataQueue *queue, uint8_t index) {
+  while (!QueueIsEmpty(queue)) {
+    // This output path feeds real-time localization. If publishing briefly
+    // falls behind, processing every queued scan preserves the latency
+    // forever once producer and consumer return to the same rate. Drop stale,
+    // complete scans here on the consumer side and process the newest scan.
+    // FAST-LIO bridges skipped scans with the corresponding IMU interval.
+    uint32_t queued_frames = QueueUsedSize(queue);
+    while (queued_frames > 1) {
+      QueuePopUpdate(queue);
+      --queued_frames;
+    }
+
+    StoragePacket pkg;
+    QueuePop(queue, &pkg);
+    if (pkg.points.empty()) {
+      printf("Publish custom/pointcloud2 failed, the pkg points is empty.\n");
+      continue;
+    }
+
+    CustomMsg livox_msg;
+    InitCustomMsg(livox_msg, pkg, index);
+    FillPointsToCustomMsg(livox_msg, pkg);
+
+    // Keep the FAST-LIO input at the configured Livox publish frequency and
+    // publish it before doing the additional PointCloud2 conversion.
+    PublishCustomPointData(livox_msg, index);
+
+    // The secondary cloud is used by Nav2's 5 Hz local costmap. Converting
+    // every other 10 Hz packet avoids duplicate work without throttling the
+    // CustomMsg consumed by FAST-LIO.
+    if ((secondary_pointcloud_sequence_[index]++ % 2) != 0) {
+      continue;
+    }
+
+    PointCloud2 cloud;
+    uint64_t timestamp = 0;
+    InitPointcloud2Msg(pkg, cloud, timestamp);
+    // This secondary cloud is dedicated to Nav2 obstacle processing.  Using
+    // the latest TF prevents a delayed costmap callback from raytracing with
+    // an old sensor pose.  The FAST-LIO CustomMsg above keeps the real stamp.
+    cloud.header.stamp = rclcpp::Time(0, 0, RCL_ROS_TIME);
+
+    PublishSecondaryPointcloud2Data(index, cloud);
+  }
+}
+#endif
 
 /* for pcl::pxyzi */
 void Lddc::PublishPclMsg(LidarDataQueue *queue, uint8_t index) {
@@ -351,6 +409,21 @@ void Lddc::PublishPointcloud2Data(const uint8_t index, const uint64_t timestamp,
   }
 }
 
+#ifdef BUILDING_ROS2
+void Lddc::PublishSecondaryPointcloud2Data(
+    const uint8_t index, const PointCloud2& cloud) {
+  if (kOutputToRos != output_type_) {
+    return;
+  }
+
+  auto publisher_ptr = std::dynamic_pointer_cast<Publisher<PointCloud2>>(
+      GetCurrentPointcloud2Publisher(index));
+  if (publisher_ptr) {
+    publisher_ptr->publish(cloud);
+  }
+}
+#endif
+
 void Lddc::InitCustomMsg(CustomMsg& livox_msg, const StoragePacket& pkg, uint8_t index) {
   livox_msg.header.frame_id.assign(frame_id_);
 
@@ -407,6 +480,33 @@ void Lddc::PublishCustomPointData(const CustomMsg& livox_msg, const uint8_t inde
 
   if (kOutputToRos == output_type_) {
     publisher_ptr->publish(livox_msg);
+
+#ifdef BUILDING_ROS2
+    // Optional driver-side measurement avoids the Python ROS CLI becoming the
+    // bottleneck while deserializing a large CustomMsg.
+    if (std::getenv("LIVOX_DIAG_TIMING") != nullptr &&
+        !livox_msg.points.empty()) {
+      static auto last_diag_time =
+          std::chrono::steady_clock::now() - std::chrono::seconds(1);
+      const auto steady_now = std::chrono::steady_clock::now();
+      if (steady_now - last_diag_time >= std::chrono::seconds(1)) {
+        const int64_t now_ns = cur_node_->get_clock()->now().nanoseconds();
+        const uint64_t scan_end_ns = livox_msg.timebase +
+            static_cast<uint64_t>(livox_msg.points.back().offset_time);
+        const double scan_start_age_ms =
+            static_cast<double>(now_ns -
+                static_cast<int64_t>(livox_msg.timebase)) / 1.0e6;
+        const double scan_end_age_ms =
+            static_cast<double>(now_ns -
+                static_cast<int64_t>(scan_end_ns)) / 1.0e6;
+        std::cout << "Livox timing publish_start_age="
+                  << scan_start_age_ms << " ms publish_end_age="
+                  << scan_end_age_ms << " ms points="
+                  << livox_msg.point_num << std::endl;
+        last_diag_time = steady_now;
+      }
+    }
+#endif
   } else {
 #ifdef BUILDING_ROS1
     if (bag_ && enable_lidar_bag_) {
@@ -662,6 +762,32 @@ std::shared_ptr<rclcpp::PublisherBase> Lddc::GetCurrentPublisher(uint8_t handle)
     }
     return global_pub_;
   }
+}
+
+std::shared_ptr<rclcpp::PublisherBase> Lddc::GetCurrentPointcloud2Publisher(
+    uint8_t handle) {
+  if (use_multi_topic_) {
+    if (!private_pointcloud2_pub_[handle]) {
+      char name_str[64];
+      memset(name_str, 0, sizeof(name_str));
+      std::string ip_string = IpNumToString(lds_->lidars_[handle].handle);
+      snprintf(name_str, sizeof(name_str), "livox/lidar_pointcloud_%s",
+          ReplacePeriodByUnderline(ip_string).c_str());
+      std::string topic_name(name_str);
+      auto qos = rclcpp::SensorDataQoS().keep_last(1);
+      private_pointcloud2_pub_[handle] =
+          cur_node_->create_publisher<PointCloud2>(topic_name, qos);
+    }
+    return private_pointcloud2_pub_[handle];
+  }
+
+  if (!global_pointcloud2_pub_) {
+    std::string topic_name("livox/lidar_pointcloud");
+    auto qos = rclcpp::SensorDataQoS().keep_last(1);
+    global_pointcloud2_pub_ =
+        cur_node_->create_publisher<PointCloud2>(topic_name, qos);
+  }
+  return global_pointcloud2_pub_;
 }
 
 std::shared_ptr<rclcpp::PublisherBase> Lddc::GetCurrentImuPublisher(uint8_t handle) {

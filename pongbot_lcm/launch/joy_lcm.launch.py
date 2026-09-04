@@ -10,7 +10,7 @@ def generate_launch_description():
             name="joy_to_lcm",
             output="screen",
             parameters=[{
-                "joy_topic": "/joy",
+                "joy_topic": "/joy_wireless",
                 "cmd_vel_topic": "/cmd_vel",
                 "lcm_channel": "CMD_VEL",
                 # LCM is confined to the directly connected robot LAN.

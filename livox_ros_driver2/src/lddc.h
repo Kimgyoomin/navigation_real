@@ -126,6 +126,9 @@ class Lddc final {
 
 #ifdef BUILDING_ROS2
   PublisherPtr CreatePublisher(uint8_t msg_type, std::string &topic_name, uint32_t queue_size);
+  void PublishCustomAndPointcloud2(LidarDataQueue *queue, uint8_t index);
+  void PublishSecondaryPointcloud2Data(const uint8_t index, const PointCloud2& cloud);
+  PublisherPtr GetCurrentPointcloud2Publisher(uint8_t index);
 #endif
 
   PublisherPtr GetCurrentPublisher(uint8_t index);
@@ -151,6 +154,9 @@ class Lddc final {
 #elif defined BUILDING_ROS2
   PublisherPtr private_pub_[kMaxSourceLidar];
   PublisherPtr global_pub_;
+  PublisherPtr private_pointcloud2_pub_[kMaxSourceLidar];
+  PublisherPtr global_pointcloud2_pub_;
+  uint64_t secondary_pointcloud_sequence_[kMaxSourceLidar] = {};
   PublisherPtr private_imu_pub_[kMaxSourceLidar];
   PublisherPtr global_imu_pub_;
 #endif

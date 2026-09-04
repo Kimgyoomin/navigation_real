@@ -53,6 +53,7 @@ class LidarPubHandler {
   // void SetLidarsExtParam(LidarExtParameter param);
   ExtParameterDetailed SetLidarsExtParam(LidarExtParameter param);
   void GetLidarPointClouds(std::vector<PointXyzlt>& points_clouds);
+  void ClearLidarPointClouds();
 
   uint64_t GetRecentTimeStamp();
   uint32_t GetLidarPointCloudsSize();

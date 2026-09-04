@@ -21,22 +21,22 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 message("Current CPU archtecture: ${CMAKE_SYSTEM_PROCESSOR}")
 
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(X86)|(amd64)|(AMD64)")
-  include(ProcessorCount)
-  ProcessorCount(N)
-  message("Processer number:  ${N}")
+include(ProcessorCount)
+ProcessorCount(N)
+message("Processor number: ${N}")
 
-  if(N GREATER 4)
-    add_definitions(-DMP_EN)
-    add_definitions(-DMP_PROC_NUM=3)
-    message("core for MP: 3")
-  elseif(N GREATER 3)
-    add_definitions(-DMP_EN)
-    add_definitions(-DMP_PROC_NUM=2)
-    message("core for MP: 2")
-  else()
-    add_definitions(-DMP_PROC_NUM=1)
-  endif()
+# The nearest-neighbour matching loop supports OpenMP on both x86 and ARM.
+# The previous architecture check disabled MP_EN on Jetson (aarch64), leaving
+# the most expensive FAST-LIO loop single-threaded even when taskset assigned
+# several cores to this process.
+if(N GREATER 4)
+  add_definitions(-DMP_EN)
+  add_definitions(-DMP_PROC_NUM=3)
+  message("core for MP: 3")
+elseif(N GREATER 3)
+  add_definitions(-DMP_EN)
+  add_definitions(-DMP_PROC_NUM=2)
+  message("core for MP: 2")
 else()
   add_definitions(-DMP_PROC_NUM=1)
 endif()
@@ -56,6 +56,7 @@ find_package(rclcpp_components REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
@@ -119,8 +120,17 @@ endif()
 
 ament_target_dependencies(fastlio_mapping ${dependencies})
 
+add_executable(transform_fusion_cpp src/transformFusion.cpp)
+target_link_libraries(transform_fusion_cpp Eigen3::Eigen)
+ament_target_dependencies(transform_fusion_cpp
+  rclcpp
+  geometry_msgs
+  nav_msgs
+  tf2_ros
+)
+
 # ---------------- Install --------------- #
-install(TARGETS fastlio_mapping
+install(TARGETS fastlio_mapping transform_fusion_cpp
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -84,7 +84,10 @@ nav_msgs::msg::Path AstarPlanner::createPlan(
   const geometry_msgs::msg::PoseStamped & goal)
 {
   nav_msgs::msg::Path path;
-  path.header.stamp = start.header.stamp;
+  // A global path is static map geometry. A zero stamp asks controllers to
+  // transform it with the latest available TF instead of a few milliseconds
+  // (or, under load, seconds) into the future.
+  path.header.stamp = builtin_interfaces::msg::Time{};
   path.header.frame_id = global_frame_;
 
   if (!costmap_ros_) {
@@ -364,7 +367,7 @@ nav_msgs::msg::Path AstarPlanner::createPlan(
 
   // exact start
   geometry_msgs::msg::PoseStamped ps = start_g;
-  ps.header.frame_id = global_frame_;
+  ps.header = path.header;
   path.poses.push_back(ps);
 
   for (std::size_t i = 1; i + 1 < indices.size(); ++i) {
@@ -384,7 +387,7 @@ nav_msgs::msg::Path AstarPlanner::createPlan(
 
   // exact goal
   geometry_msgs::msg::PoseStamped pg = goal_g;
-  pg.header.frame_id = global_frame_;
+  pg.header = path.header;
   path.poses.push_back(pg);
 
   // --------------------------------------------------------------------------

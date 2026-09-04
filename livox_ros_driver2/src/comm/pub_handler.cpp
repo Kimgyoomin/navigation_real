@@ -181,11 +181,33 @@ void PubHandler::OnLivoxLidarPointCloudCallback(uint32_t handle, const uint8_t d
                                             data->timestamp, sizeof(data->timestamp));
   uint32_t length = data->length - sizeof(LivoxLidarEthernetPacket) + 1;
   packet.raw_data.insert(packet.raw_data.end(), data->data, data->data + length);
+  std::size_t raw_queue_size = 0;
   {
     std::unique_lock<std::mutex> lock(self->packet_mutex_);
     self->raw_packet_queue_.push_back(packet);
+    raw_queue_size = self->raw_packet_queue_.size();
   }
-    self->packet_condition_.notify_one();
+  self->packet_condition_.notify_one();
+
+  // Optional low-rate timing diagnostic. This runs at the SDK ingress, before
+  // point conversion and ROS publication, so it separates a sensor timestamp
+  // offset from an internal driver backlog.
+  if (std::getenv("LIVOX_DIAG_TIMING") != nullptr) {
+    static auto last_diag_time =
+        std::chrono::steady_clock::now() - std::chrono::seconds(1);
+    const auto steady_now = std::chrono::steady_clock::now();
+    if (steady_now - last_diag_time >= std::chrono::seconds(1)) {
+      const auto system_now_ns =
+          std::chrono::duration_cast<std::chrono::nanoseconds>(
+              std::chrono::system_clock::now().time_since_epoch()).count();
+      const double ingress_age_ms =
+          static_cast<double>(system_now_ns -
+              static_cast<int64_t>(packet.time_stamp)) / 1.0e6;
+      std::cerr << "Livox timing ingress_age=" << ingress_age_ms
+                << " ms raw_queue=" << raw_queue_size << std::endl;
+      last_diag_time = steady_now;
+    }
+  }
 
   return;
 }
@@ -266,6 +288,8 @@ void PubHandler::CheckTimer(uint32_t id) {
 void PubHandler::RawDataProcess() {
   RawPacket raw_data;
   while (!is_quit_.load()) {
+    std::size_t dropped_raw_packets = 0;
+    const uint64_t max_raw_backlog = publish_interval_ * 2;
     {
       std::unique_lock<std::mutex> lock(packet_mutex_);
       if (raw_packet_queue_.empty()) {
@@ -274,9 +298,45 @@ void PubHandler::RawDataProcess() {
           continue;
         }
       }
-      raw_data = raw_packet_queue_.front();
-      raw_packet_queue_.pop_front();
+
+      // Raw packets are only partial scans, so keep normal FIFO ordering while
+      // the queue is healthy. If their timestamp span exceeds two publish
+      // periods, retaining the FIFO backlog makes every future scan stale.
+      // Recover by keeping the newest packet and rebuilding a complete scan
+      // from that point onward.
+      const uint64_t oldest_stamp = raw_packet_queue_.front().time_stamp;
+      const uint64_t newest_stamp = raw_packet_queue_.back().time_stamp;
+      if (newest_stamp > oldest_stamp &&
+          newest_stamp - oldest_stamp > max_raw_backlog) {
+        dropped_raw_packets = raw_packet_queue_.size() - 1;
+        raw_data = raw_packet_queue_.back();
+        raw_packet_queue_.clear();
+      } else {
+        raw_data = raw_packet_queue_.front();
+        raw_packet_queue_.pop_front();
+      }
     }
+
+    if (dropped_raw_packets > 0) {
+      // Do not mix points accumulated from stale packets with the new scan.
+      // RawDataProcess is the sole owner of these handlers, while each handler
+      // protects its point accumulator for the distribution thread.
+      for (auto& handler : lidar_process_handlers_) {
+        handler.second->ClearLidarPointClouds();
+      }
+
+      static auto last_drop_log_time =
+          std::chrono::steady_clock::now() - std::chrono::seconds(1);
+      const auto now = std::chrono::steady_clock::now();
+      if (now - last_drop_log_time >= std::chrono::seconds(1)) {
+        std::cerr << "Livox raw packet backlog exceeded "
+                  << (max_raw_backlog / 1000000ULL)
+                  << " ms; dropped " << dropped_raw_packets
+                  << " stale packets." << std::endl;
+        last_drop_log_time = now;
+      }
+    }
+
     uint32_t id = 0;
     GetLidarId(raw_data.lidar_type, raw_data.handle, id);
     if (lidar_process_handlers_.find(id) == lidar_process_handlers_.end()) {
@@ -328,6 +388,11 @@ uint64_t LidarPubHandler::GetLidarBaseTime() {
 void LidarPubHandler::GetLidarPointClouds(std::vector<PointXyzlt>& points_clouds) {
   std::lock_guard<std::mutex> lock(mutex_);
   points_clouds.swap(points_clouds_);
+}
+
+void LidarPubHandler::ClearLidarPointClouds() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  points_clouds_.clear();
 }
 
 uint64_t LidarPubHandler::GetRecentTimeStamp() {
@@ -408,6 +473,11 @@ ExtParameterDetailed LidarPubHandler::SetLidarsExtParam(LidarExtParameter lidar_
 void LidarPubHandler::ProcessCartesianHighPoint(RawPacket & pkt) {
   LivoxLidarCartesianHighRawPoint* raw = (LivoxLidarCartesianHighRawPoint*)pkt.raw_data.data();
   PointXyzlt point = {};
+  // points_clouds_ is shared as one batch. Locking once per packet avoids a
+  // mutex lock/unlock for every Livox point while preserving the same data,
+  // ordering and timestamps.
+  std::lock_guard<std::mutex> lock(mutex_);
+  points_clouds_.reserve(points_clouds_.size() + pkt.point_num);
   for (uint32_t i = 0; i < pkt.point_num; i++) {
     if (pkt.extrinsic_enable) {
       point.x = raw[i].x / 1000.0;
@@ -428,7 +498,6 @@ void LidarPubHandler::ProcessCartesianHighPoint(RawPacket & pkt) {
     point.line = i % pkt.line_num;
     point.tag = raw[i].tag;
     point.offset_time = pkt.time_stamp + i * pkt.point_interval;
-    std::lock_guard<std::mutex> lock(mutex_);
     points_clouds_.push_back(point);
   }
 }
@@ -436,6 +505,8 @@ void LidarPubHandler::ProcessCartesianHighPoint(RawPacket & pkt) {
 void LidarPubHandler::ProcessCartesianLowPoint(RawPacket & pkt) {
   LivoxLidarCartesianLowRawPoint* raw = (LivoxLidarCartesianLowRawPoint*)pkt.raw_data.data();
   PointXyzlt point = {};
+  std::lock_guard<std::mutex> lock(mutex_);
+  points_clouds_.reserve(points_clouds_.size() + pkt.point_num);
   for (uint32_t i = 0; i < pkt.point_num; i++) {
     if (pkt.extrinsic_enable) {
       point.x = raw[i].x / 100.0;
@@ -456,7 +527,6 @@ void LidarPubHandler::ProcessCartesianLowPoint(RawPacket & pkt) {
     point.line = i % pkt.line_num;
     point.tag = raw[i].tag;
     point.offset_time = pkt.time_stamp + i * pkt.point_interval;
-    std::lock_guard<std::mutex> lock(mutex_);
     points_clouds_.push_back(point);
   }
 }
@@ -464,6 +534,8 @@ void LidarPubHandler::ProcessCartesianLowPoint(RawPacket & pkt) {
 void LidarPubHandler::ProcessSphericalPoint(RawPacket& pkt) {
   LivoxLidarSpherPoint* raw = (LivoxLidarSpherPoint*)pkt.raw_data.data();
   PointXyzlt point = {};
+  std::lock_guard<std::mutex> lock(mutex_);
+  points_clouds_.reserve(points_clouds_.size() + pkt.point_num);
   for (uint32_t i = 0; i < pkt.point_num; i++) {
     double radius = raw[i].depth / 1000.0;
     double theta = raw[i].theta / 100.0 / 180 * PI;
@@ -491,7 +563,6 @@ void LidarPubHandler::ProcessSphericalPoint(RawPacket& pkt) {
     point.line = i % pkt.line_num;
     point.tag = raw[i].tag;
     point.offset_time = pkt.time_stamp + i * pkt.point_interval;
-    std::lock_guard<std::mutex> lock(mutex_);
     points_clouds_.push_back(point);
   }
 }

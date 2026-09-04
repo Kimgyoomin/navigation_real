@@ -12,9 +12,9 @@ controller_server:
     # launch의 RewrittenYaml이 true/false로 덮어쓴다.
     use_sim_time: false
 
-    controller_frequency: 10.0
-    # odom_topic: /Odometry
-    odom_topic: /genz/odometry
+    controller_frequency: 5.0           # 10 -> 5
+    odom_topic: /Odometry
+    # odom_topic: /genz/odometry
 
     min_x_velocity_threshold: 0.01
     min_y_velocity_threshold: 0.001
@@ -65,7 +65,7 @@ controller_server:
       # 여기부터는 기존 DWB 설정을 같은 위치에 그대로 둔다.
       trajectory_generator_name: "dwb_plugins::StandardTrajectoryGenerator"
 
-      debug_trajectory_details: true
+      debug_trajectory_details: false
 
       # RUBI를 non-holonomic으로 사용
       min_vel_x: 0.0       # -0.1 -> 0.0
@@ -87,11 +87,11 @@ controller_server:
       decel_lim_y: 0.0
       decel_lim_theta: -7.0  # -1.5 -> -7.0  
 
-      vx_samples: 20
+      vx_samples: 12          # 20 -> 12
       vy_samples: 0
-      vtheta_samples: 41
+      vtheta_samples: 21      # 41 -> 21
 
-      sim_time: 2.0                 # 2.5 -> 4.0 -> 1.5 -> 2.0
+      sim_time: 1.5                 # 2.5 -> 4.0 -> 1.5 -> 2.0 -> 1.5
       linear_granularity: 0.05
       angular_granularity: 0.025
 
@@ -128,8 +128,8 @@ controller_server:
 
       # 튜닝 중 모든 critic 값을 확인
       short_circuit_trajectory_evaluation: true
-      publish_evaluation: true
-      publish_trajectories: true
+      publish_evaluation: false
+      publish_trajectories: false
 
 
 local_costmap:
@@ -155,7 +155,6 @@ local_costmap:
       footprint_padding: 0.01
 
       plugins:
-        - "static_layer"
         - "obstacle_layer"
         - "inflation_layer"
 
@@ -182,13 +181,14 @@ local_costmap:
         observation_sources: "livox_cloud"
 
         livox_cloud:
-          topic: /livox/lidar
+          topic: /livox/lidar_pointcloud
           data_type: "PointCloud2"
 
           marking: true
           clearing: true
 
-          obstacle_min_range: 0.1                 # 0.3 -> 0.1          # 0.1 -> 0.3 -> 0.1
+          # Exclude RUBI's own torso/arms around the MID360.
+          obstacle_min_range: 0.5
           obstacle_max_range: 4.0
 
           raytrace_min_range: 0.0          
@@ -221,8 +221,8 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_link
 
-      update_frequency: 5.0
-      publish_frequency: 5.0
+      update_frequency: 2.0
+      publish_frequency: 1.0
       transform_tolerance: 1.0
 
       resolution: 0.05
@@ -233,8 +233,8 @@ global_costmap:
       footprint_padding: 0.01
 
       plugins:
-        - "static_layer"
         - "obstacle_layer"
+        - "static_layer"
         - "inflation_layer"
 
       static_layer:
@@ -259,13 +259,13 @@ global_costmap:
         observation_sources: "livox_cloud"
 
         livox_cloud:
-          topic: /livox/lidar
+          topic: /livox/lidar_pointcloud
           data_type: "PointCloud2"
 
           marking: true
           clearing: true
 
-          obstacle_min_range: 0.1                 # 0.3 -> 0.1
+          obstacle_min_range: 0.3                 # 0.3 -> 0.1
           obstacle_max_range: 4.0
 
           raytrace_min_range: 0.0
@@ -273,7 +273,7 @@ global_costmap:
 
           # 아래 값은 예시다.
           # camera_init 기준 실제 지면 높이에 맞춰 반드시 수정할 것.
-          min_obstacle_height: -0.3              # 0.1 -> -0.3
+          min_obstacle_height: -0.2              # 0.1 -> -0.3
           max_obstacle_height: 2.5
           observation_persistence: 0.0    # 5.0 -> 0.0            # 0.0 -> 0.5 -> 2.0 -> 0.0
           expected_update_rate: 0.0
@@ -304,6 +304,10 @@ bt_navigator:
     use_sim_time: false
     global_frame: map
     robot_base_frame: base_link
-    # odom_topic: /Odometry
-    odom_topic: /genz/odometry
+    odom_topic: /Odometry
+    # odom_topic: /genz/odometry
+
+    bt_loop_duration: 50
+    default_server_timeout: 1000
+
     default_nav_to_pose_bt_xml: "$(find-pkg-share pongbot_navigation)/behavior_trees/navigate_to_pose_rubi.xml"

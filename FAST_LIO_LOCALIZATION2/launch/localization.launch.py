@@ -80,8 +80,8 @@ def generate_launch_description():
         parameters=[{
             "map_voxel_size": 0.2,
             "scan_voxel_size": 0.08,
-            # "freq_localization": 0.5,
-            "freq_localization": 1.0,
+            "freq_localization": 0.5,
+            # "freq_localization": 1.0,
             "freq_global_map": 0.25,
             "localization_threshold": 0.8,
             "fov": 6.28319,
@@ -94,7 +94,7 @@ def generate_launch_description():
     # Transform fusion node
     transform_fusion_node = Node(
         package="fast_lio_localization",
-        executable="transform_fusion.py",
+        executable="transform_fusion_cpp",
         name="transform_fusion",
         output="screen",
     )
@@ -109,7 +109,7 @@ def generate_launch_description():
             "file_name": pcd_map_path,
             "tf_frame": "map",
             "cloud_topic": pcd_map_topic,
-            "period_ms_": 500
+            "period_ms_": 5000
         }],
         remappings=[
             ("cloud_pcd", pcd_map_topic),

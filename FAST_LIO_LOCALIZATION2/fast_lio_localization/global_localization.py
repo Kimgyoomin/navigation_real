@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 
+import array
 import copy
+import sys
 import threading
 import time
 
 import open3d as o3d
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from geometry_msgs.msg import PoseWithCovarianceStamped, Pose, Point, Quaternion
 from nav_msgs.msg import Odometry
 # from rclpy.wait_for_message import wait_for_message
-from sensor_msgs.msg import PointCloud2
+from sensor_msgs.msg import PointCloud2, PointField
 from std_msgs.msg import Header
 import numpy as np
 import tf2_ros
@@ -46,8 +49,26 @@ class FastLIOLocalization(Node):
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
         # self.pub_global_map = self.create_publisher(PointCloud2, self.get_parameter("pcd_map_topic").value, 10)
-        self.pub_pc_in_map = self.create_publisher(PointCloud2, "/cur_scan_in_map", 10)
-        self.pub_submap = self.create_publisher(PointCloud2, "/submap", 10)
+        # These clouds are state snapshots. Keeping old multi-megabyte samples
+        # only makes RViz consume stale timestamps after an ICP callback blocks
+        # the single-threaded Python executor.
+        cloud_pub_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+        latest_sensor_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+
+        self.pub_pc_in_map = self.create_publisher(
+            PointCloud2, "/cur_scan_in_map", cloud_pub_qos)
+        self.pub_submap = self.create_publisher(
+            PointCloud2, "/submap", cloud_pub_qos)
         self.pub_map_to_odom = self.create_publisher(Odometry, "/map_to_odom", 10)
 
         self.get_logger().info("Waiting for global map...")
@@ -57,8 +78,12 @@ class FastLIOLocalization(Node):
         self.initialize_global_map()
         self.get_logger().info("Global map received.")
         
-        self.create_subscription(PointCloud2, "/cloud_registered", self.cb_save_cur_scan, 10)
-        self.create_subscription(Odometry, "/Odometry", self.cb_save_cur_odom, 10)
+        self.create_subscription(
+            PointCloud2, "/cloud_registered", self.cb_save_cur_scan,
+            latest_sensor_qos)
+        self.create_subscription(
+            Odometry, "/Odometry", self.cb_save_cur_odom,
+            latest_sensor_qos)
         self.create_subscription(PoseWithCovarianceStamped, "/initialpose", self.cb_initialize_pose, 10)
 
         self.timer_localisation = self.create_timer(1.0 / self.get_parameter("freq_localization").value, self.localisation_timer_callback)
@@ -102,20 +127,28 @@ class FastLIOLocalization(Node):
         return trans_inverse
 
     def publish_point_cloud(self, publisher, header, pc):
-        data = dict()
-        data["xyz"] = pc[:, :3]
-        
-        if pc.shape[1] == 4:
-            data["intensity"] = pc[:, 3]
-        # else:
-            # data["rgb"] = np.ones_like(pc)
-        msg = ros2_numpy.msgify(PointCloud2, data)
+        # These visualization/localization clouds only require XYZ. Building
+        # the message directly avoids ros2_numpy warning on every frame when
+        # optional rgb/intensity fields are absent, and guarantees a valid
+        # tightly packed 12-byte XYZ layout.
+        xyz = np.ascontiguousarray(pc[:, :3], dtype=np.float32)
+        msg = PointCloud2()
         msg.header = header
-        if len(msg.fields) == 4:
-            msg.point_step = 16
-        else:
-            msg.point_step = 12
-            
+        msg.height = 1
+        msg.width = xyz.shape[0]
+        msg.fields = [
+            PointField(name="x", offset=0, datatype=PointField.FLOAT32, count=1),
+            PointField(name="y", offset=4, datatype=PointField.FLOAT32, count=1),
+            PointField(name="z", offset=8, datatype=PointField.FLOAT32, count=1),
+        ]
+        msg.is_bigendian = sys.byteorder != "little"
+        msg.point_step = 12
+        msg.row_step = msg.point_step * msg.width
+        msg.is_dense = bool(np.isfinite(xyz).all())
+        msg_data = array.array("B")
+        msg_data.frombytes(xyz.tobytes())
+        msg.data = msg_data
+
         publisher.publish(msg)
         
     def crop_global_map_in_FOV(self, pose_estimation):
@@ -141,7 +174,11 @@ class FastLIOLocalization(Node):
         global_map_in_FOV = o3d.geometry.PointCloud()
         global_map_in_FOV.points = o3d.utility.Vector3dVector(np.squeeze(global_map_in_map[indices, :3]))
 
-        header = self.cur_odom.header
+        # The submap is generated now in the map frame. Reusing an old odometry
+        # stamp makes RViz's message filter reject the same cloud repeatedly
+        # once that transform falls out of the TF cache.
+        header = Header()
+        header.stamp = self.get_clock().now().to_msg()
         header.frame_id = "map"
         self.publish_point_cloud(self.pub_submap, header, np.array(global_map_in_FOV.points)[::10])
 
