@@ -21,6 +21,7 @@ struct PlanningStatistics
   std::size_t adjacent_step_rejects{0U};
   std::size_t sobel_step_rejects{0U};
   std::size_t both_step_rejects{0U};
+  std::size_t local_relief_step_rejects{0U};
   std::size_t rejected_isolated_node{0U};
   std::size_t expanded_states{0U};
   std::size_t neighbor_candidates{0U};
@@ -43,6 +44,10 @@ struct PlanningStatistics
   std::size_t isolated_nodes{0U};
   std::size_t neighbor_queries{0U};
   std::size_t neighbor_wire_attempts{0U};
+  std::size_t local_relief_queries{0U};
+  std::size_t local_relief_cache_hits{0U};
+  std::size_t local_relief_missing_neighborhoods{0U};
+  std::size_t supported_relief_queries{0U};
 };
 
 struct PathMetrics
@@ -52,6 +57,8 @@ struct PathMetrics
   double max_height_jump_m{0.0};
   double max_sobel_equivalent_step_height_m{0.0};
   double max_sobel_gradient{0.0};
+  double max_local_relief_m{0.0};
+  double max_supported_local_relief_m{0.0};
   double height_score_m{0.0};
   double minimum_clearance_m{0.0};
   double clearance_score_m{0.0};

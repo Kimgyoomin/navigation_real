@@ -9,6 +9,17 @@
 
 namespace rubi_heightmap_step_wavefront_planner
 {
+namespace
+{
+double interpolatedQuantile(const std::vector<double> & sorted, const double quantile)
+{
+  const double position = quantile * static_cast<double>(sorted.size() - 1U);
+  const std::size_t lower = static_cast<std::size_t>(std::floor(position));
+  const std::size_t upper = static_cast<std::size_t>(std::ceil(position));
+  const double fraction = position - static_cast<double>(lower);
+  return sorted[lower] + fraction * (sorted[upper] - sorted[lower]);
+}
+}  // namespace
 
 std::string_view toString(const StepInvalidReason reason) noexcept
 {
@@ -57,7 +68,24 @@ StepEvaluator::StepEvaluator(
     !std::isfinite(parameters_.sobel_equivalent_step_height_m) ||
     parameters_.sobel_equivalent_step_height_m <= 0.0 ||
     !std::isfinite(parameters_.sobel_cost_weight) || parameters_.sobel_cost_weight < 0.0 ||
-    !std::isfinite(parameters_.sobel_cost_exponent) || parameters_.sobel_cost_exponent < 1.0)
+    !std::isfinite(parameters_.sobel_cost_exponent) || parameters_.sobel_cost_exponent < 1.0 ||
+    !std::isfinite(parameters_.local_relief_threshold_m) ||
+    parameters_.local_relief_threshold_m <= 0.0 ||
+    !std::isfinite(parameters_.local_relief_first_window_radius_m) ||
+    parameters_.local_relief_first_window_radius_m <= 0.0 ||
+    !std::isfinite(parameters_.local_relief_second_window_radius_m) ||
+    parameters_.local_relief_second_window_radius_m < 0.0 ||
+    !std::isfinite(parameters_.local_relief_lower_quantile) ||
+    parameters_.local_relief_lower_quantile < 0.0 ||
+    parameters_.local_relief_lower_quantile >= 1.0 ||
+    !std::isfinite(parameters_.local_relief_upper_quantile) ||
+    parameters_.local_relief_upper_quantile <= 0.0 ||
+    parameters_.local_relief_upper_quantile > 1.0 ||
+    parameters_.local_relief_lower_quantile >= parameters_.local_relief_upper_quantile ||
+    !std::isfinite(parameters_.local_relief_min_observed_ratio) ||
+    parameters_.local_relief_min_observed_ratio <= 0.0 ||
+    parameters_.local_relief_min_observed_ratio > 1.0 ||
+    parameters_.local_relief_critical_cell_count == 0U)
   {
     throw std::invalid_argument("invalid StepEvaluator parameters");
   }
@@ -156,6 +184,114 @@ void StepEvaluator::accumulateSobelEvidence(
       0.0, 1.0);
     result.sobel_gradient_score_m += parameters_.sobel_equivalent_step_height_m *
       std::pow(normalized, parameters_.sobel_cost_exponent);
+  }
+}
+
+StepEvaluator::LocalReliefResult StepEvaluator::localRelief(const GridCell center) const
+{
+  ++instrumentation_.local_relief_queries;
+  const auto center_index = snapshot_.index(center);
+  if (!center_index) {
+    ++instrumentation_.local_relief_missing_neighborhoods;
+    return {};
+  }
+  const auto cached = local_relief_cache_.find(*center_index);
+  if (cached != local_relief_cache_.end()) {
+    ++instrumentation_.local_relief_cache_hits;
+    return cached->second;
+  }
+
+  LocalReliefResult result;
+  std::vector<double> elevations;
+  const double resolution = snapshot_.resolution();
+  const double radius = parameters_.local_relief_first_window_radius_m;
+  const int cell_radius = static_cast<int>(std::ceil(radius / resolution));
+  for (int dy = -cell_radius; dy <= cell_radius; ++dy) {
+    for (int dx = -cell_radius; dx <= cell_radius; ++dx) {
+      if (resolution * std::hypot(static_cast<double>(dx), static_cast<double>(dy)) >
+        radius + 1.0e-12)
+      {
+        continue;
+      }
+      ++result.required_cell_count;
+      const auto elevation = snapshot_.elevation({center.x + dx, center.y + dy});
+      if (elevation) {elevations.push_back(*elevation);}
+    }
+  }
+  result.observed_cell_count = elevations.size();
+  result.observed_ratio = result.required_cell_count > 0U ?
+    static_cast<double>(result.observed_cell_count) /
+    static_cast<double>(result.required_cell_count) : 0.0;
+  if (!elevations.empty() &&
+    result.observed_ratio + 1.0e-12 >= parameters_.local_relief_min_observed_ratio)
+  {
+    std::sort(elevations.begin(), elevations.end());
+    result.raw_relief_m = interpolatedQuantile(
+      elevations, parameters_.local_relief_upper_quantile) - interpolatedQuantile(
+      elevations, parameters_.local_relief_lower_quantile);
+    result.valid = std::isfinite(result.raw_relief_m) && result.raw_relief_m >= 0.0;
+  }
+  if (!result.valid) {++instrumentation_.local_relief_missing_neighborhoods;}
+  local_relief_cache_[*center_index] = result;
+  return result;
+}
+
+StepEvaluator::SupportedLocalReliefResult StepEvaluator::supportedLocalRelief(
+  const GridCell center) const
+{
+  ++instrumentation_.supported_relief_queries;
+  const auto center_index = snapshot_.index(center);
+  if (!center_index) {return {};}
+  const auto cached = supported_local_relief_cache_.find(*center_index);
+  if (cached != supported_local_relief_cache_.end()) {return cached->second;}
+
+  SupportedLocalReliefResult result;
+  const double resolution = snapshot_.resolution();
+  const double radius = parameters_.local_relief_second_window_radius_m;
+  const int cell_radius = static_cast<int>(std::ceil(radius / resolution));
+  for (int dy = -cell_radius; dy <= cell_radius; ++dy) {
+    for (int dx = -cell_radius; dx <= cell_radius; ++dx) {
+      if (resolution * std::hypot(static_cast<double>(dx), static_cast<double>(dy)) >
+        radius + 1.0e-12)
+      {
+        continue;
+      }
+      const LocalReliefResult local = localRelief({center.x + dx, center.y + dy});
+      if (!local.valid) {continue;}
+      result.valid = true;
+      result.max_raw_relief_m = std::max(result.max_raw_relief_m, local.raw_relief_m);
+      if (local.raw_relief_m > parameters_.local_relief_threshold_m) {
+        ++result.critical_count;
+      }
+    }
+  }
+  if (result.valid) {
+    const double support_ratio = static_cast<double>(result.critical_count) /
+      static_cast<double>(parameters_.local_relief_critical_cell_count);
+    result.supported_relief_m = std::min(
+      result.max_raw_relief_m, support_ratio * result.max_raw_relief_m);
+  }
+  supported_local_relief_cache_[*center_index] = result;
+  return result;
+}
+
+void StepEvaluator::accumulateLocalReliefEvidence(
+  const GridCell cell, EdgeEvaluation & result) const
+{
+  const SupportedLocalReliefResult relief = supportedLocalRelief(cell);
+  if (!relief.valid) {
+    ++result.local_relief_missing_cell_count;
+    return;
+  }
+  ++result.local_relief_valid_cell_count;
+  result.max_local_relief_m = std::max(
+    result.max_local_relief_m, relief.max_raw_relief_m);
+  result.max_supported_local_relief_m = std::max(
+    result.max_supported_local_relief_m, relief.supported_relief_m);
+  result.local_relief_max_critical_count = std::max(
+    result.local_relief_max_critical_count, relief.critical_count);
+  if (relief.supported_relief_m > parameters_.local_relief_threshold_m) {
+    result.local_relief_hard_rejection = true;
   }
 }
 
@@ -423,6 +559,7 @@ EdgeEvaluation StepEvaluator::evaluateEdge(const Point2D from, const Point2D to)
   std::optional<double> previous_z;
   for (const auto & cell : centerline_cells) {
     accumulateSobelEvidence(cell, result);
+    accumulateLocalReliefEvidence(cell, result);
     const auto z = snapshot_.elevation(cell);
     if (!z) {
       result.reason = snapshot_.inBounds(cell) ?
@@ -449,6 +586,12 @@ EdgeEvaluation StepEvaluator::evaluateEdge(const Point2D from, const Point2D to)
     previous_z = z;
   }
   if (parameters_.sobel_hard_reject_enabled && result.sobel_hard_rejection) {
+    result.reason = StepInvalidReason::kStepLimit;
+    return result;
+  }
+  if (parameters_.local_relief_hard_reject_enabled &&
+    result.local_relief_hard_rejection)
+  {
     result.reason = StepInvalidReason::kStepLimit;
     return result;
   }
@@ -528,6 +671,7 @@ EdgeEvaluation StepEvaluator::evaluateHybridEdge(const Point2D from, const Point
   result.unique_cell_count = height_profile.size();
   for (std::size_t index = 0U; index < height_profile.size(); ++index) {
     accumulateSobelEvidence(height_profile[index].source_cell, result);
+    accumulateLocalReliefEvidence(height_profile[index].source_cell, result);
     if (index == 0U) {continue;}
     const double jump = std::abs(
       height_profile[index].elevation_m - height_profile[index - 1U].elevation_m);
@@ -547,6 +691,12 @@ EdgeEvaluation StepEvaluator::evaluateHybridEdge(const Point2D from, const Point
     }
   }
   if (parameters_.sobel_hard_reject_enabled && result.sobel_hard_rejection) {
+    result.reason = StepInvalidReason::kStepLimit;
+    return result;
+  }
+  if (parameters_.local_relief_hard_reject_enabled &&
+    result.local_relief_hard_rejection)
+  {
     result.reason = StepInvalidReason::kStepLimit;
     return result;
   }

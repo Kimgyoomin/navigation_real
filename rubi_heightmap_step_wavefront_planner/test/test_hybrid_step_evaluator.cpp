@@ -79,3 +79,40 @@ TEST(HybridStepEvaluator, SparseCellRecoversButLongEvidenceGapRejects)
   EXPECT_EQ(gap_eval.evaluateEdge({0.25, 0.25}, {0.65, 0.25}).reason,
     planner::StepInvalidReason::kHeightEvidenceGap);
 }
+
+TEST(HybridStepEvaluator, LocalReliefUsesHeightmapNeighborhoodInHybridMode)
+{
+  std::vector<planner::HeightPoint> points;
+  for (int y = -8; y <= 8; ++y) {
+    for (int x = -12; x <= 12; ++x) {
+      const int abs_y = std::abs(y);
+      const int shifted_boundary = abs_y == 0 || abs_y == 3 ? 0 : (abs_y <= 2 ? -2 : 1);
+      const int phase = x - shifted_boundary;
+      double z = 0.03 * static_cast<double>(phase + 3);
+      if (phase <= -3) {z = 0.0;}
+      else if (phase >= 2) {z = 0.15;}
+      points.push_back({0.05 * x, 0.05 * y, z});
+    }
+  }
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    points, 0.05, 0.001, 1000U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    25U, 17U, 0.05, -0.625, -0.425,
+    std::vector<std::uint8_t>(25U * 17U, 0U));
+  auto p = hybridParameters();
+  p.max_crossable_height_jump_m = 0.10;
+  p.node_evidence_radius_m = 0.051;
+  p.node_max_nearest_evidence_distance_m = 0.051;
+  p.edge_height_query_radius_m = 0.04;
+  p.edge_max_height_evidence_gap_m = 0.051;
+  p.sobel_hard_reject_enabled = true;
+  p.sobel_equivalent_step_height_m = 0.10;
+  p.local_relief_hard_reject_enabled = true;
+  const auto edge = planner::StepEvaluator(heights, costs, p).evaluateEdge(
+    {-0.40, 0.0}, {0.40, 0.0});
+  EXPECT_FALSE(edge.valid);
+  EXPECT_EQ(edge.reason, planner::StepInvalidReason::kStepLimit);
+  EXPECT_LT(edge.max_sobel_equivalent_step_height_m, 0.10);
+  EXPECT_TRUE(edge.local_relief_hard_rejection);
+  EXPECT_GT(edge.max_supported_local_relief_m, 0.10);
+}

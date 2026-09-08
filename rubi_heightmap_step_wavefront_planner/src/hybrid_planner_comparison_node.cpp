@@ -137,12 +137,26 @@ public:
       "\n[STEP EVALUATION CONFIG]\n"
       "planner_run_mode=%s\nadjacent_threshold_m=%.3f\n"
       "sobel_enabled=%s\nsobel_threshold_m=%.3f\n"
-      "sobel_cost_weight=%.3f\nsobel_cost_exponent=%.3f",
+      "sobel_cost_weight=%.3f\nsobel_cost_exponent=%.3f\n"
+      "local_relief_enabled=%s\nlocal_relief_threshold_m=%.3f\n"
+      "local_relief_first_window_radius_m=%.3f\n"
+      "local_relief_second_window_radius_m=%.3f\n"
+      "local_relief_quantiles=[%.3f, %.3f]\n"
+      "local_relief_min_observed_ratio=%.3f\n"
+      "local_relief_critical_cell_count=%zu",
       run_mode_text_.c_str(), evaluator_parameters_.max_crossable_height_jump_m,
       evaluator_parameters_.sobel_hard_reject_enabled ? "true" : "false",
       evaluator_parameters_.sobel_equivalent_step_height_m,
       evaluator_parameters_.sobel_cost_weight,
-      evaluator_parameters_.sobel_cost_exponent);
+      evaluator_parameters_.sobel_cost_exponent,
+      evaluator_parameters_.local_relief_hard_reject_enabled ? "true" : "false",
+      evaluator_parameters_.local_relief_threshold_m,
+      evaluator_parameters_.local_relief_first_window_radius_m,
+      evaluator_parameters_.local_relief_second_window_radius_m,
+      evaluator_parameters_.local_relief_lower_quantile,
+      evaluator_parameters_.local_relief_upper_quantile,
+      evaluator_parameters_.local_relief_min_observed_ratio,
+      evaluator_parameters_.local_relief_critical_cell_count);
   }
 
 private:
@@ -237,6 +251,30 @@ private:
       "evaluation.sobel_cost_weight", evaluator_parameters_.sobel_cost_weight);
     evaluator_parameters_.sobel_cost_exponent = declare_parameter(
       "evaluation.sobel_cost_exponent", evaluator_parameters_.sobel_cost_exponent);
+    evaluator_parameters_.local_relief_hard_reject_enabled = declare_parameter(
+      "evaluation.local_relief_hard_reject_enabled",
+      evaluator_parameters_.local_relief_hard_reject_enabled);
+    evaluator_parameters_.local_relief_threshold_m = declare_parameter(
+      "evaluation.local_relief_threshold_m",
+      evaluator_parameters_.local_relief_threshold_m);
+    evaluator_parameters_.local_relief_first_window_radius_m = declare_parameter(
+      "evaluation.local_relief_first_window_radius_m",
+      evaluator_parameters_.local_relief_first_window_radius_m);
+    evaluator_parameters_.local_relief_second_window_radius_m = declare_parameter(
+      "evaluation.local_relief_second_window_radius_m",
+      evaluator_parameters_.local_relief_second_window_radius_m);
+    evaluator_parameters_.local_relief_lower_quantile = declare_parameter(
+      "evaluation.local_relief_lower_quantile",
+      evaluator_parameters_.local_relief_lower_quantile);
+    evaluator_parameters_.local_relief_upper_quantile = declare_parameter(
+      "evaluation.local_relief_upper_quantile",
+      evaluator_parameters_.local_relief_upper_quantile);
+    evaluator_parameters_.local_relief_min_observed_ratio = declare_parameter(
+      "evaluation.local_relief_min_observed_ratio",
+      evaluator_parameters_.local_relief_min_observed_ratio);
+    evaluator_parameters_.local_relief_critical_cell_count = positiveSize(
+      "evaluation.local_relief_critical_cell_count",
+      static_cast<std::int64_t>(evaluator_parameters_.local_relief_critical_cell_count));
     grid_parameters_.allow_diagonal = declare_parameter("grid_allow_diagonal", true);
     grid_parameters_.max_expanded_states = positiveSize("grid_max_expanded_states", 500000);
     grid_parameters_.max_planning_time_ms = positiveSize("grid_max_planning_time_ms", 5000);
@@ -465,8 +503,9 @@ private:
       "time_ms=%.3f costmap_hard_blocked_samples=%zu "
       "costmap_max_raw_cost_on_selected_path=%u height_evidence_missing_samples=%zu "
       "height_max_jump_m=%.3f max_sobel_equivalent_step_m=%.3f "
-      "max_sobel_gradient=%.3f adjacent_step_rejects=%zu sobel_step_rejects=%zu "
-      "both_step_rejects=%zu",
+      "max_sobel_gradient=%.3f max_local_relief_m=%.3f "
+      "max_supported_local_relief_m=%.3f adjacent_step_rejects=%zu "
+      "sobel_step_rejects=%zu local_relief_step_rejects=%zu both_step_rejects=%zu",
       planner_name, result.success ? "true" : "false", result.path_metrics.length_xy_m,
       result.path_metrics.total_cost, result.path_metrics.inflation_cost,
       result.path_metrics.height_cost, result.expansions, result.nodes.size(),
@@ -475,8 +514,11 @@ private:
       result.path_metrics.max_height_jump_m,
       result.path_metrics.max_sobel_equivalent_step_height_m,
       result.path_metrics.max_sobel_gradient,
+      result.path_metrics.max_local_relief_m,
+      result.path_metrics.max_supported_local_relief_m,
       result.statistics.adjacent_step_rejects,
       result.statistics.sobel_step_rejects,
+      result.statistics.local_relief_step_rejects,
       result.statistics.both_step_rejects);
     if (hard_blocked > 0U) {
       RCLCPP_WARN(
@@ -501,13 +543,17 @@ private:
         "distance_cost          : %.6f\ninflation_cost         : %.6f\n"
         "height_cost            : %.6f\nmax_height_jump_m      : %.6f\n"
         "max_sobel_equivalent_step_m: %.6f\nmax_sobel_gradient    : %.6f\n"
+        "max_local_relief_m     : %.6f\nmax_supported_local_relief_m: %.6f\n"
         "height_jump_events     : %zu\nadjacent_step_rejects : %zu\n"
-        "sobel_step_rejects     : %zu\nboth_step_rejects     : %zu\n"
+        "sobel_step_rejects     : %zu\nlocal_relief_step_rejects: %zu\n"
+        "both_step_rejects     : %zu\n"
         "expanded_cells         : %zu\n"
         "neighbor_candidates    : %zu\nastar_open_pushes      : %zu\n"
         "node_eval_calls        : %zu\nedge_eval_calls        : %zu\n"
         "edge_samples_total     : %zu\nheight_evidence_queries: %zu\n"
-        "costmap_queries        : %zu\nsearch_time_ms         : %.6f\n"
+        "costmap_queries        : %zu\nlocal_relief_queries  : %zu\n"
+        "local_relief_cache_hits: %zu\nlocal_relief_missing_neighborhoods: %zu\n"
+        "supported_relief_queries: %zu\nsearch_time_ms         : %.6f\n"
         "path_finalize_time_ms  : %.6f\ntotal_planning_time_ms : %.6f\n"
         "============================================================",
         result.success ? "true" : "false", std::string(toString(result.termination)).c_str(),
@@ -517,14 +563,20 @@ private:
         result.path_metrics.height_cost, result.path_metrics.max_height_jump_m,
         result.path_metrics.max_sobel_equivalent_step_height_m,
         result.path_metrics.max_sobel_gradient,
+        result.path_metrics.max_local_relief_m,
+        result.path_metrics.max_supported_local_relief_m,
         result.path_metrics.height_event_count,
         result.statistics.adjacent_step_rejects,
         result.statistics.sobel_step_rejects,
+        result.statistics.local_relief_step_rejects,
         result.statistics.both_step_rejects, result.expansions,
         result.statistics.neighbor_candidates, result.statistics.astar_open_pushes,
         result.statistics.node_evaluation_calls, result.statistics.edge_evaluation_calls,
         result.statistics.edge_samples_total, result.statistics.height_evidence_queries,
-        result.statistics.costmap_queries, result.astar_time_ms,
+        result.statistics.costmap_queries, result.statistics.local_relief_queries,
+        result.statistics.local_relief_cache_hits,
+        result.statistics.local_relief_missing_neighborhoods,
+        result.statistics.supported_relief_queries, result.astar_time_ms,
         result.path_finalize_time_ms, result.core_total_time_ms);
       return;
     }
@@ -538,13 +590,15 @@ private:
       "distance_cost          : %.6f\ninflation_cost         : %.6f\n"
       "height_cost            : %.6f\nmax_height_jump_m      : %.6f\n"
       "max_sobel_equivalent_step_m: %.6f\nmax_sobel_gradient    : %.6f\n"
+      "max_local_relief_m     : %.6f\nmax_supported_local_relief_m: %.6f\n"
       "height_jump_events     : %zu\nexpanded_reference_nodes: %zu\n"
       "sampling_trials        : %zu\n"
       "candidate_generated    : %zu\n"
       "candidate_accepts      : %zu\ncandidate_rejects      : %zu\n"
       "merge_queries          : %zu\nneighbor_radius_queries: %zu\n"
       "rejected_edges         : %zu\nadjacent_step_rejects : %zu\n"
-      "sobel_step_rejects     : %zu\nboth_step_rejects     : %zu\n"
+      "sobel_step_rejects     : %zu\nlocal_relief_step_rejects: %zu\n"
+      "both_step_rejects     : %zu\n"
       "trg_collision_rejects : %zu\ncostmap_rejects       : %zu\n"
       "existing_node_queries : %zu\nexisting_node_rewires : %zu\n"
       "new_nodes_created     : %zu\nisolated_nodes        : %zu\n"
@@ -552,7 +606,9 @@ private:
       "graph_nodes            : %zu\ngraph_edges            : %zu\n"
       "node_eval_calls        : %zu\nedge_eval_calls        : %zu\n"
       "edge_samples_total     : %zu\nheight_evidence_queries: %zu\n"
-      "costmap_queries        : %zu\nastar_expanded_states  : %zu\n"
+      "costmap_queries        : %zu\nlocal_relief_queries  : %zu\n"
+      "local_relief_cache_hits: %zu\nlocal_relief_missing_neighborhoods: %zu\n"
+      "supported_relief_queries: %zu\nastar_expanded_states  : %zu\n"
       "graph_build_total_ms   : %.6f\nastar_search_ms        : %.6f\n"
       "graph_clean_time_ms    : %.6f\n"
       "path_finalize_time_ms  : %.6f\ntotal_planning_time_ms : %.6f\n"
@@ -571,6 +627,8 @@ private:
       result.path_metrics.height_cost, result.path_metrics.max_height_jump_m,
       result.path_metrics.max_sobel_equivalent_step_height_m,
       result.path_metrics.max_sobel_gradient,
+      result.path_metrics.max_local_relief_m,
+      result.path_metrics.max_supported_local_relief_m,
       result.path_metrics.height_event_count, result.expansions,
       result.statistics.sampling_trials,
       result.statistics.candidate_generated,
@@ -579,6 +637,7 @@ private:
       result.statistics.rejected_edges,
       result.statistics.adjacent_step_rejects,
       result.statistics.sobel_step_rejects,
+      result.statistics.local_relief_step_rejects,
       result.statistics.both_step_rejects,
       result.statistics.trg_collision_rejects, result.statistics.costmap_rejects,
       result.statistics.existing_node_queries, result.statistics.existing_node_rewires,
@@ -587,7 +646,10 @@ private:
       result.nodes.size(), result.edges.size(), result.statistics.node_evaluation_calls,
       result.statistics.edge_evaluation_calls, result.statistics.edge_samples_total,
       result.statistics.height_evidence_queries, result.statistics.costmap_queries,
-      result.statistics.expanded_states, result.graph_build_time_ms, result.astar_time_ms,
+      result.statistics.local_relief_queries, result.statistics.local_relief_cache_hits,
+      result.statistics.local_relief_missing_neighborhoods,
+      result.statistics.supported_relief_queries, result.statistics.expanded_states,
+      result.graph_build_time_ms, result.astar_time_ms,
       result.graph_clean_time_ms,
       result.path_finalize_time_ms, result.core_total_time_ms,
       detailed_timing_ ? "enabled" : "disabled");

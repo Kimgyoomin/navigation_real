@@ -76,6 +76,7 @@ struct GraphBuildResult
   std::size_t adjacent_step_rejects{0U};
   std::size_t sobel_step_rejects{0U};
   std::size_t both_step_rejects{0U};
+  std::size_t local_relief_step_rejects{0U};
   std::size_t node_evaluation_calls{0U};
   std::size_t edge_evaluation_calls{0U};
   std::size_t trg_collision_rejects{0U};

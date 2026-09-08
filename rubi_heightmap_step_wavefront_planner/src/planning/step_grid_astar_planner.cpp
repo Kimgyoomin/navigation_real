@@ -32,6 +32,7 @@ void recordStepRejection(
   statistics.adjacent_step_rejects += adjacent ? 1U : 0U;
   statistics.sobel_step_rejects += sobel ? 1U : 0U;
   statistics.both_step_rejects += adjacent && sobel ? 1U : 0U;
+  statistics.local_relief_step_rejects += edge.local_relief_hard_rejection ? 1U : 0U;
 }
 }  // namespace
 
@@ -236,6 +237,11 @@ PlanResult StepGridAStarPlanner::plan(
       edge.max_sobel_equivalent_step_height_m);
     result.path_metrics.max_sobel_gradient = std::max(
       result.path_metrics.max_sobel_gradient, edge.max_sobel_gradient);
+    result.path_metrics.max_local_relief_m = std::max(
+      result.path_metrics.max_local_relief_m, edge.max_local_relief_m);
+    result.path_metrics.max_supported_local_relief_m = std::max(
+      result.path_metrics.max_supported_local_relief_m,
+      edge.max_supported_local_relief_m);
     result.path_metrics.height_score_m += edge.height_jump_score_m;
     result.path_metrics.inflation_score_m += edge.inflation_score_m;
     result.path_metrics.maximum_raw_cost = std::max(
@@ -255,6 +261,11 @@ PlanResult StepGridAStarPlanner::plan(
   result.statistics.edge_samples_total = instrumentation.edge_samples_total;
   result.statistics.height_evidence_queries = instrumentation.height_evidence_queries;
   result.statistics.costmap_queries = instrumentation.costmap_queries;
+  result.statistics.local_relief_queries = instrumentation.local_relief_queries;
+  result.statistics.local_relief_cache_hits = instrumentation.local_relief_cache_hits;
+  result.statistics.local_relief_missing_neighborhoods =
+    instrumentation.local_relief_missing_neighborhoods;
+  result.statistics.supported_relief_queries = instrumentation.supported_relief_queries;
   result.path_finalize_time_ms = std::chrono::duration<double, std::milli>(
     Clock::now() - finalize_started).count();
   result.core_total_time_ms = std::chrono::duration<double, std::milli>(

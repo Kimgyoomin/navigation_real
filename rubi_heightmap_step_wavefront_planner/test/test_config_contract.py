@@ -146,6 +146,47 @@ def test_sobel_ab_profiles_differ_only_by_explicit_hard_reject_switch():
     assert adjacent_without_switch == sobel_without_switch
 
 
+def test_multicell_relief_profiles_preserve_ab_contract_and_only_enable_requested_features():
+    config_dir = CONFIG.parent
+    adjacent = _parameters(
+        config_dir / 'hybrid_grid_trg_comparison_adjacent.yaml')
+    sobel = _parameters(config_dir / 'hybrid_grid_trg_comparison_sobel.yaml')
+    relief = _parameters(config_dir / 'hybrid_grid_trg_comparison_relief.yaml')
+    combined = _parameters(
+        config_dir / 'hybrid_grid_trg_comparison_sobel_relief.yaml')
+
+    relief_contract = {
+        'evaluation.local_relief_threshold_m': 0.10,
+        'evaluation.local_relief_first_window_radius_m': 0.10,
+        'evaluation.local_relief_second_window_radius_m': 0.10,
+        'evaluation.local_relief_lower_quantile': 0.10,
+        'evaluation.local_relief_upper_quantile': 0.90,
+        'evaluation.local_relief_min_observed_ratio': 0.70,
+        'evaluation.local_relief_critical_cell_count': 3,
+    }
+    for parameters in (relief, combined):
+        for name, value in relief_contract.items():
+            assert parameters[name] == value
+        assert parameters['evaluation.max_crossable_height_jump_m'] == 0.10
+        assert parameters['evaluation.height_noise_floor_m'] == 0.01
+        assert parameters['evaluation.sobel_equivalent_step_height_m'] == 0.10
+        assert parameters['evaluation.sobel_cost_weight'] == 0.0
+        assert parameters['sampling.trg_height_threshold_m'] == 0.10
+        assert parameters['sampling.trg_collision_threshold'] == 0.10
+
+    assert relief['evaluation.sobel_hard_reject_enabled'] is False
+    assert combined['evaluation.sobel_hard_reject_enabled'] is True
+    assert relief['evaluation.local_relief_hard_reject_enabled'] is True
+    assert combined['evaluation.local_relief_hard_reject_enabled'] is True
+
+    for source, proposed in ((adjacent, relief), (sobel, combined)):
+        proposed_without_relief = dict(proposed)
+        proposed_without_relief.pop('evaluation.local_relief_hard_reject_enabled')
+        for name in relief_contract:
+            proposed_without_relief.pop(name)
+        assert proposed_without_relief == source
+
+
 def test_navigation_and_comparison_launches_expose_ab_parameter_files():
     root = CONFIG.parents[1]
     for filename in (

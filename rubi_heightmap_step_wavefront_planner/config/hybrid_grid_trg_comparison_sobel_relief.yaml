@@ -1,0 +1,126 @@
+rubi_hybrid_planner_comparison:
+  ros__parameters:
+    # =========================================================
+    # Runtime / Input
+    # =========================================================
+    use_sim_time: false
+
+    planner_run_mode: both
+    detailed_timing: false
+    input_costmap_topic: /global_costmap/costmap_raw
+    input_heightmap_topic: /fastdem/mapping/cloud_global
+    comparison_goal_topic: /rubi/planner_comparison/goal
+    base_frame: base_link
+    required_map_frame: map
+    max_costmap_age_s: 1.0
+    max_heightmap_age_s: 2.5
+    max_input_stamp_skew_s: 2.0
+    transform_timeout_s: 0.20
+    map_resolution_m: 0.05
+    lattice_tolerance_m: 0.01
+    max_grid_cells: 5000000
+    costmap_unknown_is_blocked: true
+
+    evaluation.edge_check_spacing_m: 0.025
+
+    # 최대 10cm 정도로 해 놨음
+    evaluation.max_crossable_height_jump_m: 0.10          # 0.08 -> 0.10
+    evaluation.height_noise_floor_m: 0.01
+    evaluation.height_cost_exponent: 2.0
+    evaluation.distance_weight: 1.0
+    evaluation.height_cost_weight: 5.0
+    evaluation.inflation_cost_weight: 5.0
+    evaluation.inflation_cost_exponent: 1.0
+    evaluation.sobel_hard_reject_enabled: true
+    evaluation.sobel_equivalent_step_height_m: 0.10
+    evaluation.sobel_cost_weight: 0.0
+    evaluation.sobel_cost_exponent: 2.0
+
+    # Initial experimental values for sensitivity studies; these are not final research parameters.
+    evaluation.local_relief_hard_reject_enabled: true
+    evaluation.local_relief_threshold_m: 0.10
+    evaluation.local_relief_first_window_radius_m: 0.10
+    evaluation.local_relief_second_window_radius_m: 0.10
+    evaluation.local_relief_lower_quantile: 0.10
+    evaluation.local_relief_upper_quantile: 0.90
+    evaluation.local_relief_min_observed_ratio: 0.70
+    evaluation.local_relief_critical_cell_count: 3
+
+    # =========================================================
+    # Common node / height evidence
+    # =========================================================
+    node_evidence_radius_m: 0.10
+    node_min_observed_cells: 3
+    node_max_nearest_evidence_distance_m: 0.075
+    
+    node_height_outlier_threshold_m: 0.08
+    node_max_height_outlier_ratio: 0.30
+    
+    edge_height_query_radius_m: 0.075
+    edge_max_height_evidence_gap_m: 0.10
+
+    # =========================================================
+    # GRID A*
+    # =========================================================
+    grid_allow_diagonal: true
+
+    grid_max_expanded_states: 500000
+    grid_max_planning_time_ms: 5000
+    
+    grid_visualization_max_cells: 10000
+    grid_visualization_stride: 1
+
+    # =========================================================
+    # TRG / SAMPLING A*
+    # =========================================================
+    sampling.policy: original_trg_random_ring
+    # Keep the merge radius below the fixed sampling radius. Otherwise every
+    # root-ring candidate can be rewired into the source instead of becoming a node.
+    sampling.trg_expand_distance_m: 0.40            # 0.3 -> 0.6 -> 0.4
+    sampling.trg_robot_size_m: 0.30
+    sampling.trg_sample_num: 8
+    sampling.trg_max_trial_samples: 1000
+    sampling.trg_height_threshold_m: 0.10           # 0.08 -> 0.10
+    sampling.trg_collision_threshold: 0.10
+    sampling.trg_random_seed: 42
+    sampling.trg_randomize_seed: false
+
+    # robotSize보다 커야 추가 graph connectivity가 실질적으로 동작
+    sampling.trg_neighbor_connection_radius_m: 0.45             # 0.30 -> 0.45
+    sampling.goal_connection_distance_m: 0.45
+    sampling.max_nodes: 4000
+    sampling.max_expansions: 4000
+    sampling.max_graph_build_time_ms: 5000
+    sampling.post_goal_expansions: 50
+
+    tracking_refiner.enabled: true
+    tracking_refiner.method: trg_three_point_mean_validated
+    tracking_refiner.smoothing_passes: 1
+    tracking_refiner.resample_spacing_m: 0.10
+    tracking_refiner.max_cost_increase_ratio: 0.05
+
+    replanning.enabled: true
+    replanning.check_period_s: 0.10
+    replanning.min_replan_interval_s: 0.50
+    replanning.soft_reoptimize_min_interval_s: 1.50
+    replanning.on_heightmap_change: true
+    replanning.on_costmap_change: true
+    replanning.stop_before_hard_replan: true
+    replanning.min_cost_improvement_ratio: 0.05
+    replanning.goal_tolerance_m: 0.20
+    replanning.retry_failed_plan: true
+    replanning.failed_retry_interval_s: 1.0
+
+    # Compatibility declarations retained for deterministic_ring and V2 profiles.
+    sampling_policy: trg_random_ring
+    sampling_random_seed: 42
+    max_sampling_trials_per_expansion: 1000
+    node_sampling_distance_m: 0.30
+    samples_per_expansion: 20
+    merge_radius_m: 0.20
+    neighbor_connection_radius_m: 0.45
+    goal_connection_distance_m: 0.45
+    max_nodes: 4000
+    max_expansions: 4000
+    max_graph_build_time_ms: 5000
+    post_goal_expansions: 50

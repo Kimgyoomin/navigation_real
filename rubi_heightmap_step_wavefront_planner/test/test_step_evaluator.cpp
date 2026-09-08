@@ -1,5 +1,6 @@
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -35,6 +36,35 @@ TEST(StepEvaluator, SobelHardRejectRequiresExplicitOptIn)
   EXPECT_DOUBLE_EQ(defaults.sobel_equivalent_step_height_m, 0.10);
   EXPECT_DOUBLE_EQ(defaults.sobel_cost_weight, 0.0);
   EXPECT_DOUBLE_EQ(defaults.sobel_cost_exponent, 2.0);
+  EXPECT_FALSE(defaults.local_relief_hard_reject_enabled);
+  EXPECT_DOUBLE_EQ(defaults.local_relief_threshold_m, 0.10);
+  EXPECT_DOUBLE_EQ(defaults.local_relief_first_window_radius_m, 0.10);
+  EXPECT_DOUBLE_EQ(defaults.local_relief_second_window_radius_m, 0.10);
+  EXPECT_DOUBLE_EQ(defaults.local_relief_lower_quantile, 0.10);
+  EXPECT_DOUBLE_EQ(defaults.local_relief_upper_quantile, 0.90);
+  EXPECT_DOUBLE_EQ(defaults.local_relief_min_observed_ratio, 0.70);
+  EXPECT_EQ(defaults.local_relief_critical_cell_count, 3U);
+}
+
+TEST(StepEvaluator, RejectsInvalidLocalReliefParameters)
+{
+  const auto snapshot = planner::HeightmapSnapshot::fromPoints(
+    grid([](int, int) {return 0.0;}), 0.05, 0.01, 10000U);
+  const auto rejected = [&snapshot](planner::StepEvaluatorParameters p) {
+      EXPECT_THROW(planner::StepEvaluator(snapshot, p), std::invalid_argument);
+    };
+  auto p = parameters();
+  p.local_relief_threshold_m = 0.0; rejected(p);
+  p = parameters(); p.local_relief_first_window_radius_m = 0.0; rejected(p);
+  p = parameters(); p.local_relief_second_window_radius_m = -0.01; rejected(p);
+  p = parameters(); p.local_relief_lower_quantile = -0.01; rejected(p);
+  p = parameters(); p.local_relief_upper_quantile = 1.01; rejected(p);
+  p = parameters(); p.local_relief_lower_quantile = 0.90;
+  p.local_relief_upper_quantile = 0.90; rejected(p);
+  p = parameters(); p.local_relief_min_observed_ratio = 0.0; rejected(p);
+  p = parameters(); p.local_relief_critical_cell_count = 0U; rejected(p);
+  p = parameters(); p.local_relief_threshold_m =
+    std::numeric_limits<double>::quiet_NaN(); rejected(p);
 }
 
 TEST(StepEvaluator, FlatEdgeUsesMetricLengthOnly)
@@ -135,6 +165,149 @@ TEST(StepEvaluator, SobelKeepsSharpFiveCentimeterStepCrossableAtTenCentimeterThr
   ASSERT_TRUE(edge.valid);
   EXPECT_FALSE(edge.sobel_hard_rejection);
   EXPECT_NEAR(edge.max_sobel_equivalent_step_height_m, 0.05, 1e-12);
+}
+
+TEST(StepEvaluator, LocalReliefRejectsSmearedFifteenCentimeterStepMissedByAdjacentAndSobel)
+{
+  const auto smeared = planner::HeightmapSnapshot::fromPoints(
+    grid([](int x, int y) {
+      const int abs_y = std::abs(y);
+      const int shifted_boundary = abs_y == 0 || abs_y == 3 ? 0 : (abs_y <= 2 ? -2 : 1);
+      const int phase = x - shifted_boundary;
+      if (phase <= -3) {return 0.0;}
+      if (phase >= 2) {return 0.15;}
+      return 0.03 * static_cast<double>(phase + 3);
+    }), 0.05, 0.01, 10000U);
+
+  auto baseline = parameters();
+  baseline.max_crossable_height_jump_m = 0.10;
+  baseline.sobel_hard_reject_enabled = true;
+  baseline.sobel_equivalent_step_height_m = 0.10;
+  const auto baseline_edge = planner::StepEvaluator(smeared, baseline).evaluateEdge(
+    {-0.40, 0.0}, {0.40, 0.0});
+  ASSERT_TRUE(baseline_edge.valid);
+  EXPECT_LT(baseline_edge.max_height_jump_m, 0.10);
+  EXPECT_LT(baseline_edge.max_sobel_equivalent_step_height_m, 0.10);
+
+  auto relief = baseline;
+  relief.local_relief_hard_reject_enabled = true;
+  const auto relief_edge = planner::StepEvaluator(smeared, relief).evaluateEdge(
+    {-0.40, 0.0}, {0.40, 0.0});
+  EXPECT_FALSE(relief_edge.valid);
+  EXPECT_EQ(relief_edge.reason, planner::StepInvalidReason::kStepLimit);
+  EXPECT_TRUE(relief_edge.local_relief_hard_rejection);
+  EXPECT_GT(relief_edge.max_supported_local_relief_m, 0.10);
+  EXPECT_GE(relief_edge.local_relief_max_critical_count, 3U);
+}
+
+TEST(StepEvaluator, LocalReliefKeepsSharpFiveCentimeterStepAndFlatTerrainValid)
+{
+  auto p = parameters();
+  p.max_crossable_height_jump_m = 0.10;
+  p.local_relief_hard_reject_enabled = true;
+  const auto step = planner::HeightmapSnapshot::fromPoints(
+    grid([](int x, int) {return x >= 0 ? 0.05 : 0.0;}), 0.05, 0.01, 10000U);
+  const auto step_edge = planner::StepEvaluator(step, p).evaluateEdge(
+    {-0.40, 0.0}, {0.40, 0.0});
+  ASSERT_TRUE(step_edge.valid);
+  EXPECT_LE(step_edge.max_local_relief_m, 0.05 + 1e-12);
+  EXPECT_FALSE(step_edge.local_relief_hard_rejection);
+
+  const auto flat = planner::HeightmapSnapshot::fromPoints(
+    grid([](int, int) {return 0.0;}), 0.05, 0.01, 10000U);
+  const auto flat_edge = planner::StepEvaluator(flat, p).evaluateEdge(
+    {-0.40, 0.0}, {0.40, 0.0});
+  ASSERT_TRUE(flat_edge.valid);
+  EXPECT_DOUBLE_EQ(flat_edge.max_local_relief_m, 0.0);
+  EXPECT_DOUBLE_EQ(flat_edge.max_supported_local_relief_m, 0.0);
+  EXPECT_FALSE(flat_edge.local_relief_hard_rejection);
+}
+
+TEST(StepEvaluator, LocalReliefQuantilesIgnoreOneIsolatedOutlier)
+{
+  const auto outlier = planner::HeightmapSnapshot::fromPoints(
+    grid([](int x, int y) {return x == 0 && y == 1 ? 0.15 : 0.0;}),
+    0.05, 0.01, 10000U);
+  auto p = parameters();
+  p.max_crossable_height_jump_m = 0.20;
+  p.local_relief_hard_reject_enabled = true;
+  const auto edge = planner::StepEvaluator(outlier, p).evaluateEdge(
+    {-0.40, 0.0}, {0.40, 0.0});
+  ASSERT_TRUE(edge.valid);
+  EXPECT_FALSE(edge.local_relief_hard_rejection);
+  EXPECT_LE(edge.max_supported_local_relief_m, 0.10);
+}
+
+TEST(StepEvaluator, LocalReliefCreatesSpatiallySupportedExtendedBoundary)
+{
+  const auto boundary = planner::HeightmapSnapshot::fromPoints(
+    grid([](int x, int y) {
+      const int abs_y = std::abs(y);
+      const int shifted_boundary = abs_y == 0 || abs_y == 3 ? 0 : (abs_y <= 2 ? -2 : 1);
+      const int phase = x - shifted_boundary;
+      if (phase <= -3) {return 0.0;}
+      if (phase >= 2) {return 0.15;}
+      return 0.03 * static_cast<double>(phase + 3);
+    }), 0.05, 0.01, 10000U);
+  auto p = parameters();
+  p.max_crossable_height_jump_m = 0.10;
+  p.local_relief_hard_reject_enabled = true;
+  for (const double y : {-0.10, 0.0, 0.10}) {
+    const auto edge = planner::StepEvaluator(boundary, p).evaluateEdge(
+      {-0.30, y}, {0.30, y});
+    EXPECT_FALSE(edge.valid);
+    EXPECT_TRUE(edge.local_relief_hard_rejection);
+    EXPECT_GT(edge.max_supported_local_relief_m, 0.10);
+  }
+}
+
+TEST(StepEvaluator, LocalReliefObservedRatioControlsMissingNeighborhoods)
+{
+  auto p = parameters();
+  p.hard_clearance_radius_m = 0.0;
+  p.local_relief_hard_reject_enabled = true;
+  p.local_relief_second_window_radius_m = 0.0;
+
+  const auto case_a = planner::HeightmapSnapshot::fromPoints(
+    grid(
+      [](int x, int) {return x > 0 ? 0.05 : 0.0;},
+      [](int x, int y) {
+        return !((x == -2 && y == 0) || (x == 2 && y == 0) || (x == 0 && y == 2));
+      }), 0.05, 0.01, 10000U);
+  const auto valid = planner::StepEvaluator(case_a, p).evaluateEdge({0.0, 0.0}, {0.0, 0.0});
+  ASSERT_TRUE(valid.valid);
+  EXPECT_EQ(valid.local_relief_valid_cell_count, 1U);
+  EXPECT_EQ(valid.local_relief_missing_cell_count, 0U);
+
+  const auto case_b = planner::HeightmapSnapshot::fromPoints(
+    grid(
+      [](int x, int) {return x > 0 ? 0.05 : 0.0;},
+      [](int x, int y) {
+        return !((x == -2 && y == 0) || (x == 2 && y == 0) ||
+          (x == 0 && y == 2) || (x == 0 && y == -2));
+      }), 0.05, 0.01, 10000U);
+  planner::StepEvaluator evaluator(case_b, p);
+  const auto missing = evaluator.evaluateEdge({0.0, 0.0}, {0.0, 0.0});
+  ASSERT_TRUE(missing.valid);
+  EXPECT_EQ(missing.local_relief_valid_cell_count, 0U);
+  EXPECT_EQ(missing.local_relief_missing_cell_count, 1U);
+  EXPECT_GT(evaluator.instrumentation().local_relief_missing_neighborhoods, 0U);
+}
+
+TEST(StepEvaluator, LocalReliefCachesBothWindowPassesPerRequest)
+{
+  const auto snapshot = planner::HeightmapSnapshot::fromPoints(
+    grid([](int x, int) {return 0.01 * static_cast<double>(x);}),
+    0.05, 0.01, 10000U);
+  planner::StepEvaluator evaluator(snapshot, parameters());
+  ASSERT_TRUE(evaluator.evaluateEdge({-0.40, 0.0}, {0.40, 0.0}).valid);
+  const auto first = evaluator.instrumentation();
+  ASSERT_TRUE(evaluator.evaluateEdge({-0.40, 0.0}, {0.40, 0.0}).valid);
+  const auto second = evaluator.instrumentation();
+  EXPECT_GT(first.local_relief_cache_hits, 0U);
+  EXPECT_EQ(second.local_relief_cache_hits, first.local_relief_cache_hits);
+  EXPECT_GT(second.supported_relief_queries, first.supported_relief_queries);
+  EXPECT_EQ(second.local_relief_queries, first.local_relief_queries);
 }
 
 TEST(StepEvaluator, CostIsSymmetricAndSegmentationInvariant)

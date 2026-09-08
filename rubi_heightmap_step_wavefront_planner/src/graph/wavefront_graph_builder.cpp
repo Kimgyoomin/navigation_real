@@ -36,6 +36,7 @@ void recordStepRejection(
   result.adjacent_step_rejects += adjacent ? 1U : 0U;
   result.sobel_step_rejects += sobel ? 1U : 0U;
   result.both_step_rejects += adjacent && sobel ? 1U : 0U;
+  result.local_relief_step_rejects += edge.local_relief_hard_rejection ? 1U : 0U;
 }
 }  // namespace
 

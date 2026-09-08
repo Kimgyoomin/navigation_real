@@ -45,6 +45,7 @@ PlanResult StepWavefrontPlanner::plan(
   result.statistics.adjacent_step_rejects = build.adjacent_step_rejects;
   result.statistics.sobel_step_rejects = build.sobel_step_rejects;
   result.statistics.both_step_rejects = build.both_step_rejects;
+  result.statistics.local_relief_step_rejects = build.local_relief_step_rejects;
   result.statistics.node_evaluation_calls = build.node_evaluation_calls;
   result.statistics.edge_evaluation_calls = build.edge_evaluation_calls;
   result.statistics.trg_collision_rejects = build.trg_collision_rejects;
@@ -84,6 +85,12 @@ PlanResult StepWavefrontPlanner::plan(
           result.path_metrics.max_sobel_gradient = std::max(
             result.path_metrics.max_sobel_gradient,
             edge.evaluation.max_sobel_gradient);
+          result.path_metrics.max_local_relief_m = std::max(
+            result.path_metrics.max_local_relief_m,
+            edge.evaluation.max_local_relief_m);
+          result.path_metrics.max_supported_local_relief_m = std::max(
+            result.path_metrics.max_supported_local_relief_m,
+            edge.evaluation.max_supported_local_relief_m);
           result.path_metrics.height_score_m += edge.evaluation.height_jump_score_m;
           result.path_metrics.clearance_score_m += edge.evaluation.clearance_score_m;
           result.path_metrics.inflation_score_m += edge.evaluation.inflation_score_m;
@@ -107,6 +114,11 @@ PlanResult StepWavefrontPlanner::plan(
   result.statistics.edge_samples_total = instrumentation.edge_samples_total;
   result.statistics.height_evidence_queries = instrumentation.height_evidence_queries;
   result.statistics.costmap_queries = instrumentation.costmap_queries;
+  result.statistics.local_relief_queries = instrumentation.local_relief_queries;
+  result.statistics.local_relief_cache_hits = instrumentation.local_relief_cache_hits;
+  result.statistics.local_relief_missing_neighborhoods =
+    instrumentation.local_relief_missing_neighborhoods;
+  result.statistics.supported_relief_queries = instrumentation.supported_relief_queries;
   result.path_finalize_time_ms = std::chrono::duration<double, std::milli>(
     std::chrono::steady_clock::now() - finalize_start).count();
   result.core_total_time_ms = std::chrono::duration<double, std::milli>(

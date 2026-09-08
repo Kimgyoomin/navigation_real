@@ -66,6 +66,14 @@ struct StepEvaluatorParameters
   double sobel_equivalent_step_height_m{0.10};
   double sobel_cost_weight{0.0};
   double sobel_cost_exponent{2.0};
+  bool local_relief_hard_reject_enabled{false};
+  double local_relief_threshold_m{0.10};
+  double local_relief_first_window_radius_m{0.10};
+  double local_relief_second_window_radius_m{0.10};
+  double local_relief_lower_quantile{0.10};
+  double local_relief_upper_quantile{0.90};
+  double local_relief_min_observed_ratio{0.70};
+  std::size_t local_relief_critical_cell_count{3U};
 };
 
 struct NodeEvaluation
@@ -98,6 +106,12 @@ struct EdgeEvaluation
   std::size_t sobel_missing_cell_count{0U};
   double sobel_gradient_score_m{0.0};
   bool sobel_hard_rejection{false};
+  double max_local_relief_m{0.0};
+  double max_supported_local_relief_m{0.0};
+  std::size_t local_relief_valid_cell_count{0U};
+  std::size_t local_relief_missing_cell_count{0U};
+  std::size_t local_relief_max_critical_count{0U};
+  bool local_relief_hard_rejection{false};
   double minimum_clearance_m{0.0};
   double clearance_score_m{0.0};
   double inflation_score_m{0.0};
@@ -113,6 +127,10 @@ struct EvaluationInstrumentation
   std::size_t edge_samples_total{0U};
   std::size_t sobel_queries{0U};
   std::size_t sobel_missing_neighborhoods{0U};
+  std::size_t local_relief_queries{0U};
+  std::size_t local_relief_cache_hits{0U};
+  std::size_t local_relief_missing_neighborhoods{0U};
+  std::size_t supported_relief_queries{0U};
 };
 
 class StepEvaluator
@@ -136,12 +154,32 @@ public:
   std::vector<GridCell> supercover(Point2D from, Point2D to) const;
 
 private:
+  struct LocalReliefResult
+  {
+    bool valid{false};
+    double raw_relief_m{0.0};
+    std::size_t observed_cell_count{0U};
+    std::size_t required_cell_count{0U};
+    double observed_ratio{0.0};
+  };
+
+  struct SupportedLocalReliefResult
+  {
+    bool valid{false};
+    double max_raw_relief_m{0.0};
+    double supported_relief_m{0.0};
+    std::size_t critical_count{0U};
+  };
+
   NodeEvaluation evaluateClearance(GridCell center) const;
   double nearestHazardDistance(GridCell center) const;
   NodeEvaluation evaluateHybridNode(Point2D point) const;
   EdgeEvaluation evaluateHybridEdge(Point2D from, Point2D to) const;
   std::optional<double> sobelGradientMagnitude(GridCell center) const;
   void accumulateSobelEvidence(GridCell cell, EdgeEvaluation & result) const;
+  LocalReliefResult localRelief(GridCell center) const;
+  SupportedLocalReliefResult supportedLocalRelief(GridCell center) const;
+  void accumulateLocalReliefEvidence(GridCell cell, EdgeEvaluation & result) const;
 
   const HeightmapSnapshot & snapshot_;
   const CostmapSnapshot * costmap_{nullptr};
@@ -149,6 +187,9 @@ private:
   StepEvaluatorParameters parameters_;
   mutable std::unordered_map<std::size_t, double> clearance_cache_;
   mutable std::unordered_map<std::size_t, double> sobel_gradient_cache_;
+  mutable std::unordered_map<std::size_t, LocalReliefResult> local_relief_cache_;
+  mutable std::unordered_map<std::size_t, SupportedLocalReliefResult>
+    supported_local_relief_cache_;
   mutable EvaluationInstrumentation instrumentation_;
 };
 
