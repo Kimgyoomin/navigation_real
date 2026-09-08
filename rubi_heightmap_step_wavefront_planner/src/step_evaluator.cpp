@@ -53,7 +53,11 @@ StepEvaluator::StepEvaluator(
     !std::isfinite(parameters_.preferred_clearance_radius_m) ||
     parameters_.preferred_clearance_radius_m < parameters_.hard_clearance_radius_m ||
     !std::isfinite(parameters_.clearance_cost_weight) || parameters_.clearance_cost_weight < 0.0 ||
-    !std::isfinite(parameters_.clearance_cost_exponent) || parameters_.clearance_cost_exponent < 1.0)
+    !std::isfinite(parameters_.clearance_cost_exponent) || parameters_.clearance_cost_exponent < 1.0 ||
+    !std::isfinite(parameters_.sobel_equivalent_step_height_m) ||
+    parameters_.sobel_equivalent_step_height_m <= 0.0 ||
+    !std::isfinite(parameters_.sobel_cost_weight) || parameters_.sobel_cost_weight < 0.0 ||
+    !std::isfinite(parameters_.sobel_cost_exponent) || parameters_.sobel_cost_exponent < 1.0)
   {
     throw std::invalid_argument("invalid StepEvaluator parameters");
   }
@@ -89,6 +93,72 @@ StepEvaluator::StepEvaluator(
   mode_ = StepEvaluationMode::kCostmapHeightHybrid;
 }
 
+std::optional<double> StepEvaluator::sobelGradientMagnitude(const GridCell center) const
+{
+  const auto center_index = snapshot_.index(center);
+  if (!center_index) {return std::nullopt;}
+  const auto cached = sobel_gradient_cache_.find(*center_index);
+  if (cached != sobel_gradient_cache_.end()) {
+    return std::isfinite(cached->second) ? std::optional<double>(cached->second) : std::nullopt;
+  }
+
+  ++instrumentation_.sobel_queries;
+  double z[3][3]{};
+  for (int row = -1; row <= 1; ++row) {
+    for (int col = -1; col <= 1; ++col) {
+      const auto value = snapshot_.elevation({center.x + col, center.y + row});
+      if (!value) {
+        ++instrumentation_.sobel_missing_neighborhoods;
+        sobel_gradient_cache_[*center_index] = std::numeric_limits<double>::quiet_NaN();
+        return std::nullopt;
+      }
+      z[row + 1][col + 1] = *value;
+    }
+  }
+
+  const double raw_gx =
+    -z[0][0] + z[0][2] - 2.0 * z[1][0] + 2.0 * z[1][2] - z[2][0] + z[2][2];
+  const double raw_gy =
+    -z[0][0] - 2.0 * z[0][1] - z[0][2] + z[2][0] + 2.0 * z[2][1] + z[2][2];
+  const double denominator = 8.0 * snapshot_.resolution();
+  const double gradient = std::hypot(raw_gx / denominator, raw_gy / denominator);
+  sobel_gradient_cache_[*center_index] = gradient;
+  return gradient;
+}
+
+void StepEvaluator::accumulateSobelEvidence(
+  const GridCell cell, EdgeEvaluation & result) const
+{
+  const auto gradient = sobelGradientMagnitude(cell);
+  if (!gradient) {
+    ++result.sobel_missing_cell_count;
+    return;
+  }
+  ++result.sobel_valid_cell_count;
+  result.max_sobel_gradient = std::max(result.max_sobel_gradient, *gradient);
+
+  // A standard 3x3 Sobel response on an ideal straight step H is H/(2r)
+  // after normalization by 8r. Convert back to an intuitive local two-cell
+  // equivalent height for logging and threshold configuration.
+  const double equivalent_step_height = 2.0 * snapshot_.resolution() * (*gradient);
+  result.max_sobel_equivalent_step_height_m = std::max(
+    result.max_sobel_equivalent_step_height_m, equivalent_step_height);
+
+  if (equivalent_step_height > parameters_.sobel_equivalent_step_height_m) {
+    result.sobel_hard_rejection = true;
+  }
+  if (equivalent_step_height > parameters_.height_noise_floor_m &&
+    parameters_.sobel_equivalent_step_height_m > parameters_.height_noise_floor_m)
+  {
+    const double normalized = std::clamp(
+      (equivalent_step_height - parameters_.height_noise_floor_m) /
+      (parameters_.sobel_equivalent_step_height_m - parameters_.height_noise_floor_m),
+      0.0, 1.0);
+    result.sobel_gradient_score_m += parameters_.sobel_equivalent_step_height_m *
+      std::pow(normalized, parameters_.sobel_cost_exponent);
+  }
+}
+
 double StepEvaluator::nearestHazardDistance(const GridCell center) const
 {
   const auto index = snapshot_.index(center);
@@ -116,8 +186,6 @@ double StepEvaluator::nearestHazardDistance(const GridCell center) const
         if (neighbor_elevation &&
           std::abs(*neighbor_elevation - *elevation) > parameters_.max_crossable_height_jump_m)
         {
-          // Match the existing hard-clearance contract, which rejects when the
-          // far cell of an over-limit adjacent pair enters the clearance disk.
           const Point2D hazard_point = snapshot_.cellCenter(neighbor);
           minimum_m = std::min(minimum_m, std::hypot(
             hazard_point.x - center_point.x, hazard_point.y - center_point.y));
@@ -324,9 +392,6 @@ EdgeEvaluation StepEvaluator::evaluateEdge(const Point2D from, const Point2D to)
     }
   }
 
-  // Supercover-only cells are hard support checks. The ordered cost sequence
-  // remains the sampled centerline so touching a grid corner cannot introduce
-  // an artificial side-cell-to-side-cell height event.
   for (const auto & cell : supercover(from, to)) {
     if (!snapshot_.inBounds(cell)) {
       result.reason = StepInvalidReason::kOutOfBounds;
@@ -354,8 +419,10 @@ EdgeEvaluation StepEvaluator::evaluateEdge(const Point2D from, const Point2D to)
         sample_spacing_m;
     }
   }
+
   std::optional<double> previous_z;
   for (const auto & cell : centerline_cells) {
+    accumulateSobelEvidence(cell, result);
     const auto z = snapshot_.elevation(cell);
     if (!z) {
       result.reason = snapshot_.inBounds(cell) ?
@@ -381,9 +448,14 @@ EdgeEvaluation StepEvaluator::evaluateEdge(const Point2D from, const Point2D to)
     }
     previous_z = z;
   }
+  if (parameters_.sobel_hard_reject_enabled && result.sobel_hard_rejection) {
+    result.reason = StepInvalidReason::kStepLimit;
+    return result;
+  }
   result.cost = parameters_.distance_weight * result.length_xy_m +
     parameters_.height_cost_weight * result.height_jump_score_m +
-    parameters_.clearance_cost_weight * result.clearance_score_m;
+    parameters_.clearance_cost_weight * result.clearance_score_m +
+    parameters_.sobel_cost_weight * result.sobel_gradient_score_m;
   result.valid = std::isfinite(result.cost);
   result.reason = result.valid ? StepInvalidReason::kNone : StepInvalidReason::kInvalidInput;
   return result;
@@ -454,7 +526,9 @@ EdgeEvaluation StepEvaluator::evaluateHybridEdge(const Point2D from, const Point
     height_profile.push_back(*height);
   }
   result.unique_cell_count = height_profile.size();
-  for (std::size_t index = 1U; index < height_profile.size(); ++index) {
+  for (std::size_t index = 0U; index < height_profile.size(); ++index) {
+    accumulateSobelEvidence(height_profile[index].source_cell, result);
+    if (index == 0U) {continue;}
     const double jump = std::abs(
       height_profile[index].elevation_m - height_profile[index - 1U].elevation_m);
     result.max_height_jump_m = std::max(result.max_height_jump_m, jump);
@@ -472,9 +546,14 @@ EdgeEvaluation StepEvaluator::evaluateHybridEdge(const Point2D from, const Point
         std::pow(normalized, parameters_.height_cost_exponent);
     }
   }
+  if (parameters_.sobel_hard_reject_enabled && result.sobel_hard_rejection) {
+    result.reason = StepInvalidReason::kStepLimit;
+    return result;
+  }
   result.cost = parameters_.distance_weight * result.length_xy_m +
     parameters_.inflation_cost_weight * result.inflation_score_m +
-    parameters_.height_cost_weight * result.height_jump_score_m;
+    parameters_.height_cost_weight * result.height_jump_score_m +
+    parameters_.sobel_cost_weight * result.sobel_gradient_score_m;
   result.valid = std::isfinite(result.cost);
   result.reason = result.valid ? StepInvalidReason::kNone : StepInvalidReason::kInvalidInput;
   return result;
