@@ -61,8 +61,10 @@ struct StepEvaluatorParameters
   // by 8*resolution. For an ideal straight step on a uniform grid,
   // 2*resolution*|grad Z| equals the physical step height. On smeared maps this
   // is only a local two-cell height-change heuristic, not a reconstructed height.
-  bool sobel_hard_reject_enabled{false};
-  double sobel_equivalent_step_height_m{0.08};
+  // This feature branch intentionally enables the 10 cm hard threshold so the
+  // original refactor branch is the baseline and this branch is the A/B variant.
+  bool sobel_hard_reject_enabled{true};
+  double sobel_equivalent_step_height_m{0.10};
   double sobel_cost_weight{0.0};
   double sobel_cost_exponent{2.0};
 };
@@ -146,10 +148,7 @@ private:
   const CostmapSnapshot * costmap_{nullptr};
   StepEvaluationMode mode_{StepEvaluationMode::kHeightOnlyStrict};
   StepEvaluatorParameters parameters_;
-  // One evaluator is request-local. This mutable memoization is therefore not
-  // shared across planning threads or map generations.
   mutable std::unordered_map<std::size_t, double> clearance_cache_;
-  // NaN is cached for cells whose full 3x3 Sobel neighborhood is unavailable.
   mutable std::unordered_map<std::size_t, double> sobel_gradient_cache_;
   mutable EvaluationInstrumentation instrumentation_;
 };
