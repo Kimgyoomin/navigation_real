@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -55,6 +56,15 @@ struct StepEvaluatorParameters
   double node_max_height_outlier_ratio{0.30};
   double edge_height_query_radius_m{0.075};
   double edge_max_height_evidence_gap_m{0.10};
+
+  // Experimental FastDEM-robust edge evidence. The Sobel response is normalized
+  // by 8*resolution. For an ideal straight step on a uniform grid,
+  // 2*resolution*|grad Z| equals the physical step height. On smeared maps this
+  // is only a local two-cell height-change heuristic, not a reconstructed height.
+  bool sobel_hard_reject_enabled{false};
+  double sobel_equivalent_step_height_m{0.08};
+  double sobel_cost_weight{0.0};
+  double sobel_cost_exponent{2.0};
 };
 
 struct NodeEvaluation
@@ -81,6 +91,12 @@ struct EdgeEvaluation
   double observed_support_ratio{0.0};
   std::size_t height_jump_event_count{0U};
   double height_jump_score_m{0.0};
+  double max_sobel_gradient{0.0};
+  double max_sobel_equivalent_step_height_m{0.0};
+  std::size_t sobel_valid_cell_count{0U};
+  std::size_t sobel_missing_cell_count{0U};
+  double sobel_gradient_score_m{0.0};
+  bool sobel_hard_rejection{false};
   double minimum_clearance_m{0.0};
   double clearance_score_m{0.0};
   double inflation_score_m{0.0};
@@ -94,6 +110,8 @@ struct EvaluationInstrumentation
   std::size_t costmap_queries{0U};
   std::size_t height_evidence_queries{0U};
   std::size_t edge_samples_total{0U};
+  std::size_t sobel_queries{0U};
+  std::size_t sobel_missing_neighborhoods{0U};
 };
 
 class StepEvaluator
@@ -121,6 +139,8 @@ private:
   double nearestHazardDistance(GridCell center) const;
   NodeEvaluation evaluateHybridNode(Point2D point) const;
   EdgeEvaluation evaluateHybridEdge(Point2D from, Point2D to) const;
+  std::optional<double> sobelGradientMagnitude(GridCell center) const;
+  void accumulateSobelEvidence(GridCell cell, EdgeEvaluation & result) const;
 
   const HeightmapSnapshot & snapshot_;
   const CostmapSnapshot * costmap_{nullptr};
@@ -129,6 +149,8 @@ private:
   // One evaluator is request-local. This mutable memoization is therefore not
   // shared across planning threads or map generations.
   mutable std::unordered_map<std::size_t, double> clearance_cache_;
+  // NaN is cached for cells whose full 3x3 Sobel neighborhood is unavailable.
+  mutable std::unordered_map<std::size_t, double> sobel_gradient_cache_;
   mutable EvaluationInstrumentation instrumentation_;
 };
 
