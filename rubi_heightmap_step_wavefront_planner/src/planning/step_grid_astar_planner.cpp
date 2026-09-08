@@ -20,6 +20,19 @@ bool hardBlocked(const CostmapSnapshot & costmap, const GridCell cell)
   const auto cost = costmap.cost(cell);
   return !cost || *cost >= 253U;
 }
+
+void recordStepRejection(
+  const EdgeEvaluation & edge, const double adjacent_threshold_m,
+  PlanningStatistics & statistics)
+{
+  if (edge.reason != StepInvalidReason::kStepLimit) {return;}
+  ++statistics.rejected_step_limit;
+  const bool adjacent = edge.max_height_jump_m > adjacent_threshold_m;
+  const bool sobel = edge.sobel_hard_rejection;
+  statistics.adjacent_step_rejects += adjacent ? 1U : 0U;
+  statistics.sobel_step_rejects += sobel ? 1U : 0U;
+  statistics.both_step_rejects += adjacent && sobel ? 1U : 0U;
+}
 }  // namespace
 
 StepGridAStarPlanner::StepGridAStarPlanner(const GridAStarParameters parameters)
@@ -161,6 +174,8 @@ PlanResult StepGridAStarPlanner::plan(
       const EdgeEvaluation edge = evaluator.evaluateEdge(
         costmap->cellCenter(current_cell), neighbor_point);
       if (!edge.valid) {
+        recordStepRejection(
+          edge, evaluator.parameters().max_crossable_height_jump_m, result.statistics);
         result.rejected.push_back({RejectionKind::kEdge, edge.reason,
           costmap->cellCenter(current_cell), neighbor_point});
         continue;
@@ -216,6 +231,11 @@ PlanResult StepGridAStarPlanner::plan(
     result.path_metrics.height_event_count += edge.height_jump_event_count;
     result.path_metrics.max_height_jump_m = std::max(
       result.path_metrics.max_height_jump_m, edge.max_height_jump_m);
+    result.path_metrics.max_sobel_equivalent_step_height_m = std::max(
+      result.path_metrics.max_sobel_equivalent_step_height_m,
+      edge.max_sobel_equivalent_step_height_m);
+    result.path_metrics.max_sobel_gradient = std::max(
+      result.path_metrics.max_sobel_gradient, edge.max_sobel_gradient);
     result.path_metrics.height_score_m += edge.height_jump_score_m;
     result.path_metrics.inflation_score_m += edge.inflation_score_m;
     result.path_metrics.maximum_raw_cost = std::max(

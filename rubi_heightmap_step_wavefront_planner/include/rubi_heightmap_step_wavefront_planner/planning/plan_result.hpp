@@ -18,6 +18,9 @@ struct PlanningStatistics
   std::size_t rejected_costmap{0U};
   std::size_t rejected_height_evidence{0U};
   std::size_t rejected_step_limit{0U};
+  std::size_t adjacent_step_rejects{0U};
+  std::size_t sobel_step_rejects{0U};
+  std::size_t both_step_rejects{0U};
   std::size_t rejected_isolated_node{0U};
   std::size_t expanded_states{0U};
   std::size_t neighbor_candidates{0U};
@@ -47,6 +50,8 @@ struct PathMetrics
   double length_xy_m{0.0};
   std::size_t height_event_count{0U};
   double max_height_jump_m{0.0};
+  double max_sobel_equivalent_step_height_m{0.0};
+  double max_sobel_gradient{0.0};
   double height_score_m{0.0};
   double minimum_clearance_m{0.0};
   double clearance_score_m{0.0};

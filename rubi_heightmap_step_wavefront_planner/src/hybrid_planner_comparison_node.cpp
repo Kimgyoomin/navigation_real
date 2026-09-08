@@ -132,6 +132,17 @@ public:
     RCLCPP_INFO(
       get_logger(), "Hybrid planner ready; mode=%s goal_topic='%s' planner_cmd_vel_publishers=0",
       run_mode_text_.c_str(), comparison_goal_topic_.c_str());
+    RCLCPP_INFO(
+      get_logger(),
+      "\n[STEP EVALUATION CONFIG]\n"
+      "planner_run_mode=%s\nadjacent_threshold_m=%.3f\n"
+      "sobel_enabled=%s\nsobel_threshold_m=%.3f\n"
+      "sobel_cost_weight=%.3f\nsobel_cost_exponent=%.3f",
+      run_mode_text_.c_str(), evaluator_parameters_.max_crossable_height_jump_m,
+      evaluator_parameters_.sobel_hard_reject_enabled ? "true" : "false",
+      evaluator_parameters_.sobel_equivalent_step_height_m,
+      evaluator_parameters_.sobel_cost_weight,
+      evaluator_parameters_.sobel_cost_exponent);
   }
 
 private:
@@ -216,6 +227,16 @@ private:
       "evaluation.inflation_cost_weight", evaluator_parameters_.inflation_cost_weight);
     evaluator_parameters_.inflation_cost_exponent = declare_parameter(
       "evaluation.inflation_cost_exponent", evaluator_parameters_.inflation_cost_exponent);
+    evaluator_parameters_.sobel_hard_reject_enabled = declare_parameter(
+      "evaluation.sobel_hard_reject_enabled",
+      evaluator_parameters_.sobel_hard_reject_enabled);
+    evaluator_parameters_.sobel_equivalent_step_height_m = declare_parameter(
+      "evaluation.sobel_equivalent_step_height_m",
+      evaluator_parameters_.sobel_equivalent_step_height_m);
+    evaluator_parameters_.sobel_cost_weight = declare_parameter(
+      "evaluation.sobel_cost_weight", evaluator_parameters_.sobel_cost_weight);
+    evaluator_parameters_.sobel_cost_exponent = declare_parameter(
+      "evaluation.sobel_cost_exponent", evaluator_parameters_.sobel_cost_exponent);
     grid_parameters_.allow_diagonal = declare_parameter("grid_allow_diagonal", true);
     grid_parameters_.max_expanded_states = positiveSize("grid_max_expanded_states", 500000);
     grid_parameters_.max_planning_time_ms = positiveSize("grid_max_planning_time_ms", 5000);
@@ -443,13 +464,20 @@ private:
       "inflation_cost=%.3f height_cost=%.3f expanded=%zu nodes=%zu edges=%zu "
       "time_ms=%.3f costmap_hard_blocked_samples=%zu "
       "costmap_max_raw_cost_on_selected_path=%u height_evidence_missing_samples=%zu "
-      "height_max_jump_m=%.3f",
+      "height_max_jump_m=%.3f max_sobel_equivalent_step_m=%.3f "
+      "max_sobel_gradient=%.3f adjacent_step_rejects=%zu sobel_step_rejects=%zu "
+      "both_step_rejects=%zu",
       planner_name, result.success ? "true" : "false", result.path_metrics.length_xy_m,
       result.path_metrics.total_cost, result.path_metrics.inflation_cost,
       result.path_metrics.height_cost, result.expansions, result.nodes.size(),
       result.edges.size(), result.core_total_time_ms, hard_blocked,
       static_cast<unsigned int>(result.path_metrics.maximum_raw_cost), missing_height,
-      result.path_metrics.max_height_jump_m);
+      result.path_metrics.max_height_jump_m,
+      result.path_metrics.max_sobel_equivalent_step_height_m,
+      result.path_metrics.max_sobel_gradient,
+      result.statistics.adjacent_step_rejects,
+      result.statistics.sobel_step_rejects,
+      result.statistics.both_step_rejects);
     if (hard_blocked > 0U) {
       RCLCPP_WARN(
         get_logger(), "comparison input is confounded by Costmap obstacle marking "
@@ -472,7 +500,10 @@ private:
         "path_length_m          : %.6f\ntotal_cost             : %.6f\n"
         "distance_cost          : %.6f\ninflation_cost         : %.6f\n"
         "height_cost            : %.6f\nmax_height_jump_m      : %.6f\n"
-        "height_jump_events     : %zu\nexpanded_cells         : %zu\n"
+        "max_sobel_equivalent_step_m: %.6f\nmax_sobel_gradient    : %.6f\n"
+        "height_jump_events     : %zu\nadjacent_step_rejects : %zu\n"
+        "sobel_step_rejects     : %zu\nboth_step_rejects     : %zu\n"
+        "expanded_cells         : %zu\n"
         "neighbor_candidates    : %zu\nastar_open_pushes      : %zu\n"
         "node_eval_calls        : %zu\nedge_eval_calls        : %zu\n"
         "edge_samples_total     : %zu\nheight_evidence_queries: %zu\n"
@@ -484,7 +515,12 @@ private:
         static_cast<unsigned long>(heightmap_generation), result.path_metrics.length_xy_m,
         result.path_metrics.total_cost, distance_cost, result.path_metrics.inflation_cost,
         result.path_metrics.height_cost, result.path_metrics.max_height_jump_m,
-        result.path_metrics.height_event_count, result.expansions,
+        result.path_metrics.max_sobel_equivalent_step_height_m,
+        result.path_metrics.max_sobel_gradient,
+        result.path_metrics.height_event_count,
+        result.statistics.adjacent_step_rejects,
+        result.statistics.sobel_step_rejects,
+        result.statistics.both_step_rejects, result.expansions,
         result.statistics.neighbor_candidates, result.statistics.astar_open_pushes,
         result.statistics.node_evaluation_calls, result.statistics.edge_evaluation_calls,
         result.statistics.edge_samples_total, result.statistics.height_evidence_queries,
@@ -501,12 +537,14 @@ private:
       "path_length_m          : %.6f\ntotal_cost             : %.6f\n"
       "distance_cost          : %.6f\ninflation_cost         : %.6f\n"
       "height_cost            : %.6f\nmax_height_jump_m      : %.6f\n"
+      "max_sobel_equivalent_step_m: %.6f\nmax_sobel_gradient    : %.6f\n"
       "height_jump_events     : %zu\nexpanded_reference_nodes: %zu\n"
       "sampling_trials        : %zu\n"
       "candidate_generated    : %zu\n"
       "candidate_accepts      : %zu\ncandidate_rejects      : %zu\n"
       "merge_queries          : %zu\nneighbor_radius_queries: %zu\n"
-      "rejected_edges         : %zu\n"
+      "rejected_edges         : %zu\nadjacent_step_rejects : %zu\n"
+      "sobel_step_rejects     : %zu\nboth_step_rejects     : %zu\n"
       "trg_collision_rejects : %zu\ncostmap_rejects       : %zu\n"
       "existing_node_queries : %zu\nexisting_node_rewires : %zu\n"
       "new_nodes_created     : %zu\nisolated_nodes        : %zu\n"
@@ -531,12 +569,17 @@ private:
       static_cast<unsigned long>(heightmap_generation), result.path_metrics.length_xy_m,
       result.path_metrics.total_cost, distance_cost, result.path_metrics.inflation_cost,
       result.path_metrics.height_cost, result.path_metrics.max_height_jump_m,
+      result.path_metrics.max_sobel_equivalent_step_height_m,
+      result.path_metrics.max_sobel_gradient,
       result.path_metrics.height_event_count, result.expansions,
       result.statistics.sampling_trials,
       result.statistics.candidate_generated,
       result.statistics.candidate_valid, result.statistics.candidate_rejected,
       result.statistics.merge_queries, result.statistics.neighbor_radius_queries,
       result.statistics.rejected_edges,
+      result.statistics.adjacent_step_rejects,
+      result.statistics.sobel_step_rejects,
+      result.statistics.both_step_rejects,
       result.statistics.trg_collision_rejects, result.statistics.costmap_rejects,
       result.statistics.existing_node_queries, result.statistics.existing_node_rewires,
       result.statistics.new_nodes_created, result.statistics.isolated_nodes,

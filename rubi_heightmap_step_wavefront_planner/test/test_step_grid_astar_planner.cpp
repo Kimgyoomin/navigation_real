@@ -109,3 +109,45 @@ TEST(StepGridAStarPlanner, OverLimitBarrierRejectedAndTwentyRunsDeterministic)
     }
   }
 }
+
+TEST(StepGridAStarPlanner, ReportsSelectedSobelMetricAndSobelOnlyRejections)
+{
+  constexpr int width = 17;
+  constexpr int height = 3;
+  std::vector<planner::HeightPoint> points;
+  for (int y = -1; y <= height; ++y) {
+    for (int x = -1; x <= width; ++x) {
+      double elevation = 0.15;
+      if (x <= 6) {elevation = 0.0;}
+      else if (x == 7) {elevation = 0.03;}
+      else if (x == 8) {elevation = 0.09;}
+      points.push_back({0.025 + 0.05 * x, 0.025 + 0.05 * y, elevation});
+    }
+  }
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    points, 0.05, 0.001, 10000U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    width, height, 0.05, 0.0, 0.0,
+    std::vector<std::uint8_t>(width * height, 0U));
+  auto params = gridParams();
+  params.max_crossable_height_jump_m = 0.10;
+  params.edge_height_query_radius_m = 0.04;
+  params.edge_max_height_evidence_gap_m = 0.10;
+  params.sobel_hard_reject_enabled = false;
+  const auto baseline = planner::StepGridAStarPlanner({}).plan(
+    planner::StepEvaluator(heights, costs, params),
+    {0.025, 0.075}, {0.825, 0.075});
+  ASSERT_TRUE(baseline.success);
+  EXPECT_LT(baseline.path_metrics.max_height_jump_m, 0.10);
+  EXPECT_GT(baseline.path_metrics.max_sobel_equivalent_step_height_m, 0.10);
+  EXPECT_GT(baseline.path_metrics.max_sobel_gradient, 0.0);
+
+  params.sobel_hard_reject_enabled = true;
+  const auto sobel = planner::StepGridAStarPlanner({}).plan(
+    planner::StepEvaluator(heights, costs, params),
+    {0.025, 0.075}, {0.825, 0.075});
+  EXPECT_FALSE(sobel.success);
+  EXPECT_EQ(sobel.statistics.adjacent_step_rejects, 0U);
+  EXPECT_GT(sobel.statistics.sobel_step_rejects, 0U);
+  EXPECT_EQ(sobel.statistics.both_step_rejects, 0U);
+}

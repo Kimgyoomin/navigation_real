@@ -28,6 +28,15 @@ planner::StepEvaluatorParameters parameters(double clearance = 0.0)
   return value;
 }
 
+TEST(StepEvaluator, SobelHardRejectRequiresExplicitOptIn)
+{
+  const planner::StepEvaluatorParameters defaults;
+  EXPECT_FALSE(defaults.sobel_hard_reject_enabled);
+  EXPECT_DOUBLE_EQ(defaults.sobel_equivalent_step_height_m, 0.10);
+  EXPECT_DOUBLE_EQ(defaults.sobel_cost_weight, 0.0);
+  EXPECT_DOUBLE_EQ(defaults.sobel_cost_exponent, 2.0);
+}
+
 TEST(StepEvaluator, FlatEdgeUsesMetricLengthOnly)
 {
   const auto snapshot = planner::HeightmapSnapshot::fromPoints(
@@ -38,6 +47,9 @@ TEST(StepEvaluator, FlatEdgeUsesMetricLengthOnly)
   EXPECT_NEAR(edge.length_xy_m, 0.80, 1e-12);
   EXPECT_EQ(edge.height_jump_event_count, 0U);
   EXPECT_DOUBLE_EQ(edge.height_jump_score_m, 0.0);
+  EXPECT_DOUBLE_EQ(edge.max_sobel_gradient, 0.0);
+  EXPECT_DOUBLE_EQ(edge.max_sobel_equivalent_step_height_m, 0.0);
+  EXPECT_FALSE(edge.sobel_hard_rejection);
   EXPECT_NEAR(edge.cost, 0.80, 1e-12);
 }
 
@@ -78,6 +90,51 @@ TEST(StepEvaluator, ExactLimitIsCrossableAndOverLimitIsRejected)
     {-0.40, 0.0}, {0.40, 0.0});
   EXPECT_FALSE(over_edge.valid);
   EXPECT_EQ(over_edge.reason, planner::StepInvalidReason::kStepLimit);
+}
+
+TEST(StepEvaluator, SobelRejectsSmearedFifteenCentimeterStepMissedByAdjacentJump)
+{
+  const auto smeared = planner::HeightmapSnapshot::fromPoints(
+    grid([](int x, int) {
+      if (x <= -2) {return 0.0;}
+      if (x == -1) {return 0.03;}
+      if (x == 0) {return 0.09;}
+      return 0.15;
+    }), 0.05, 0.01, 10000U);
+
+  auto baseline = parameters();
+  baseline.max_crossable_height_jump_m = 0.10;
+  baseline.sobel_hard_reject_enabled = false;
+  const auto baseline_edge = planner::StepEvaluator(smeared, baseline).evaluateEdge(
+    {-0.40, 0.0}, {0.40, 0.0});
+  ASSERT_TRUE(baseline_edge.valid);
+  EXPECT_LT(baseline_edge.max_height_jump_m, 0.10);
+  EXPECT_GT(baseline_edge.max_sobel_equivalent_step_height_m, 0.10);
+
+  auto sobel = baseline;
+  sobel.sobel_hard_reject_enabled = true;
+  sobel.sobel_equivalent_step_height_m = 0.10;
+  const auto sobel_edge = planner::StepEvaluator(smeared, sobel).evaluateEdge(
+    {-0.40, 0.0}, {0.40, 0.0});
+  EXPECT_FALSE(sobel_edge.valid);
+  EXPECT_TRUE(sobel_edge.sobel_hard_rejection);
+  EXPECT_GT(sobel_edge.max_sobel_equivalent_step_height_m, 0.10);
+  EXPECT_EQ(sobel_edge.reason, planner::StepInvalidReason::kStepLimit);
+}
+
+TEST(StepEvaluator, SobelKeepsSharpFiveCentimeterStepCrossableAtTenCentimeterThreshold)
+{
+  const auto step = planner::HeightmapSnapshot::fromPoints(
+    grid([](int x, int) {return x >= 0 ? 0.05 : 0.0;}), 0.05, 0.01, 10000U);
+  auto p = parameters();
+  p.max_crossable_height_jump_m = 0.10;
+  p.sobel_hard_reject_enabled = true;
+  p.sobel_equivalent_step_height_m = 0.10;
+  const auto edge = planner::StepEvaluator(step, p).evaluateEdge(
+    {-0.40, 0.0}, {0.40, 0.0});
+  ASSERT_TRUE(edge.valid);
+  EXPECT_FALSE(edge.sobel_hard_rejection);
+  EXPECT_NEAR(edge.max_sobel_equivalent_step_height_m, 0.05, 1e-12);
 }
 
 TEST(StepEvaluator, CostIsSymmetricAndSegmentationInvariant)
