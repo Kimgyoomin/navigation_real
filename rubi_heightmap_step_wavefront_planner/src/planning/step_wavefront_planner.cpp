@@ -42,6 +42,9 @@ PlanResult StepWavefrontPlanner::plan(
   result.statistics.merge_queries = build.merge_queries;
   result.statistics.neighbor_radius_queries = build.neighbor_radius_queries;
   result.statistics.rejected_edges = build.rejected_edges;
+  result.statistics.adjacent_step_rejects = build.adjacent_step_rejects;
+  result.statistics.sobel_step_rejects = build.sobel_step_rejects;
+  result.statistics.both_step_rejects = build.both_step_rejects;
   result.statistics.node_evaluation_calls = build.node_evaluation_calls;
   result.statistics.edge_evaluation_calls = build.edge_evaluation_calls;
   result.statistics.trg_collision_rejects = build.trg_collision_rejects;
@@ -75,6 +78,12 @@ PlanResult StepWavefrontPlanner::plan(
           result.path_metrics.height_event_count += edge.evaluation.height_jump_event_count;
           result.path_metrics.max_height_jump_m = std::max(
             result.path_metrics.max_height_jump_m, edge.evaluation.max_height_jump_m);
+          result.path_metrics.max_sobel_equivalent_step_height_m = std::max(
+            result.path_metrics.max_sobel_equivalent_step_height_m,
+            edge.evaluation.max_sobel_equivalent_step_height_m);
+          result.path_metrics.max_sobel_gradient = std::max(
+            result.path_metrics.max_sobel_gradient,
+            edge.evaluation.max_sobel_gradient);
           result.path_metrics.height_score_m += edge.evaluation.height_jump_score_m;
           result.path_metrics.clearance_score_m += edge.evaluation.clearance_score_m;
           result.path_metrics.inflation_score_m += edge.evaluation.inflation_score_m;

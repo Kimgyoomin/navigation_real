@@ -103,12 +103,12 @@ def test_v3_original_trg_profile_contract():
         'sampling.policy': 'original_trg_random_ring',
         'sampling.trg_sample_num': 8,
         'sampling.trg_max_trial_samples': 1000,
-        'sampling.trg_height_threshold_m': 0.08,
+        'sampling.trg_height_threshold_m': 0.10,
         'sampling.trg_collision_threshold': 0.10,
         'sampling.trg_random_seed': 42,
         'sampling.trg_randomize_seed': False,
-        'sampling.trg_neighbor_connection_radius_m': 0.30,
-        'evaluation.max_crossable_height_jump_m': 0.08,
+        'sampling.trg_neighbor_connection_radius_m': 0.45,
+        'evaluation.max_crossable_height_jump_m': 0.10,
     }
     for name, value in expected.items():
         assert parameters[name] == value
@@ -123,17 +123,55 @@ def test_v3_original_trg_profile_contract():
         assert 'hybrid_grid_trg_comparison_v1.yaml' in text
 
 
+def test_sobel_ab_profiles_differ_only_by_explicit_hard_reject_switch():
+    config_dir = CONFIG.parent
+    adjacent = _parameters(
+        config_dir / 'hybrid_grid_trg_comparison_adjacent.yaml')
+    sobel = _parameters(config_dir / 'hybrid_grid_trg_comparison_sobel.yaml')
+
+    assert adjacent['evaluation.sobel_hard_reject_enabled'] is False
+    assert sobel['evaluation.sobel_hard_reject_enabled'] is True
+    for parameters in (adjacent, sobel):
+        assert parameters['evaluation.max_crossable_height_jump_m'] == 0.10
+        assert parameters['evaluation.sobel_equivalent_step_height_m'] == 0.10
+        assert parameters['evaluation.sobel_cost_weight'] == 0.0
+        assert parameters['evaluation.sobel_cost_exponent'] == 2.0
+        assert parameters['sampling.trg_height_threshold_m'] == 0.10
+        assert parameters['sampling.trg_collision_threshold'] == 0.10
+
+    adjacent_without_switch = dict(adjacent)
+    sobel_without_switch = dict(sobel)
+    adjacent_without_switch.pop('evaluation.sobel_hard_reject_enabled')
+    sobel_without_switch.pop('evaluation.sobel_hard_reject_enabled')
+    assert adjacent_without_switch == sobel_without_switch
+
+
+def test_navigation_and_comparison_launches_expose_ab_parameter_files():
+    root = CONFIG.parents[1]
+    for filename in (
+            'hybrid_grid_navigation.launch.py',
+            'hybrid_sampling_navigation.launch.py'):
+        text = (root / 'launch' / filename).read_text(encoding='utf-8')
+        assert "DeclareLaunchArgument('planner_params'" in text
+        assert 'parameters=[planner_params' in text
+    comparison = (
+        root / 'launch' / 'hybrid_grid_trg_comparison.launch.py'
+    ).read_text(encoding='utf-8')
+    assert "DeclareLaunchArgument('params_file'" in comparison
+    assert 'parameters=[params_file' in comparison
+
+
 def test_hybrid_navigation_launches_use_one_identical_controller_profile():
     root = CONFIG.parents[1]
     controller = _parameters(root / 'config' / 'hybrid_navigation_controller.yaml')
     expected = {
         'control_frequency_hz': 20.0,
-        'lookahead_distance_m': 0.35,
-        'nominal_linear_velocity_mps': 0.55,
+        'lookahead_distance_m': 0.60,
+        'nominal_linear_velocity_mps': 0.70,
         'min_tracking_velocity_mps': 0.25,
         'max_linear_velocity_mps': 0.70,
         'max_angular_velocity_rps': 1.50,
-        'curvature_velocity_gain': 1.0,
+        'curvature_velocity_gain': 0.50,
         'max_linear_acceleration_mps2': 7.0,
         'max_angular_acceleration_rps2': 7.0,
         'goal_tolerance_m': 0.20,

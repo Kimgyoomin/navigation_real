@@ -61,9 +61,8 @@ struct StepEvaluatorParameters
   // by 8*resolution. For an ideal straight step on a uniform grid,
   // 2*resolution*|grad Z| equals the physical step height. On smeared maps this
   // is only a local two-cell height-change heuristic, not a reconstructed height.
-  // This feature branch intentionally enables the 10 cm hard threshold so the
-  // original refactor branch is the baseline and this branch is the A/B variant.
-  bool sobel_hard_reject_enabled{true};
+  // The A/B experiment must opt in explicitly through runtime configuration.
+  bool sobel_hard_reject_enabled{false};
   double sobel_equivalent_step_height_m{0.10};
   double sobel_cost_weight{0.0};
   double sobel_cost_exponent{2.0};

@@ -28,6 +28,15 @@ planner::StepEvaluatorParameters parameters(double clearance = 0.0)
   return value;
 }
 
+TEST(StepEvaluator, SobelHardRejectRequiresExplicitOptIn)
+{
+  const planner::StepEvaluatorParameters defaults;
+  EXPECT_FALSE(defaults.sobel_hard_reject_enabled);
+  EXPECT_DOUBLE_EQ(defaults.sobel_equivalent_step_height_m, 0.10);
+  EXPECT_DOUBLE_EQ(defaults.sobel_cost_weight, 0.0);
+  EXPECT_DOUBLE_EQ(defaults.sobel_cost_exponent, 2.0);
+}
+
 TEST(StepEvaluator, FlatEdgeUsesMetricLengthOnly)
 {
   const auto snapshot = planner::HeightmapSnapshot::fromPoints(
@@ -39,6 +48,8 @@ TEST(StepEvaluator, FlatEdgeUsesMetricLengthOnly)
   EXPECT_EQ(edge.height_jump_event_count, 0U);
   EXPECT_DOUBLE_EQ(edge.height_jump_score_m, 0.0);
   EXPECT_DOUBLE_EQ(edge.max_sobel_gradient, 0.0);
+  EXPECT_DOUBLE_EQ(edge.max_sobel_equivalent_step_height_m, 0.0);
+  EXPECT_FALSE(edge.sobel_hard_rejection);
   EXPECT_NEAR(edge.cost, 0.80, 1e-12);
 }
 

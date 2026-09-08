@@ -25,6 +25,18 @@ std::uint64_t edgeKey(NodeId lhs, NodeId rhs) noexcept
   if (lhs > rhs) {std::swap(lhs, rhs);}
   return (static_cast<std::uint64_t>(lhs) << 32U) ^ static_cast<std::uint64_t>(rhs);
 }
+
+void recordStepRejection(
+  const EdgeEvaluation & edge, const double adjacent_threshold_m,
+  GraphBuildResult & result)
+{
+  if (edge.reason != StepInvalidReason::kStepLimit) {return;}
+  const bool adjacent = edge.max_height_jump_m > adjacent_threshold_m;
+  const bool sobel = edge.sobel_hard_rejection;
+  result.adjacent_step_rejects += adjacent ? 1U : 0U;
+  result.sobel_step_rejects += sobel ? 1U : 0U;
+  result.both_step_rejects += adjacent && sobel ? 1U : 0U;
+}
 }  // namespace
 
 std::string_view toString(const PlanTermination termination) noexcept
@@ -117,6 +129,7 @@ GraphBuildResult WavefrontGraphBuilder::build(
     ++result.edge_evaluation_calls;
     if (!edge.valid) {
       ++result.rejected_edges;
+      recordStepRejection(edge, evaluator.parameters().max_crossable_height_jump_m, result);
       result.rejected.push_back({RejectionKind::kEdge, edge.reason,
         result.graph.nodes[source].point, goal}); return;
     }
@@ -180,6 +193,7 @@ GraphBuildResult WavefrontGraphBuilder::build(
         ++result.edge_evaluation_calls;
         if (edge.valid) {add_edge(source, target, edge); merged = true; break;}
         ++result.rejected_edges;
+        recordStepRejection(edge, evaluator.parameters().max_crossable_height_jump_m, result);
         result.rejected.push_back({RejectionKind::kEdge, edge.reason,
           result.graph.nodes[source].point, result.graph.nodes[target].point});
       }
@@ -193,6 +207,8 @@ GraphBuildResult WavefrontGraphBuilder::build(
       if (!parent_edge.valid) {
         ++result.candidate_rejected;
         ++result.rejected_edges;
+        recordStepRejection(
+          parent_edge, evaluator.parameters().max_crossable_height_jump_m, result);
         result.rejected.push_back({RejectionKind::kEdge, parent_edge.reason,
           result.graph.nodes[source].point, proposal}); continue;
       }
@@ -210,6 +226,7 @@ GraphBuildResult WavefrontGraphBuilder::build(
         ++result.edge_evaluation_calls;
         if (edge.valid) {add_edge(new_id, neighbor, edge);} else {
           ++result.rejected_edges;
+          recordStepRejection(edge, evaluator.parameters().max_crossable_height_jump_m, result);
           result.rejected.push_back({RejectionKind::kEdge, edge.reason,
             proposal, result.graph.nodes[neighbor].point});
         }
@@ -328,6 +345,7 @@ GraphBuildResult WavefrontGraphBuilder::buildOriginalTrg(
         result.graph.nodes[from].point, result.graph.nodes[to].point);
       if (!edge.valid) {
         ++result.rejected_edges;
+        recordStepRejection(edge, evaluator.parameters().max_crossable_height_jump_m, result);
         result.rejected.push_back({RejectionKind::kEdge, edge.reason,
           result.graph.nodes[from].point, result.graph.nodes[to].point});
         return false;
