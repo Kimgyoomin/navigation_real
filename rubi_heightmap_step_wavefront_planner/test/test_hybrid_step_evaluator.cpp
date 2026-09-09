@@ -1,3 +1,4 @@
+#include <cmath>
 #include <cstdint>
 #include <vector>
 #include <gtest/gtest.h>
@@ -38,6 +39,8 @@ TEST(HybridStepEvaluator, RawHardCostsRejectAndInflationIsSoft)
   auto inflated = evaluator.evaluateEdge({0.05, 0.05}, {0.15, 0.05});
   ASSERT_TRUE(inflated.valid);
   EXPECT_GT(inflated.inflation_score_m, 0.0);
+  EXPECT_GT(evaluator.instrumentation().edge_samples_total, 0U);
+  EXPECT_EQ(evaluator.instrumentation().grid_transition_evaluations, 0U);
 }
 
 TEST(HybridStepEvaluator, MidEdgeObstacleAndStepThresholdsAreHard)
@@ -80,6 +83,86 @@ TEST(HybridStepEvaluator, SparseCellRecoversButLongEvidenceGapRejects)
     planner::StepInvalidReason::kHeightEvidenceGap);
 }
 
+TEST(HybridStepEvaluator, DirectGridTransitionUsesCellGeometryAndNoSubcellSamples)
+{
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    hybridHeights(), 0.1, 0.001, 100U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    9U, 5U, 0.1, 0.0, 0.0, std::vector<std::uint8_t>(45U, 0U));
+  planner::StepEvaluator evaluator(heights, costs, hybridParameters());
+  const auto from = evaluator.evaluateNode({0.25, 0.25});
+  const auto cardinal_to = evaluator.evaluateNode({0.35, 0.25});
+  const auto diagonal_to = evaluator.evaluateNode({0.35, 0.35});
+
+  const auto cardinal = evaluator.evaluateGridTransition(
+    {2, 2}, {3, 2}, from, cardinal_to);
+  ASSERT_TRUE(cardinal.valid);
+  EXPECT_NEAR(cardinal.length_xy_m, 0.1, 1e-12);
+  EXPECT_EQ(cardinal.sample_count, 2U);
+  EXPECT_DOUBLE_EQ(cardinal.cost, 0.1);
+
+  const auto diagonal = evaluator.evaluateGridTransition(
+    {2, 2}, {3, 3}, from, diagonal_to);
+  ASSERT_TRUE(diagonal.valid);
+  EXPECT_NEAR(diagonal.length_xy_m, 0.1 * std::sqrt(2.0), 1e-12);
+  EXPECT_DOUBLE_EQ(evaluator.instrumentation().edge_samples_total, 0U);
+  EXPECT_EQ(evaluator.instrumentation().grid_transition_evaluations, 2U);
+}
+
+TEST(HybridStepEvaluator, DirectGridTransitionPreservesHeightAndInflationCosts)
+{
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    hybridHeights(0.08), 0.1, 0.001, 100U);
+  std::vector<std::uint8_t> raw(45U, 0U);
+  raw[2U * 9U + 4U] = 252U;
+  const auto costs = planner::CostmapSnapshot::fromData(
+    9U, 5U, 0.1, 0.0, 0.0, raw);
+  auto p = hybridParameters();
+  p.max_crossable_height_jump_m = 0.08;
+  planner::StepEvaluator evaluator(heights, costs, p);
+  const auto from = evaluator.evaluateNode({0.35, 0.25});
+  const auto to = evaluator.evaluateNode({0.45, 0.25});
+  const auto transition = evaluator.evaluateGridTransition({3, 2}, {4, 2}, from, to);
+  ASSERT_TRUE(transition.valid);
+  EXPECT_NEAR(transition.max_height_jump_m, 0.08, 1e-12);
+  EXPECT_NEAR(transition.height_jump_score_m, 0.08, 1e-12);
+  EXPECT_NEAR(transition.inflation_score_m, 0.1, 1e-12);
+  EXPECT_NEAR(transition.cost, 1.0, 1e-12);
+
+  const auto over_heights = planner::HeightmapSnapshot::fromPoints(
+    hybridHeights(0.080001), 0.1, 0.001, 100U);
+  planner::StepEvaluator over(over_heights, costs, p);
+  const auto over_result = over.evaluateGridTransition(
+    {3, 2}, {4, 2}, over.evaluateNode({0.35, 0.25}), over.evaluateNode({0.45, 0.25}));
+  EXPECT_FALSE(over_result.valid);
+  EXPECT_EQ(over_result.reason, planner::StepInvalidReason::kStepLimit);
+}
+
+TEST(HybridStepEvaluator, DirectGridTransitionRejectsUnknownAndObstacleEndpoints)
+{
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    hybridHeights(), 0.1, 0.001, 100U);
+  std::vector<std::uint8_t> raw(45U, 0U);
+  raw[2U * 9U + 3U] = 255U;
+  raw[2U * 9U + 4U] = 254U;
+  const auto costs = planner::CostmapSnapshot::fromData(
+    9U, 5U, 0.1, 0.0, 0.0, raw);
+  planner::StepEvaluator evaluator(heights, costs, hybridParameters());
+  const auto valid = evaluator.evaluateNode({0.25, 0.25});
+  const auto valid_right = evaluator.evaluateNode({0.55, 0.25});
+  const auto unknown = evaluator.evaluateNode({0.35, 0.25});
+  const auto obstacle = evaluator.evaluateNode({0.45, 0.25});
+  EXPECT_EQ(
+    evaluator.evaluateGridTransition({2, 2}, {3, 2}, valid, unknown).reason,
+    planner::StepInvalidReason::kCostmapUnknown);
+  EXPECT_EQ(
+    evaluator.evaluateGridTransition({5, 2}, {4, 2}, valid_right, obstacle).reason,
+    planner::StepInvalidReason::kCostmapCollision);
+  EXPECT_EQ(
+    evaluator.evaluateGridTransition({3, 2}, {4, 2}, unknown, obstacle).reason,
+    planner::StepInvalidReason::kCostmapUnknown);
+}
+
 TEST(HybridStepEvaluator, LocalReliefUsesHeightmapNeighborhoodInHybridMode)
 {
   std::vector<planner::HeightPoint> points;
@@ -115,4 +198,13 @@ TEST(HybridStepEvaluator, LocalReliefUsesHeightmapNeighborhoodInHybridMode)
   EXPECT_LT(edge.max_sobel_equivalent_step_height_m, 0.10);
   EXPECT_TRUE(edge.local_relief_hard_rejection);
   EXPECT_GT(edge.max_supported_local_relief_m, 0.10);
+
+  planner::StepEvaluator grid_evaluator(heights, costs, p);
+  const auto grid_from = grid_evaluator.evaluateNode({-0.05, 0.0});
+  const auto grid_to = grid_evaluator.evaluateNode({0.0, 0.0});
+  const auto grid_transition = grid_evaluator.evaluateGridTransition(
+    {11, 8}, {12, 8}, grid_from, grid_to);
+  EXPECT_FALSE(grid_transition.valid);
+  EXPECT_EQ(grid_transition.reason, planner::StepInvalidReason::kStepLimit);
+  EXPECT_TRUE(grid_transition.local_relief_hard_rejection);
 }

@@ -48,6 +48,7 @@ struct PlanningStatistics
   std::size_t local_relief_cache_hits{0U};
   std::size_t local_relief_missing_neighborhoods{0U};
   std::size_t supported_relief_queries{0U};
+  std::size_t grid_transition_evaluations{0U};
 };
 
 struct PathMetrics

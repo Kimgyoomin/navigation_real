@@ -346,6 +346,9 @@ NodeEvaluation StepEvaluator::evaluateClearance(const GridCell center) const
     return result;
   }
   result.elevation_m = *center_z;
+  result.height_evidence_available = true;
+  result.height_source_cell = center;
+  result.height_source_cell_available = true;
   const int radius_cells = static_cast<int>(
     std::ceil(parameters_.hard_clearance_radius_m / snapshot_.resolution()));
   std::size_t required = 0U;
@@ -444,6 +447,93 @@ NodeEvaluation StepEvaluator::evaluateHybridNode(const Point2D point) const
   result.valid = true;
   result.reason = StepInvalidReason::kNone;
   result.elevation_m = evidence.nearest_elevation_m;
+  result.height_source_cell = evidence.nearest_cell;
+  result.height_source_cell_available = true;
+  return result;
+}
+
+EdgeEvaluation StepEvaluator::evaluateGridTransition(
+  const GridCell from, const GridCell to,
+  const NodeEvaluation & from_evaluation,
+  const NodeEvaluation & to_evaluation) const
+{
+  ++instrumentation_.grid_transition_evaluations;
+  EdgeEvaluation result;
+  if (mode_ != StepEvaluationMode::kCostmapHeightHybrid || !costmap_) {
+    return result;
+  }
+  const int dx = to.x - from.x;
+  const int dy = to.y - from.y;
+  if ((dx == 0 && dy == 0) || std::abs(dx) > 1 || std::abs(dy) > 1) {
+    return result;
+  }
+  if (!costmap_->inBounds(from) || !costmap_->inBounds(to)) {
+    result.reason = StepInvalidReason::kCostmapOutOfBounds;
+    return result;
+  }
+  if (!from_evaluation.valid || !to_evaluation.valid) {
+    result.reason = !from_evaluation.valid ? from_evaluation.reason : to_evaluation.reason;
+    return result;
+  }
+  if (!from_evaluation.height_evidence_available ||
+    !to_evaluation.height_evidence_available ||
+    !from_evaluation.height_source_cell_available ||
+    !to_evaluation.height_source_cell_available)
+  {
+    result.reason = StepInvalidReason::kInsufficientHeightEvidence;
+    return result;
+  }
+
+  result.sample_count = 2U;
+  result.unique_cell_count =
+    from_evaluation.height_source_cell == to_evaluation.height_source_cell ? 1U : 2U;
+  result.length_xy_m = costmap_->resolution() * std::hypot(dx, dy);
+  result.maximum_raw_cost = std::max(from_evaluation.raw_cost, to_evaluation.raw_cost);
+
+  // A Grid edge is one traversal into the neighbor cell. Unlike evaluateEdge(),
+  // inflation is not numerically integrated at 2.5 cm sub-cell samples.
+  const double normalized_inflation = static_cast<double>(to_evaluation.raw_cost) / 252.0;
+  result.inflation_score_m = std::pow(
+    normalized_inflation, parameters_.inflation_cost_exponent) * result.length_xy_m;
+
+  accumulateSobelEvidence(from_evaluation.height_source_cell, result);
+  accumulateLocalReliefEvidence(from_evaluation.height_source_cell, result);
+  if (!(from_evaluation.height_source_cell == to_evaluation.height_source_cell)) {
+    accumulateSobelEvidence(to_evaluation.height_source_cell, result);
+    accumulateLocalReliefEvidence(to_evaluation.height_source_cell, result);
+  }
+
+  const double jump = std::abs(to_evaluation.elevation_m - from_evaluation.elevation_m);
+  result.max_height_jump_m = jump;
+  if (jump > parameters_.max_crossable_height_jump_m) {
+    result.reason = StepInvalidReason::kStepLimit;
+    return result;
+  }
+  if (jump > parameters_.height_noise_floor_m) {
+    result.height_jump_event_count = 1U;
+    const double normalized = std::clamp(
+      (jump - parameters_.height_noise_floor_m) /
+      (parameters_.max_crossable_height_jump_m - parameters_.height_noise_floor_m),
+      0.0, 1.0);
+    result.height_jump_score_m = parameters_.max_crossable_height_jump_m *
+      std::pow(normalized, parameters_.height_cost_exponent);
+  }
+  if (parameters_.sobel_hard_reject_enabled && result.sobel_hard_rejection) {
+    result.reason = StepInvalidReason::kStepLimit;
+    return result;
+  }
+  if (parameters_.local_relief_hard_reject_enabled &&
+    result.local_relief_hard_rejection)
+  {
+    result.reason = StepInvalidReason::kStepLimit;
+    return result;
+  }
+  result.cost = parameters_.distance_weight * result.length_xy_m +
+    parameters_.inflation_cost_weight * result.inflation_score_m +
+    parameters_.height_cost_weight * result.height_jump_score_m +
+    parameters_.sobel_cost_weight * result.sobel_gradient_score_m;
+  result.valid = std::isfinite(result.cost);
+  result.reason = result.valid ? StepInvalidReason::kNone : StepInvalidReason::kInvalidInput;
   return result;
 }
 

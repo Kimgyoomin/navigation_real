@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <queue>
 #include <stdexcept>
 #include <tuple>
@@ -99,23 +100,23 @@ PlanResult StepGridAStarPlanner::plan(
   std::vector<double> g(count, infinity);
   std::vector<std::size_t> parent(count, count);
   std::vector<bool> closed(count, false);
-  std::vector<double> elevation(count, std::numeric_limits<double>::quiet_NaN());
+  std::vector<std::optional<NodeEvaluation>> node_evaluations(count);
   std::vector<NodeId> graph_node_id(count, count);
-  elevation[start_index] = start_evaluation.elevation_m;
-  elevation[goal_index] = goal_evaluation.elevation_m;
+  node_evaluations[start_index] = start_evaluation;
+  node_evaluations[goal_index] = goal_evaluation;
   const auto materialize_expanded_cell = [&](const std::size_t index) {
       if (graph_node_id[index] != count) {
         return;
       }
       const Point2D point = costmap->cellCenter(toCell(index));
-      if (!std::isfinite(elevation[index])) {
-        elevation[index] = evaluator.evaluateNode(point).elevation_m;
-      }
+      if (!node_evaluations[index]) {return;}
       graph_node_id[index] = result.nodes.size();
-      result.nodes.push_back({graph_node_id[index], point, elevation[index]});
+      result.nodes.push_back({
+        graph_node_id[index], point, node_evaluations[index]->elevation_m});
       if (parent[index] < count && graph_node_id[parent[index]] != count) {
-        const EdgeEvaluation edge = evaluator.evaluateEdge(
-          costmap->cellCenter(toCell(parent[index])), point);
+        const EdgeEvaluation edge = evaluator.evaluateGridTransition(
+          toCell(parent[index]), toCell(index),
+          *node_evaluations[parent[index]], *node_evaluations[index]);
         result.edges.push_back({graph_node_id[parent[index]], graph_node_id[index], edge});
       }
     };
@@ -162,18 +163,21 @@ PlanResult StepGridAStarPlanner::plan(
       {
         continue;
       }
-      ++result.statistics.node_evaluation_calls;
       const Point2D neighbor_point = costmap->cellCenter(neighbor);
-      const NodeEvaluation node = evaluator.evaluateNode(neighbor_point);
+      const std::size_t neighbor_index = toIndex(neighbor);
+      if (!node_evaluations[neighbor_index]) {
+        ++result.statistics.node_evaluation_calls;
+        node_evaluations[neighbor_index] = evaluator.evaluateNode(neighbor_point);
+      }
+      const NodeEvaluation & node = *node_evaluations[neighbor_index];
       if (!node.valid) {
         result.rejected.push_back({RejectionKind::kNode, node.reason,
           costmap->cellCenter(current_cell), neighbor_point});
         continue;
       }
-      elevation[toIndex(neighbor)] = node.elevation_m;
       ++result.statistics.edge_evaluation_calls;
-      const EdgeEvaluation edge = evaluator.evaluateEdge(
-        costmap->cellCenter(current_cell), neighbor_point);
+      const EdgeEvaluation edge = evaluator.evaluateGridTransition(
+        current_cell, neighbor, *node_evaluations[current.index], node);
       if (!edge.valid) {
         recordStepRejection(
           edge, evaluator.parameters().max_crossable_height_jump_m, result.statistics);
@@ -181,7 +185,6 @@ PlanResult StepGridAStarPlanner::plan(
           costmap->cellCenter(current_cell), neighbor_point});
         continue;
       }
-      const std::size_t neighbor_index = toIndex(neighbor);
       const double tentative = g[current.index] + edge.cost;
       if (tentative + kTolerance < g[neighbor_index] ||
         (std::abs(tentative - g[neighbor_index]) <= kTolerance &&
@@ -199,6 +202,20 @@ PlanResult StepGridAStarPlanner::plan(
   result.statistics.expanded_states = result.expansions;
   result.statistics.accepted_nodes = result.nodes.size();
   result.statistics.accepted_edges = result.edges.size();
+  const auto copy_instrumentation = [&]() {
+      const auto & instrumentation = evaluator.instrumentation();
+      result.statistics.edge_samples_total = instrumentation.edge_samples_total;
+      result.statistics.height_evidence_queries = instrumentation.height_evidence_queries;
+      result.statistics.costmap_queries = instrumentation.costmap_queries;
+      result.statistics.local_relief_queries = instrumentation.local_relief_queries;
+      result.statistics.local_relief_cache_hits = instrumentation.local_relief_cache_hits;
+      result.statistics.local_relief_missing_neighborhoods =
+        instrumentation.local_relief_missing_neighborhoods;
+      result.statistics.supported_relief_queries = instrumentation.supported_relief_queries;
+      result.statistics.grid_transition_evaluations =
+        instrumentation.grid_transition_evaluations;
+    };
+  copy_instrumentation();
   if (!found) {
     if (result.message.empty()) {
       result.termination = PlanTermination::kFrontierExhausted;
@@ -223,11 +240,12 @@ PlanResult StepGridAStarPlanner::plan(
   for (std::size_t path_index = 0U; path_index < path_cells.size(); ++path_index) {
     const std::size_t cell_index = path_cells[path_index];
     materialize_expanded_cell(cell_index);
-    const Point2D point = costmap->cellCenter(toCell(cell_index));
     result.path_node_ids.push_back(graph_node_id[cell_index]);
     if (path_index == 0U) {continue;}
-    const EdgeEvaluation edge = evaluator.evaluateEdge(
-      costmap->cellCenter(toCell(path_cells[path_index - 1U])), point);
+    const std::size_t previous_index = path_cells[path_index - 1U];
+    const EdgeEvaluation edge = evaluator.evaluateGridTransition(
+      toCell(previous_index), toCell(cell_index),
+      *node_evaluations[previous_index], *node_evaluations[cell_index]);
     result.path_metrics.length_xy_m += edge.length_xy_m;
     result.path_metrics.height_event_count += edge.height_jump_event_count;
     result.path_metrics.max_height_jump_m = std::max(
@@ -257,15 +275,7 @@ PlanResult StepGridAStarPlanner::plan(
   result.message = "grid path found";
   result.statistics.accepted_nodes = result.nodes.size();
   result.statistics.accepted_edges = result.edges.size();
-  const auto & instrumentation = evaluator.instrumentation();
-  result.statistics.edge_samples_total = instrumentation.edge_samples_total;
-  result.statistics.height_evidence_queries = instrumentation.height_evidence_queries;
-  result.statistics.costmap_queries = instrumentation.costmap_queries;
-  result.statistics.local_relief_queries = instrumentation.local_relief_queries;
-  result.statistics.local_relief_cache_hits = instrumentation.local_relief_cache_hits;
-  result.statistics.local_relief_missing_neighborhoods =
-    instrumentation.local_relief_missing_neighborhoods;
-  result.statistics.supported_relief_queries = instrumentation.supported_relief_queries;
+  copy_instrumentation();
   result.path_finalize_time_ms = std::chrono::duration<double, std::milli>(
     Clock::now() - finalize_started).count();
   result.core_total_time_ms = std::chrono::duration<double, std::milli>(

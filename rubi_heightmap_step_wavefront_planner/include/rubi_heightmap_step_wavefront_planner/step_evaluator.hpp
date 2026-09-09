@@ -86,6 +86,8 @@ struct NodeEvaluation
   double minimum_clearance_m{0.0};
   std::uint8_t raw_cost{0U};
   bool height_evidence_available{false};
+  GridCell height_source_cell;
+  bool height_source_cell_available{false};
 };
 
 struct EdgeEvaluation
@@ -131,6 +133,7 @@ struct EvaluationInstrumentation
   std::size_t local_relief_cache_hits{0U};
   std::size_t local_relief_missing_neighborhoods{0U};
   std::size_t supported_relief_queries{0U};
+  std::size_t grid_transition_evaluations{0U};
 };
 
 class StepEvaluator
@@ -151,6 +154,10 @@ public:
   const EvaluationInstrumentation & instrumentation() const noexcept {return instrumentation_;}
   NodeEvaluation evaluateNode(Point2D point) const;
   EdgeEvaluation evaluateEdge(Point2D from, Point2D to) const;
+  EdgeEvaluation evaluateGridTransition(
+    GridCell from, GridCell to,
+    const NodeEvaluation & from_evaluation,
+    const NodeEvaluation & to_evaluation) const;
   std::vector<GridCell> supercover(Point2D from, Point2D to) const;
 
 private:

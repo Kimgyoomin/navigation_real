@@ -505,7 +505,8 @@ private:
       "height_max_jump_m=%.3f max_sobel_equivalent_step_m=%.3f "
       "max_sobel_gradient=%.3f max_local_relief_m=%.3f "
       "max_supported_local_relief_m=%.3f adjacent_step_rejects=%zu "
-      "sobel_step_rejects=%zu local_relief_step_rejects=%zu both_step_rejects=%zu",
+      "sobel_step_rejects=%zu local_relief_step_rejects=%zu both_step_rejects=%zu "
+      "grid_transition_evaluations=%zu",
       planner_name, result.success ? "true" : "false", result.path_metrics.length_xy_m,
       result.path_metrics.total_cost, result.path_metrics.inflation_cost,
       result.path_metrics.height_cost, result.expansions, result.nodes.size(),
@@ -519,7 +520,8 @@ private:
       result.statistics.adjacent_step_rejects,
       result.statistics.sobel_step_rejects,
       result.statistics.local_relief_step_rejects,
-      result.statistics.both_step_rejects);
+      result.statistics.both_step_rejects,
+      result.statistics.grid_transition_evaluations);
     if (hard_blocked > 0U) {
       RCLCPP_WARN(
         get_logger(), "comparison input is confounded by Costmap obstacle marking "
@@ -550,6 +552,7 @@ private:
         "expanded_cells         : %zu\n"
         "neighbor_candidates    : %zu\nastar_open_pushes      : %zu\n"
         "node_eval_calls        : %zu\nedge_eval_calls        : %zu\n"
+        "grid_transition_evaluations: %zu\n"
         "edge_samples_total     : %zu\nheight_evidence_queries: %zu\n"
         "costmap_queries        : %zu\nlocal_relief_queries  : %zu\n"
         "local_relief_cache_hits: %zu\nlocal_relief_missing_neighborhoods: %zu\n"
@@ -572,6 +575,7 @@ private:
         result.statistics.both_step_rejects, result.expansions,
         result.statistics.neighbor_candidates, result.statistics.astar_open_pushes,
         result.statistics.node_evaluation_calls, result.statistics.edge_evaluation_calls,
+        result.statistics.grid_transition_evaluations,
         result.statistics.edge_samples_total, result.statistics.height_evidence_queries,
         result.statistics.costmap_queries, result.statistics.local_relief_queries,
         result.statistics.local_relief_cache_hits,

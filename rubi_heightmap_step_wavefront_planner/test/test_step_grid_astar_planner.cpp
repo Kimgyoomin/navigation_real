@@ -43,6 +43,11 @@ TEST(StepGridAStarPlanner, FlatEightConnectedUsesDiagonalMetricAndOctileHeuristi
   auto result = planner::StepGridAStarPlanner({}).plan(evaluator, {0.05, 0.05}, {0.45, 0.45});
   ASSERT_TRUE(result.success);
   EXPECT_NEAR(result.path_metrics.length_xy_m, 4.0 * std::sqrt(2.0) * 0.1, 1e-12);
+  EXPECT_EQ(result.statistics.edge_samples_total, 0U);
+  EXPECT_GT(result.statistics.grid_transition_evaluations, 0U);
+  EXPECT_GE(
+    result.statistics.grid_transition_evaluations,
+    result.statistics.edge_evaluation_calls);
   EXPECT_NEAR(planner::StepGridAStarPlanner::octileDistance(3, 2), 1.0 + 2.0 * std::sqrt(2.0), 1e-12);
   auto cardinal = planner::StepGridAStarPlanner({false, 1000U, 5000U}).plan(
     evaluator, {0.05, 0.05}, {0.15, 0.05});
