@@ -37,7 +37,7 @@ rubi_hybrid_planner_comparison:
     # in this experiment profile.
     evaluation.grid_sobel_hard_reject_enabled: false
     evaluation.grid_sobel_kernel_size: 5
-    evaluation.grid_sobel_gradient_cost_weight: 2.0
+    evaluation.grid_sobel_gradient_cost_weight: 1000.0      # 2.0 -> 10.0
 
     evaluation.local_relief_hard_reject_enabled: true
     evaluation.local_relief_threshold_m: 0.10
