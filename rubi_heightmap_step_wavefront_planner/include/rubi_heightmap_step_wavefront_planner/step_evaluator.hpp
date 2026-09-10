@@ -66,6 +66,8 @@ struct StepEvaluatorParameters
   double sobel_equivalent_step_height_m{0.10};
   double sobel_cost_weight{0.0};
   double sobel_cost_exponent{2.0};
+  bool grid_sobel_hard_reject_enabled{false};
+  double grid_sobel_gradient_cost_weight{0.0};
   bool local_relief_hard_reject_enabled{false};
   double local_relief_threshold_m{0.10};
   double local_relief_first_window_radius_m{0.10};
@@ -107,6 +109,7 @@ struct EdgeEvaluation
   std::size_t sobel_valid_cell_count{0U};
   std::size_t sobel_missing_cell_count{0U};
   double sobel_gradient_score_m{0.0};
+  double sobel_gradient_exposure_m{0.0};
   bool sobel_hard_rejection{false};
   double max_local_relief_m{0.0};
   double max_supported_local_relief_m{0.0};

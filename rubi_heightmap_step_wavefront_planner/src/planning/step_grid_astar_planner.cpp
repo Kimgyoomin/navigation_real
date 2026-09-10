@@ -255,6 +255,7 @@ PlanResult StepGridAStarPlanner::plan(
       edge.max_sobel_equivalent_step_height_m);
     result.path_metrics.max_sobel_gradient = std::max(
       result.path_metrics.max_sobel_gradient, edge.max_sobel_gradient);
+    result.path_metrics.sobel_gradient_exposure_m += edge.sobel_gradient_exposure_m;
     result.path_metrics.max_local_relief_m = std::max(
       result.path_metrics.max_local_relief_m, edge.max_local_relief_m);
     result.path_metrics.max_supported_local_relief_m = std::max(
@@ -269,6 +270,8 @@ PlanResult StepGridAStarPlanner::plan(
     result.path_metrics.height_score_m;
   result.path_metrics.inflation_cost = evaluator.parameters().inflation_cost_weight *
     result.path_metrics.inflation_score_m;
+  result.path_metrics.sobel_cost = evaluator.parameters().grid_sobel_gradient_cost_weight *
+    result.path_metrics.sobel_gradient_exposure_m;
   result.path_metrics.total_cost = g[goal_index];
   result.success = true;
   result.termination = PlanTermination::kPostGoalComplete;

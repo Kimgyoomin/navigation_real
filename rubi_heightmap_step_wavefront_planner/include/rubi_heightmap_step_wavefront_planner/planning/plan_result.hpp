@@ -58,6 +58,8 @@ struct PathMetrics
   double max_height_jump_m{0.0};
   double max_sobel_equivalent_step_height_m{0.0};
   double max_sobel_gradient{0.0};
+  double sobel_gradient_exposure_m{0.0};
+  double sobel_cost{0.0};
   double max_local_relief_m{0.0};
   double max_supported_local_relief_m{0.0};
   double height_score_m{0.0};

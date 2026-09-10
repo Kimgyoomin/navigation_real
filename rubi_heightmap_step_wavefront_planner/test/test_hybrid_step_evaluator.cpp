@@ -14,6 +14,18 @@ std::vector<planner::HeightPoint> hybridHeights(double right_z = 0.0, bool gap =
   }
   return points;
 }
+
+std::vector<planner::HeightPoint> linearGradientHeights(const double gradient)
+{
+  std::vector<planner::HeightPoint> points;
+  for (int y = 0; y < 5; ++y) {
+    for (int x = 0; x < 9; ++x) {
+      const double world_x = 0.05 + 0.1 * x;
+      points.push_back({world_x, 0.05 + 0.1 * y, gradient * world_x});
+    }
+  }
+  return points;
+}
 planner::StepEvaluatorParameters hybridParameters()
 {
   planner::StepEvaluatorParameters p;
@@ -99,6 +111,7 @@ TEST(HybridStepEvaluator, DirectGridTransitionUsesCellGeometryAndNoSubcellSample
   ASSERT_TRUE(cardinal.valid);
   EXPECT_NEAR(cardinal.length_xy_m, 0.1, 1e-12);
   EXPECT_EQ(cardinal.sample_count, 2U);
+  EXPECT_DOUBLE_EQ(cardinal.sobel_gradient_exposure_m, 0.0);
   EXPECT_DOUBLE_EQ(cardinal.cost, 0.1);
 
   const auto diagonal = evaluator.evaluateGridTransition(
@@ -107,6 +120,100 @@ TEST(HybridStepEvaluator, DirectGridTransitionUsesCellGeometryAndNoSubcellSample
   EXPECT_NEAR(diagonal.length_xy_m, 0.1 * std::sqrt(2.0), 1e-12);
   EXPECT_DOUBLE_EQ(evaluator.instrumentation().edge_samples_total, 0U);
   EXPECT_EQ(evaluator.instrumentation().grid_transition_evaluations, 2U);
+}
+
+TEST(HybridStepEvaluator, GridSobelExposureUsesEndpointMeanAndMetricLength)
+{
+  constexpr double gradient = 0.20;
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    linearGradientHeights(gradient), 0.1, 0.001, 100U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    9U, 5U, 0.1, 0.0, 0.0, std::vector<std::uint8_t>(45U, 0U));
+  auto parameters = hybridParameters();
+  parameters.grid_sobel_gradient_cost_weight = 3.0;
+  planner::StepEvaluator evaluator(heights, costs, parameters);
+  const auto from = evaluator.evaluateNode({0.25, 0.25});
+  const auto cardinal_to = evaluator.evaluateNode({0.35, 0.25});
+  const auto diagonal_to = evaluator.evaluateNode({0.35, 0.35});
+
+  const auto cardinal = evaluator.evaluateGridTransition(
+    {2, 2}, {3, 2}, from, cardinal_to);
+  const auto diagonal = evaluator.evaluateGridTransition(
+    {2, 2}, {3, 3}, from, diagonal_to);
+  ASSERT_TRUE(cardinal.valid);
+  ASSERT_TRUE(diagonal.valid);
+  EXPECT_NEAR(cardinal.max_sobel_gradient, gradient, 1e-12);
+  EXPECT_NEAR(cardinal.sobel_gradient_exposure_m, 0.1 * gradient, 1e-12);
+  EXPECT_NEAR(
+    diagonal.sobel_gradient_exposure_m,
+    std::sqrt(2.0) * cardinal.sobel_gradient_exposure_m, 1e-12);
+  EXPECT_NEAR(
+    cardinal.cost,
+    parameters.distance_weight * cardinal.length_xy_m +
+    parameters.height_cost_weight * cardinal.height_jump_score_m +
+    parameters.grid_sobel_gradient_cost_weight * cardinal.sobel_gradient_exposure_m,
+    1e-12);
+}
+
+TEST(HybridStepEvaluator, GridSobelHardRejectPolicyIsIndependentFromSampling)
+{
+  std::vector<planner::HeightPoint> points;
+  for (int y = 0; y < 5; ++y) {
+    for (int x = 0; x < 12; ++x) {
+      double elevation = 0.15;
+      if (x <= 4) {elevation = 0.0;}
+      else if (x == 5) {elevation = 0.03;}
+      else if (x == 6) {elevation = 0.09;}
+      points.push_back({0.05 + 0.1 * x, 0.05 + 0.1 * y, elevation});
+    }
+  }
+  const auto heights = planner::HeightmapSnapshot::fromPoints(points, 0.1, 0.001, 100U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    12U, 5U, 0.1, 0.0, 0.0, std::vector<std::uint8_t>(60U, 0U));
+  auto parameters = hybridParameters();
+  parameters.max_crossable_height_jump_m = 0.10;
+  parameters.sobel_equivalent_step_height_m = 0.10;
+  parameters.sobel_hard_reject_enabled = true;
+  parameters.grid_sobel_hard_reject_enabled = false;
+  planner::StepEvaluator soft_grid(heights, costs, parameters);
+  const auto from = soft_grid.evaluateNode({0.55, 0.25});
+  const auto to = soft_grid.evaluateNode({0.65, 0.25});
+  const auto allowed = soft_grid.evaluateGridTransition({5, 2}, {6, 2}, from, to);
+  ASSERT_TRUE(allowed.valid);
+  EXPECT_TRUE(allowed.sobel_hard_rejection);
+
+  parameters.grid_sobel_hard_reject_enabled = true;
+  planner::StepEvaluator hard_grid(heights, costs, parameters);
+  const auto rejected = hard_grid.evaluateGridTransition(
+    {5, 2}, {6, 2}, hard_grid.evaluateNode({0.55, 0.25}),
+    hard_grid.evaluateNode({0.65, 0.25}));
+  EXPECT_FALSE(rejected.valid);
+  EXPECT_TRUE(rejected.sobel_hard_rejection);
+  EXPECT_EQ(rejected.reason, planner::StepInvalidReason::kStepLimit);
+}
+
+TEST(HybridStepEvaluator, GridSobelWeightDoesNotChangeSamplingEdgeEvaluation)
+{
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    linearGradientHeights(0.20), 0.1, 0.001, 100U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    9U, 5U, 0.1, 0.0, 0.0, std::vector<std::uint8_t>(45U, 0U));
+  auto baseline_parameters = hybridParameters();
+  baseline_parameters.sobel_cost_weight = 2.0;
+  auto changed_parameters = baseline_parameters;
+  changed_parameters.grid_sobel_gradient_cost_weight = 1000000.0;
+  changed_parameters.grid_sobel_hard_reject_enabled = true;
+
+  const auto baseline = planner::StepEvaluator(
+    heights, costs, baseline_parameters).evaluateEdge({0.25, 0.25}, {0.55, 0.25});
+  const auto changed = planner::StepEvaluator(
+    heights, costs, changed_parameters).evaluateEdge({0.25, 0.25}, {0.55, 0.25});
+  ASSERT_TRUE(baseline.valid);
+  ASSERT_TRUE(changed.valid);
+  EXPECT_DOUBLE_EQ(changed.cost, baseline.cost);
+  EXPECT_DOUBLE_EQ(changed.sobel_gradient_score_m, baseline.sobel_gradient_score_m);
+  EXPECT_EQ(changed.sample_count, baseline.sample_count);
+  EXPECT_EQ(changed.unique_cell_count, baseline.unique_cell_count);
 }
 
 TEST(HybridStepEvaluator, DirectGridTransitionPreservesHeightAndInflationCosts)

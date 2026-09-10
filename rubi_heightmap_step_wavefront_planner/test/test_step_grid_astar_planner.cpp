@@ -1,5 +1,6 @@
 #include <cmath>
 #include <cstdint>
+#include <iostream>
 #include <vector>
 #include <gtest/gtest.h>
 #include "rubi_heightmap_step_wavefront_planner/planning/step_grid_astar_planner.hpp"
@@ -138,7 +139,7 @@ TEST(StepGridAStarPlanner, ReportsSelectedSobelMetricAndSobelOnlyRejections)
   params.max_crossable_height_jump_m = 0.10;
   params.edge_height_query_radius_m = 0.04;
   params.edge_max_height_evidence_gap_m = 0.10;
-  params.sobel_hard_reject_enabled = false;
+  params.grid_sobel_hard_reject_enabled = false;
   const auto baseline = planner::StepGridAStarPlanner({}).plan(
     planner::StepEvaluator(heights, costs, params),
     {0.025, 0.075}, {0.825, 0.075});
@@ -147,7 +148,7 @@ TEST(StepGridAStarPlanner, ReportsSelectedSobelMetricAndSobelOnlyRejections)
   EXPECT_GT(baseline.path_metrics.max_sobel_equivalent_step_height_m, 0.10);
   EXPECT_GT(baseline.path_metrics.max_sobel_gradient, 0.0);
 
-  params.sobel_hard_reject_enabled = true;
+  params.grid_sobel_hard_reject_enabled = true;
   const auto sobel = planner::StepGridAStarPlanner({}).plan(
     planner::StepEvaluator(heights, costs, params),
     {0.025, 0.075}, {0.825, 0.075});
@@ -155,4 +156,57 @@ TEST(StepGridAStarPlanner, ReportsSelectedSobelMetricAndSobelOnlyRejections)
   EXPECT_EQ(sobel.statistics.adjacent_step_rejects, 0U);
   EXPECT_GT(sobel.statistics.sobel_step_rejects, 0U);
   EXPECT_EQ(sobel.statistics.both_step_rejects, 0U);
+}
+
+TEST(StepGridAStarPlanner, SobelSoftCostPrefersLongerLowGradientPath)
+{
+  constexpr int width = 27;
+  constexpr int height = 7;
+  constexpr double resolution = 0.1;
+  std::vector<planner::HeightPoint> points;
+  for (int y = -1; y <= height; ++y) {
+    for (int x = -1; x <= width; ++x) {
+      double elevation = 0.0;
+      if (y >= 2 && y <= 4 && x >= 1 && x <= 25) {
+        const int period_phase = (x - 1) % 8;
+        const int ramp_phase = period_phase <= 4 ? period_phase : 8 - period_phase;
+        elevation = 0.02 * static_cast<double>(ramp_phase);
+      }
+      points.push_back({
+        0.05 + resolution * x, 0.05 + resolution * y, elevation});
+    }
+  }
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    points, resolution, 0.001, 10000U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    width, height, resolution, 0.0, 0.0,
+    std::vector<std::uint8_t>(width * height, 0U));
+  auto parameters = gridParams(0.0);
+  parameters.max_crossable_height_jump_m = 0.10;
+  const std::vector<double> weights{0.0, 0.25, 0.5, 1.0, 2.0, 4.0};
+  std::vector<planner::PlanResult> sweep;
+  for (const double weight : weights) {
+    parameters.grid_sobel_gradient_cost_weight = weight;
+    sweep.push_back(planner::StepGridAStarPlanner({}).plan(
+        planner::StepEvaluator(heights, costs, parameters),
+        {0.15, 0.35}, {2.55, 0.35}));
+    ASSERT_TRUE(sweep.back().success);
+    std::cout << "SOBEL_SWEEP weight=" << weight
+              << " length_m=" << sweep.back().path_metrics.length_xy_m
+              << " exposure_m=" << sweep.back().path_metrics.sobel_gradient_exposure_m
+              << " sobel_cost=" << sweep.back().path_metrics.sobel_cost
+              << " total_cost=" << sweep.back().path_metrics.total_cost
+              << " planning_ms=" << sweep.back().core_total_time_ms << '\n';
+  }
+  const auto & direct = sweep.front();
+  const auto & detour = sweep.back();
+  EXPECT_NEAR(direct.path_metrics.length_xy_m, 2.4, 1e-12);
+  EXPECT_GT(direct.path_metrics.sobel_gradient_exposure_m, 0.0);
+  EXPECT_GT(detour.path_metrics.length_xy_m, direct.path_metrics.length_xy_m);
+  EXPECT_LT(
+    detour.path_metrics.sobel_gradient_exposure_m,
+    direct.path_metrics.sobel_gradient_exposure_m);
+  EXPECT_NEAR(
+    detour.path_metrics.total_cost,
+    detour.path_metrics.length_xy_m + detour.path_metrics.sobel_cost, 1e-12);
 }

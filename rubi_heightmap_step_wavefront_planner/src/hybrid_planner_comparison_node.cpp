@@ -136,8 +136,10 @@ public:
       get_logger(),
       "\n[STEP EVALUATION CONFIG]\n"
       "planner_run_mode=%s\nadjacent_threshold_m=%.3f\n"
-      "sobel_enabled=%s\nsobel_threshold_m=%.3f\n"
-      "sobel_cost_weight=%.3f\nsobel_cost_exponent=%.3f\n"
+      "sampling_sobel_hard_reject_enabled=%s\n"
+      "grid_sobel_hard_reject_enabled=%s\nsobel_threshold_m=%.3f\n"
+      "legacy_sampling_sobel_cost_weight=%.3f\n"
+      "grid_sobel_gradient_cost_weight=%.3f\nsobel_cost_exponent=%.3f\n"
       "local_relief_enabled=%s\nlocal_relief_threshold_m=%.3f\n"
       "local_relief_first_window_radius_m=%.3f\n"
       "local_relief_second_window_radius_m=%.3f\n"
@@ -146,8 +148,10 @@ public:
       "local_relief_critical_cell_count=%zu",
       run_mode_text_.c_str(), evaluator_parameters_.max_crossable_height_jump_m,
       evaluator_parameters_.sobel_hard_reject_enabled ? "true" : "false",
+      evaluator_parameters_.grid_sobel_hard_reject_enabled ? "true" : "false",
       evaluator_parameters_.sobel_equivalent_step_height_m,
       evaluator_parameters_.sobel_cost_weight,
+      evaluator_parameters_.grid_sobel_gradient_cost_weight,
       evaluator_parameters_.sobel_cost_exponent,
       evaluator_parameters_.local_relief_hard_reject_enabled ? "true" : "false",
       evaluator_parameters_.local_relief_threshold_m,
@@ -244,11 +248,17 @@ private:
     evaluator_parameters_.sobel_hard_reject_enabled = declare_parameter(
       "evaluation.sobel_hard_reject_enabled",
       evaluator_parameters_.sobel_hard_reject_enabled);
+    evaluator_parameters_.grid_sobel_hard_reject_enabled = declare_parameter(
+      "evaluation.grid_sobel_hard_reject_enabled",
+      evaluator_parameters_.sobel_hard_reject_enabled);
     evaluator_parameters_.sobel_equivalent_step_height_m = declare_parameter(
       "evaluation.sobel_equivalent_step_height_m",
       evaluator_parameters_.sobel_equivalent_step_height_m);
     evaluator_parameters_.sobel_cost_weight = declare_parameter(
       "evaluation.sobel_cost_weight", evaluator_parameters_.sobel_cost_weight);
+    evaluator_parameters_.grid_sobel_gradient_cost_weight = declare_parameter(
+      "evaluation.grid_sobel_gradient_cost_weight",
+      evaluator_parameters_.grid_sobel_gradient_cost_weight);
     evaluator_parameters_.sobel_cost_exponent = declare_parameter(
       "evaluation.sobel_cost_exponent", evaluator_parameters_.sobel_cost_exponent);
     evaluator_parameters_.local_relief_hard_reject_enabled = declare_parameter(
@@ -499,7 +509,8 @@ private:
     }
     RCLCPP_INFO(
       get_logger(), "planner=%s success=%s length_m=%.3f total_cost=%.3f "
-      "inflation_cost=%.3f height_cost=%.3f expanded=%zu nodes=%zu edges=%zu "
+      "inflation_cost=%.3f height_cost=%.3f sobel_cost=%.3f "
+      "sobel_gradient_exposure_m=%.3f expanded=%zu nodes=%zu edges=%zu "
       "time_ms=%.3f costmap_hard_blocked_samples=%zu "
       "costmap_max_raw_cost_on_selected_path=%u height_evidence_missing_samples=%zu "
       "height_max_jump_m=%.3f max_sobel_equivalent_step_m=%.3f "
@@ -509,7 +520,8 @@ private:
       "grid_transition_evaluations=%zu",
       planner_name, result.success ? "true" : "false", result.path_metrics.length_xy_m,
       result.path_metrics.total_cost, result.path_metrics.inflation_cost,
-      result.path_metrics.height_cost, result.expansions, result.nodes.size(),
+      result.path_metrics.height_cost, result.path_metrics.sobel_cost,
+      result.path_metrics.sobel_gradient_exposure_m, result.expansions, result.nodes.size(),
       result.edges.size(), result.core_total_time_ms, hard_blocked,
       static_cast<unsigned int>(result.path_metrics.maximum_raw_cost), missing_height,
       result.path_metrics.max_height_jump_m,
@@ -543,7 +555,8 @@ private:
         "map_generation         : costmap=%lu heightmap=%lu\n"
         "path_length_m          : %.6f\ntotal_cost             : %.6f\n"
         "distance_cost          : %.6f\ninflation_cost         : %.6f\n"
-        "height_cost            : %.6f\nmax_height_jump_m      : %.6f\n"
+        "height_cost            : %.6f\nsobel_cost             : %.6f\n"
+        "sobel_gradient_exposure_m: %.6f\nmax_height_jump_m      : %.6f\n"
         "max_sobel_equivalent_step_m: %.6f\nmax_sobel_gradient    : %.6f\n"
         "max_local_relief_m     : %.6f\nmax_supported_local_relief_m: %.6f\n"
         "height_jump_events     : %zu\nadjacent_step_rejects : %zu\n"
@@ -563,7 +576,9 @@ private:
         static_cast<unsigned long>(costmap_generation),
         static_cast<unsigned long>(heightmap_generation), result.path_metrics.length_xy_m,
         result.path_metrics.total_cost, distance_cost, result.path_metrics.inflation_cost,
-        result.path_metrics.height_cost, result.path_metrics.max_height_jump_m,
+        result.path_metrics.height_cost, result.path_metrics.sobel_cost,
+        result.path_metrics.sobel_gradient_exposure_m,
+        result.path_metrics.max_height_jump_m,
         result.path_metrics.max_sobel_equivalent_step_height_m,
         result.path_metrics.max_sobel_gradient,
         result.path_metrics.max_local_relief_m,

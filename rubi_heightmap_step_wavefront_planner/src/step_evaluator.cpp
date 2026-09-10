@@ -69,6 +69,8 @@ StepEvaluator::StepEvaluator(
     parameters_.sobel_equivalent_step_height_m <= 0.0 ||
     !std::isfinite(parameters_.sobel_cost_weight) || parameters_.sobel_cost_weight < 0.0 ||
     !std::isfinite(parameters_.sobel_cost_exponent) || parameters_.sobel_cost_exponent < 1.0 ||
+    !std::isfinite(parameters_.grid_sobel_gradient_cost_weight) ||
+    parameters_.grid_sobel_gradient_cost_weight < 0.0 ||
     !std::isfinite(parameters_.local_relief_threshold_m) ||
     parameters_.local_relief_threshold_m <= 0.0 ||
     !std::isfinite(parameters_.local_relief_first_window_radius_m) ||
@@ -503,6 +505,15 @@ EdgeEvaluation StepEvaluator::evaluateGridTransition(
     accumulateLocalReliefEvidence(to_evaluation.height_source_cell, result);
   }
 
+  const auto from_gradient = sobelGradientMagnitude(from_evaluation.height_source_cell);
+  const auto to_gradient = sobelGradientMagnitude(to_evaluation.height_source_cell);
+  if (from_gradient || to_gradient) {
+    const double mean_gradient = from_gradient && to_gradient ?
+      0.5 * (*from_gradient + *to_gradient) :
+      (from_gradient ? *from_gradient : *to_gradient);
+    result.sobel_gradient_exposure_m = result.length_xy_m * mean_gradient;
+  }
+
   const double jump = std::abs(to_evaluation.elevation_m - from_evaluation.elevation_m);
   result.max_height_jump_m = jump;
   if (jump > parameters_.max_crossable_height_jump_m) {
@@ -518,7 +529,7 @@ EdgeEvaluation StepEvaluator::evaluateGridTransition(
     result.height_jump_score_m = parameters_.max_crossable_height_jump_m *
       std::pow(normalized, parameters_.height_cost_exponent);
   }
-  if (parameters_.sobel_hard_reject_enabled && result.sobel_hard_rejection) {
+  if (parameters_.grid_sobel_hard_reject_enabled && result.sobel_hard_rejection) {
     result.reason = StepInvalidReason::kStepLimit;
     return result;
   }
@@ -531,7 +542,7 @@ EdgeEvaluation StepEvaluator::evaluateGridTransition(
   result.cost = parameters_.distance_weight * result.length_xy_m +
     parameters_.inflation_cost_weight * result.inflation_score_m +
     parameters_.height_cost_weight * result.height_jump_score_m +
-    parameters_.sobel_cost_weight * result.sobel_gradient_score_m;
+    parameters_.grid_sobel_gradient_cost_weight * result.sobel_gradient_exposure_m;
   result.valid = std::isfinite(result.cost);
   result.reason = result.valid ? StepInvalidReason::kNone : StepInvalidReason::kInvalidInput;
   return result;
