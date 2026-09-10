@@ -67,6 +67,7 @@ struct StepEvaluatorParameters
   double sobel_cost_weight{0.0};
   double sobel_cost_exponent{2.0};
   bool grid_sobel_hard_reject_enabled{false};
+  int grid_sobel_kernel_size{3};
   double grid_sobel_gradient_cost_weight{0.0};
   bool local_relief_hard_reject_enabled{false};
   double local_relief_threshold_m{0.10};
@@ -110,6 +111,7 @@ struct EdgeEvaluation
   std::size_t sobel_missing_cell_count{0U};
   double sobel_gradient_score_m{0.0};
   double sobel_gradient_exposure_m{0.0};
+  double max_grid_sobel_gradient{0.0};
   bool sobel_hard_rejection{false};
   double max_local_relief_m{0.0};
   double max_supported_local_relief_m{0.0};
@@ -137,6 +139,11 @@ struct EvaluationInstrumentation
   std::size_t local_relief_missing_neighborhoods{0U};
   std::size_t supported_relief_queries{0U};
   std::size_t grid_transition_evaluations{0U};
+  std::size_t grid_sobel_queries{0U};
+  std::size_t grid_sobel_cache_hits{0U};
+  std::size_t grid_sobel_5x5_valid{0U};
+  std::size_t grid_sobel_5x5_fallback_to_3x3{0U};
+  std::size_t grid_sobel_missing{0U};
 };
 
 class StepEvaluator
@@ -186,6 +193,7 @@ private:
   NodeEvaluation evaluateHybridNode(Point2D point) const;
   EdgeEvaluation evaluateHybridEdge(Point2D from, Point2D to) const;
   std::optional<double> sobelGradientMagnitude(GridCell center) const;
+  std::optional<double> gridSobelGradientMagnitude(GridCell center) const;
   void accumulateSobelEvidence(GridCell cell, EdgeEvaluation & result) const;
   LocalReliefResult localRelief(GridCell center) const;
   SupportedLocalReliefResult supportedLocalRelief(GridCell center) const;
@@ -197,6 +205,7 @@ private:
   StepEvaluatorParameters parameters_;
   mutable std::unordered_map<std::size_t, double> clearance_cache_;
   mutable std::unordered_map<std::size_t, double> sobel_gradient_cache_;
+  mutable std::unordered_map<std::size_t, double> grid_sobel_gradient_cache_;
   mutable std::unordered_map<std::size_t, LocalReliefResult> local_relief_cache_;
   mutable std::unordered_map<std::size_t, SupportedLocalReliefResult>
     supported_local_relief_cache_;

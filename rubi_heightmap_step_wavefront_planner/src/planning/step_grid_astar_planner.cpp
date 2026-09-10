@@ -214,6 +214,12 @@ PlanResult StepGridAStarPlanner::plan(
       result.statistics.supported_relief_queries = instrumentation.supported_relief_queries;
       result.statistics.grid_transition_evaluations =
         instrumentation.grid_transition_evaluations;
+      result.statistics.grid_sobel_queries = instrumentation.grid_sobel_queries;
+      result.statistics.grid_sobel_cache_hits = instrumentation.grid_sobel_cache_hits;
+      result.statistics.grid_sobel_5x5_valid = instrumentation.grid_sobel_5x5_valid;
+      result.statistics.grid_sobel_5x5_fallback_to_3x3 =
+        instrumentation.grid_sobel_5x5_fallback_to_3x3;
+      result.statistics.grid_sobel_missing = instrumentation.grid_sobel_missing;
     };
   copy_instrumentation();
   if (!found) {
@@ -256,6 +262,8 @@ PlanResult StepGridAStarPlanner::plan(
     result.path_metrics.max_sobel_gradient = std::max(
       result.path_metrics.max_sobel_gradient, edge.max_sobel_gradient);
     result.path_metrics.sobel_gradient_exposure_m += edge.sobel_gradient_exposure_m;
+    result.path_metrics.max_grid_sobel_gradient = std::max(
+      result.path_metrics.max_grid_sobel_gradient, edge.max_grid_sobel_gradient);
     result.path_metrics.max_local_relief_m = std::max(
       result.path_metrics.max_local_relief_m, edge.max_local_relief_m);
     result.path_metrics.max_supported_local_relief_m = std::max(

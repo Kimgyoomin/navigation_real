@@ -1,6 +1,8 @@
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <vector>
 #include <gtest/gtest.h>
 #include "rubi_heightmap_step_wavefront_planner/planning/step_grid_astar_planner.hpp"
@@ -11,6 +13,33 @@ struct GridFixture
   planner::HeightmapSnapshot heights;
   planner::CostmapSnapshot costs;
 };
+
+struct EdgeBandMetrics
+{
+  double minimum_distance_m{std::numeric_limits<double>::infinity()};
+  double length_within_one_cell_m{0.0};
+  double length_within_two_cells_m{0.0};
+};
+
+EdgeBandMetrics edgeBandMetrics(
+  const planner::PlanResult & result, const double boundary_y, const double resolution)
+{
+  EdgeBandMetrics metrics;
+  for (std::size_t index = 1U; index < result.path_node_ids.size(); ++index) {
+    const auto & from = result.nodes[result.path_node_ids[index - 1U]].point;
+    const auto & to = result.nodes[result.path_node_ids[index]].point;
+    const double length = std::hypot(to.x - from.x, to.y - from.y);
+    const double midpoint_distance = std::abs(0.5 * (from.y + to.y) - boundary_y);
+    metrics.minimum_distance_m = std::min(metrics.minimum_distance_m, midpoint_distance);
+    if (midpoint_distance <= resolution + 1e-12) {
+      metrics.length_within_one_cell_m += length;
+    }
+    if (midpoint_distance <= 2.0 * resolution + 1e-12) {
+      metrics.length_within_two_cells_m += length;
+    }
+  }
+  return metrics;
+}
 
 GridFixture gridFixture(
   int width, int height, std::vector<std::uint8_t> raw,
@@ -209,4 +238,123 @@ TEST(StepGridAStarPlanner, SobelSoftCostPrefersLongerLowGradientPath)
   EXPECT_NEAR(
     detour.path_metrics.total_cost,
     detour.path_metrics.length_xy_m + detour.path_metrics.sobel_cost, 1e-12);
+}
+
+TEST(StepGridAStarPlanner, FiveByFiveSoftCostExtendsStepEdgeInfluence)
+{
+  constexpr int width = 23;
+  constexpr int height = 6;
+  constexpr double resolution = 0.1;
+  constexpr double boundary_y = 0.30;
+  std::vector<planner::HeightPoint> points;
+  for (int y = -2; y <= height + 1; ++y) {
+    for (int x = -2; x <= width + 1; ++x) {
+      points.push_back({
+        0.05 + resolution * x, 0.05 + resolution * y, y >= 3 ? 0.05 : 0.0});
+    }
+  }
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    points, resolution, 0.001, 10000U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    width, height, resolution, 0.0, 0.0,
+    std::vector<std::uint8_t>(width * height, 0U));
+  auto parameters = gridParams(0.0);
+  parameters.max_crossable_height_jump_m = 0.10;
+  parameters.grid_sobel_gradient_cost_weight = 2.0;
+
+  parameters.grid_sobel_kernel_size = 3;
+  const auto three = planner::StepGridAStarPlanner({}).plan(
+    planner::StepEvaluator(heights, costs, parameters), {0.15, 0.15}, {2.15, 0.15});
+  parameters.grid_sobel_kernel_size = 5;
+  const auto five = planner::StepGridAStarPlanner({}).plan(
+    planner::StepEvaluator(heights, costs, parameters), {0.15, 0.15}, {2.15, 0.15});
+  ASSERT_TRUE(three.success);
+  ASSERT_TRUE(five.success);
+  const EdgeBandMetrics three_bands = edgeBandMetrics(three, boundary_y, resolution);
+  const EdgeBandMetrics five_bands = edgeBandMetrics(five, boundary_y, resolution);
+
+  std::cout << "KERNEL_COMPARE kernel=3 length_m=" << three.path_metrics.length_xy_m
+            << " total_cost=" << three.path_metrics.total_cost
+            << " exposure_m=" << three.path_metrics.sobel_gradient_exposure_m
+            << " sobel_cost=" << three.path_metrics.sobel_cost
+            << " max_grid_sobel=" << three.path_metrics.max_grid_sobel_gradient
+            << " min_edge_distance_m=" << three_bands.minimum_distance_m
+            << " within_one_cell_m=" << three_bands.length_within_one_cell_m
+            << " within_two_cells_m=" << three_bands.length_within_two_cells_m
+            << " expanded=" << three.expansions
+            << " planning_ms=" << three.core_total_time_ms << '\n';
+  std::cout << "KERNEL_COMPARE kernel=5 length_m=" << five.path_metrics.length_xy_m
+            << " total_cost=" << five.path_metrics.total_cost
+            << " exposure_m=" << five.path_metrics.sobel_gradient_exposure_m
+            << " sobel_cost=" << five.path_metrics.sobel_cost
+            << " max_grid_sobel=" << five.path_metrics.max_grid_sobel_gradient
+            << " min_edge_distance_m=" << five_bands.minimum_distance_m
+            << " within_one_cell_m=" << five_bands.length_within_one_cell_m
+            << " within_two_cells_m=" << five_bands.length_within_two_cells_m
+            << " expanded=" << five.expansions
+            << " planning_ms=" << five.core_total_time_ms << '\n';
+
+  EXPECT_NEAR(three.path_metrics.sobel_gradient_exposure_m, 0.0, 1e-12);
+  EXPECT_GT(five.path_metrics.length_xy_m, three.path_metrics.length_xy_m);
+  EXPECT_GT(five_bands.minimum_distance_m, three_bands.minimum_distance_m);
+  EXPECT_LT(five_bands.length_within_two_cells_m, three_bands.length_within_two_cells_m);
+}
+
+TEST(StepGridAStarPlanner, FiveCentimeterStepRemainsCrossableWithFiveByFiveSoftCost)
+{
+  constexpr int width = 11;
+  constexpr int height = 5;
+  constexpr double resolution = 0.05;
+  std::vector<planner::HeightPoint> points;
+  for (int y = -2; y <= height + 1; ++y) {
+    for (int x = -2; x <= width + 1; ++x) {
+      points.push_back({
+        0.025 + resolution * x, 0.025 + resolution * y, x >= 5 ? 0.05 : 0.0});
+    }
+  }
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    points, resolution, 0.001, 10000U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    width, height, resolution, 0.0, 0.0,
+    std::vector<std::uint8_t>(width * height, 0U));
+  auto parameters = gridParams();
+  parameters.max_crossable_height_jump_m = 0.10;
+  parameters.grid_sobel_kernel_size = 5;
+  parameters.grid_sobel_hard_reject_enabled = false;
+  parameters.grid_sobel_gradient_cost_weight = 10.0;
+  parameters.local_relief_hard_reject_enabled = true;
+  parameters.local_relief_threshold_m = 0.10;
+  const auto result = planner::StepGridAStarPlanner({}).plan(
+    planner::StepEvaluator(heights, costs, parameters), {0.075, 0.125}, {0.475, 0.125});
+  ASSERT_TRUE(result.success);
+  EXPECT_NEAR(result.path_metrics.max_height_jump_m, 0.05, 1e-12);
+}
+
+TEST(StepGridAStarPlanner, ElevenCentimeterMeasuredStepIsHardRejectedForBothKernels)
+{
+  constexpr int width = 11;
+  constexpr int height = 5;
+  constexpr double resolution = 0.05;
+  std::vector<planner::HeightPoint> points;
+  for (int y = -2; y <= height + 1; ++y) {
+    for (int x = -2; x <= width + 1; ++x) {
+      points.push_back({
+        0.025 + resolution * x, 0.025 + resolution * y, x >= 5 ? 0.11 : 0.0});
+    }
+  }
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    points, resolution, 0.001, 10000U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    width, height, resolution, 0.0, 0.0,
+    std::vector<std::uint8_t>(width * height, 0U));
+  for (const int kernel : {3, 5}) {
+    auto parameters = gridParams();
+    parameters.max_crossable_height_jump_m = 0.10;
+    parameters.grid_sobel_kernel_size = kernel;
+    parameters.grid_sobel_gradient_cost_weight = kernel == 3 ? 0.0 : 100.0;
+    const auto result = planner::StepGridAStarPlanner({}).plan(
+      planner::StepEvaluator(heights, costs, parameters), {0.075, 0.125}, {0.475, 0.125});
+    EXPECT_FALSE(result.success);
+    EXPECT_GT(result.statistics.adjacent_step_rejects, 0U);
+  }
 }

@@ -49,6 +49,11 @@ struct PlanningStatistics
   std::size_t local_relief_missing_neighborhoods{0U};
   std::size_t supported_relief_queries{0U};
   std::size_t grid_transition_evaluations{0U};
+  std::size_t grid_sobel_queries{0U};
+  std::size_t grid_sobel_cache_hits{0U};
+  std::size_t grid_sobel_5x5_valid{0U};
+  std::size_t grid_sobel_5x5_fallback_to_3x3{0U};
+  std::size_t grid_sobel_missing{0U};
 };
 
 struct PathMetrics
@@ -60,6 +65,7 @@ struct PathMetrics
   double max_sobel_gradient{0.0};
   double sobel_gradient_exposure_m{0.0};
   double sobel_cost{0.0};
+  double max_grid_sobel_gradient{0.0};
   double max_local_relief_m{0.0};
   double max_supported_local_relief_m{0.0};
   double height_score_m{0.0};

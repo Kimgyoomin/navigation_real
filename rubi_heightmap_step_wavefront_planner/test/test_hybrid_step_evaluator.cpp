@@ -1,5 +1,6 @@
 #include <cmath>
 #include <cstdint>
+#include <stdexcept>
 #include <vector>
 #include <gtest/gtest.h>
 #include "rubi_heightmap_step_wavefront_planner/step_evaluator.hpp"
@@ -22,6 +23,21 @@ std::vector<planner::HeightPoint> linearGradientHeights(const double gradient)
     for (int x = 0; x < 9; ++x) {
       const double world_x = 0.05 + 0.1 * x;
       points.push_back({world_x, 0.05 + 0.1 * y, gradient * world_x});
+    }
+  }
+  return points;
+}
+
+std::vector<planner::HeightPoint> planeHeights(
+  const int width, const int height, const double resolution,
+  const double slope_x, const double slope_y)
+{
+  std::vector<planner::HeightPoint> points;
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      const double world_x = 0.5 * resolution + resolution * x;
+      const double world_y = 0.5 * resolution + resolution * y;
+      points.push_back({world_x, world_y, slope_x * world_x + slope_y * world_y});
     }
   }
   return points;
@@ -155,6 +171,115 @@ TEST(HybridStepEvaluator, GridSobelExposureUsesEndpointMeanAndMetricLength)
     1e-12);
 }
 
+TEST(HybridStepEvaluator, GridSobelThreeAndFiveNormalizeFlatAndLinearPlanes)
+{
+  constexpr int width = 11;
+  constexpr int height = 11;
+  constexpr double resolution = 0.1;
+  const auto costs = planner::CostmapSnapshot::fromData(
+    width, height, resolution, 0.0, 0.0,
+    std::vector<std::uint8_t>(width * height, 0U));
+  const auto evaluate_plane = [&](const double slope_x, const double slope_y, const int kernel) {
+      const auto heights = planner::HeightmapSnapshot::fromPoints(
+        planeHeights(width, height, resolution, slope_x, slope_y),
+        resolution, 0.001, 1000U);
+      auto parameters = hybridParameters();
+      parameters.grid_sobel_kernel_size = kernel;
+      planner::StepEvaluator evaluator(heights, costs, parameters);
+      return evaluator.evaluateGridTransition(
+        {4, 4}, {5, 4}, evaluator.evaluateNode({0.45, 0.45}),
+        evaluator.evaluateNode({0.55, 0.45}));
+    };
+
+  for (const int kernel : {3, 5}) {
+    const auto flat = evaluate_plane(0.0, 0.0, kernel);
+    ASSERT_TRUE(flat.valid);
+    EXPECT_NEAR(flat.max_grid_sobel_gradient, 0.0, 1e-12);
+
+    const auto x_slope = evaluate_plane(0.20, 0.0, kernel);
+    ASSERT_TRUE(x_slope.valid);
+    EXPECT_NEAR(x_slope.max_grid_sobel_gradient, 0.20, 1e-12);
+
+    const auto xy_slope = evaluate_plane(0.20, -0.10, kernel);
+    ASSERT_TRUE(xy_slope.valid);
+    EXPECT_NEAR(xy_slope.max_grid_sobel_gradient, std::hypot(0.20, 0.10), 1e-12);
+  }
+}
+
+TEST(HybridStepEvaluator, GridSobelRejectsUnsupportedKernelSize)
+{
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    hybridHeights(), 0.1, 0.001, 100U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    9U, 5U, 0.1, 0.0, 0.0, std::vector<std::uint8_t>(45U, 0U));
+  auto parameters = hybridParameters();
+  parameters.grid_sobel_kernel_size = 4;
+  EXPECT_THROW(planner::StepEvaluator(heights, costs, parameters), std::invalid_argument);
+}
+
+TEST(HybridStepEvaluator, FiveByFiveHasWiderSupportThanThreeByThree)
+{
+  constexpr int width = 11;
+  constexpr int height = 9;
+  constexpr double resolution = 0.05;
+  std::vector<planner::HeightPoint> points;
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      points.push_back({
+        0.025 + resolution * x, 0.025 + resolution * y, x >= 5 ? 0.05 : 0.0});
+    }
+  }
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    points, resolution, 0.001, 1000U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    width, height, resolution, 0.0, 0.0,
+    std::vector<std::uint8_t>(width * height, 0U));
+  auto parameters = hybridParameters();
+  parameters.node_evidence_radius_m = 0.01;
+  parameters.node_max_nearest_evidence_distance_m = 0.01;
+  parameters.grid_sobel_kernel_size = 3;
+  planner::StepEvaluator three(heights, costs, parameters);
+  const auto three_edge = three.evaluateGridTransition(
+    {2, 4}, {3, 4}, three.evaluateNode({0.125, 0.225}),
+    three.evaluateNode({0.175, 0.225}));
+  parameters.grid_sobel_kernel_size = 5;
+  planner::StepEvaluator five(heights, costs, parameters);
+  const auto five_edge = five.evaluateGridTransition(
+    {2, 4}, {3, 4}, five.evaluateNode({0.125, 0.225}),
+    five.evaluateNode({0.175, 0.225}));
+  ASSERT_TRUE(three_edge.valid);
+  ASSERT_TRUE(five_edge.valid);
+  EXPECT_NEAR(three_edge.max_grid_sobel_gradient, 0.0, 1e-12);
+  EXPECT_GT(five_edge.max_grid_sobel_gradient, 0.0);
+}
+
+TEST(HybridStepEvaluator, IncompleteFiveByFiveFallsBackToCachedThreeByThree)
+{
+  constexpr int width = 9;
+  constexpr int height = 9;
+  constexpr double resolution = 0.1;
+  auto points = planeHeights(width, height, resolution, 0.20, 0.0);
+  points.erase(points.begin() + 6 * width + 6);
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    points, resolution, 0.001, 1000U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    width, height, resolution, 0.0, 0.0,
+    std::vector<std::uint8_t>(width * height, 0U));
+  auto parameters = hybridParameters();
+  parameters.grid_sobel_kernel_size = 5;
+  planner::StepEvaluator evaluator(heights, costs, parameters);
+  const auto from = evaluator.evaluateNode({0.35, 0.45});
+  const auto to = evaluator.evaluateNode({0.45, 0.45});
+  const auto first = evaluator.evaluateGridTransition({3, 4}, {4, 4}, from, to);
+  const auto second = evaluator.evaluateGridTransition({3, 4}, {4, 4}, from, to);
+  ASSERT_TRUE(first.valid);
+  ASSERT_TRUE(second.valid);
+  EXPECT_NEAR(first.max_grid_sobel_gradient, 0.20, 1e-12);
+  EXPECT_EQ(evaluator.instrumentation().grid_sobel_5x5_fallback_to_3x3, 1U);
+  EXPECT_GT(evaluator.instrumentation().grid_sobel_cache_hits, 0U);
+  EXPECT_EQ(evaluator.instrumentation().grid_sobel_missing, 0U);
+}
+
 TEST(HybridStepEvaluator, GridSobelHardRejectPolicyIsIndependentFromSampling)
 {
   std::vector<planner::HeightPoint> points;
@@ -203,6 +328,7 @@ TEST(HybridStepEvaluator, GridSobelWeightDoesNotChangeSamplingEdgeEvaluation)
   auto changed_parameters = baseline_parameters;
   changed_parameters.grid_sobel_gradient_cost_weight = 1000000.0;
   changed_parameters.grid_sobel_hard_reject_enabled = true;
+  changed_parameters.grid_sobel_kernel_size = 5;
 
   const auto baseline = planner::StepEvaluator(
     heights, costs, baseline_parameters).evaluateEdge({0.25, 0.25}, {0.55, 0.25});
@@ -296,6 +422,7 @@ TEST(HybridStepEvaluator, LocalReliefUsesHeightmapNeighborhoodInHybridMode)
   p.edge_height_query_radius_m = 0.04;
   p.edge_max_height_evidence_gap_m = 0.051;
   p.sobel_hard_reject_enabled = true;
+  p.grid_sobel_kernel_size = 5;
   p.sobel_equivalent_step_height_m = 0.10;
   p.local_relief_hard_reject_enabled = true;
   const auto edge = planner::StepEvaluator(heights, costs, p).evaluateEdge(

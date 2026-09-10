@@ -89,6 +89,38 @@ TEST(OriginalTrgConstruction, FixedRadiusSeedIsDeterministicAndFrontierIsQueued)
     other.nodes[1].point.y != first.nodes[1].point.y);
 }
 
+TEST(OriginalTrgConstruction, GridSobelKernelDoesNotChangeSamplingGraph)
+{
+  auto fixture = flatFixture();
+  auto three_parameters = evaluationParameters();
+  three_parameters.grid_sobel_kernel_size = 3;
+  auto five_parameters = three_parameters;
+  five_parameters.grid_sobel_kernel_size = 5;
+  planner::StepEvaluator three_evaluator(
+    fixture.heightmap, fixture.costmap, three_parameters);
+  planner::StepEvaluator five_evaluator(
+    fixture.heightmap, fixture.costmap, five_parameters);
+  const auto parameters = trgParameters();
+  const auto three = planner::StepWavefrontPlanner(parameters).plan(
+    three_evaluator, {0.0, 0.0}, {1.5, 1.5});
+  const auto five = planner::StepWavefrontPlanner(parameters).plan(
+    five_evaluator, {0.0, 0.0}, {1.5, 1.5});
+
+  ASSERT_EQ(three.nodes.size(), five.nodes.size());
+  ASSERT_EQ(three.edges.size(), five.edges.size());
+  EXPECT_EQ(three.statistics.edge_samples_total, five.statistics.edge_samples_total);
+  EXPECT_EQ(three.statistics.sobel_step_rejects, five.statistics.sobel_step_rejects);
+  for (std::size_t index = 0U; index < three.nodes.size(); ++index) {
+    EXPECT_DOUBLE_EQ(three.nodes[index].point.x, five.nodes[index].point.x);
+    EXPECT_DOUBLE_EQ(three.nodes[index].point.y, five.nodes[index].point.y);
+  }
+  for (std::size_t index = 0U; index < three.edges.size(); ++index) {
+    EXPECT_EQ(three.edges[index].from, five.edges[index].from);
+    EXPECT_EQ(three.edges[index].to, five.edges[index].to);
+    EXPECT_DOUBLE_EQ(three.edges[index].evaluation.cost, five.edges[index].evaluation.cost);
+  }
+}
+
 TEST(OriginalTrgConstruction, ExistingNodeInsideRobotSizeIsRewiredWithoutCreation)
 {
   auto fixture = flatFixture();

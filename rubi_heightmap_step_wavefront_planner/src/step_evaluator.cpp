@@ -71,6 +71,7 @@ StepEvaluator::StepEvaluator(
     !std::isfinite(parameters_.sobel_cost_exponent) || parameters_.sobel_cost_exponent < 1.0 ||
     !std::isfinite(parameters_.grid_sobel_gradient_cost_weight) ||
     parameters_.grid_sobel_gradient_cost_weight < 0.0 ||
+    (parameters_.grid_sobel_kernel_size != 3 && parameters_.grid_sobel_kernel_size != 5) ||
     !std::isfinite(parameters_.local_relief_threshold_m) ||
     parameters_.local_relief_threshold_m <= 0.0 ||
     !std::isfinite(parameters_.local_relief_first_window_radius_m) ||
@@ -153,6 +154,64 @@ std::optional<double> StepEvaluator::sobelGradientMagnitude(const GridCell cente
   const double denominator = 8.0 * snapshot_.resolution();
   const double gradient = std::hypot(raw_gx / denominator, raw_gy / denominator);
   sobel_gradient_cache_[*center_index] = gradient;
+  return gradient;
+}
+
+std::optional<double> StepEvaluator::gridSobelGradientMagnitude(const GridCell center) const
+{
+  const auto center_index = snapshot_.index(center);
+  if (!center_index) {
+    ++instrumentation_.grid_sobel_queries;
+    ++instrumentation_.grid_sobel_missing;
+    return std::nullopt;
+  }
+  const auto cached = grid_sobel_gradient_cache_.find(*center_index);
+  if (cached != grid_sobel_gradient_cache_.end()) {
+    ++instrumentation_.grid_sobel_cache_hits;
+    return std::isfinite(cached->second) ?
+      std::optional<double>(cached->second) : std::nullopt;
+  }
+
+  ++instrumentation_.grid_sobel_queries;
+  std::optional<double> gradient;
+  if (parameters_.grid_sobel_kernel_size == 3) {
+    gradient = sobelGradientMagnitude(center);
+  } else {
+    constexpr int kDerivative[5] = {-1, -2, 0, 2, 1};
+    constexpr int kSmoothing[5] = {1, 4, 6, 4, 1};
+    double raw_gx = 0.0;
+    double raw_gy = 0.0;
+    bool complete = true;
+    for (int row = -2; row <= 2 && complete; ++row) {
+      for (int col = -2; col <= 2; ++col) {
+        const auto elevation = snapshot_.elevation({center.x + col, center.y + row});
+        if (!elevation) {
+          complete = false;
+          break;
+        }
+        raw_gx += static_cast<double>(
+          kSmoothing[row + 2] * kDerivative[col + 2]) * (*elevation);
+        raw_gy += static_cast<double>(
+          kDerivative[row + 2] * kSmoothing[col + 2]) * (*elevation);
+      }
+    }
+    if (complete) {
+      const double denominator = 128.0 * snapshot_.resolution();
+      gradient = std::hypot(raw_gx / denominator, raw_gy / denominator);
+      ++instrumentation_.grid_sobel_5x5_valid;
+    } else {
+      ++instrumentation_.grid_sobel_5x5_fallback_to_3x3;
+      gradient = sobelGradientMagnitude(center);
+    }
+  }
+
+  if (!gradient) {
+    ++instrumentation_.grid_sobel_missing;
+    grid_sobel_gradient_cache_[*center_index] =
+      std::numeric_limits<double>::quiet_NaN();
+    return std::nullopt;
+  }
+  grid_sobel_gradient_cache_[*center_index] = *gradient;
   return gradient;
 }
 
@@ -505,12 +564,18 @@ EdgeEvaluation StepEvaluator::evaluateGridTransition(
     accumulateLocalReliefEvidence(to_evaluation.height_source_cell, result);
   }
 
-  const auto from_gradient = sobelGradientMagnitude(from_evaluation.height_source_cell);
-  const auto to_gradient = sobelGradientMagnitude(to_evaluation.height_source_cell);
+  const auto from_gradient = gridSobelGradientMagnitude(from_evaluation.height_source_cell);
+  const auto to_gradient = gridSobelGradientMagnitude(to_evaluation.height_source_cell);
   if (from_gradient || to_gradient) {
     const double mean_gradient = from_gradient && to_gradient ?
       0.5 * (*from_gradient + *to_gradient) :
       (from_gradient ? *from_gradient : *to_gradient);
+    result.max_grid_sobel_gradient = std::max(
+      from_gradient.value_or(0.0), to_gradient.value_or(0.0));
+    // Treat w_s * G(c) as a scalar terrain cost density. Multiplying the
+    // endpoint-average density by edge length is a trapezoidal discrete
+    // line-cost approximation accumulated naturally by A*. The length factor
+    // also prevents an equal per-cell penalty from favoring longer diagonals.
     result.sobel_gradient_exposure_m = result.length_xy_m * mean_gradient;
   }
 

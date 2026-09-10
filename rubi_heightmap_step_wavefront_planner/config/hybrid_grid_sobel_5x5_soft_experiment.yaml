@@ -27,17 +27,17 @@ rubi_hybrid_planner_comparison:
     evaluation.inflation_cost_weight: 5.0
     evaluation.inflation_cost_exponent: 1.0
 
-    # Preserve the legacy Sampling Sobel policy. Grid uses the independent
-    # hard-reject switch and continuous exposure weight below.
+    # Legacy Sampling Sobel settings remain unchanged.
     evaluation.sobel_hard_reject_enabled: true
     evaluation.sobel_equivalent_step_height_m: 0.10
     evaluation.sobel_cost_weight: 0.0
     evaluation.sobel_cost_exponent: 2.0
+
+    # Grid Sobel is a scalar soft path-quality term, never a feasibility gate
+    # in this experiment profile.
     evaluation.grid_sobel_hard_reject_enabled: false
-    
-    # Sweep this value through: 0.0, 0.25, 0.5, 1.0, 2.0, 4.0.
-    
-    evaluation.grid_sobel_gradient_cost_weight: 10.0
+    evaluation.grid_sobel_kernel_size: 5
+    evaluation.grid_sobel_gradient_cost_weight: 2.0
 
     evaluation.local_relief_hard_reject_enabled: true
     evaluation.local_relief_threshold_m: 0.10
@@ -62,8 +62,6 @@ rubi_hybrid_planner_comparison:
     grid_visualization_max_cells: 10000
     grid_visualization_stride: 1
 
-    # Sampling settings remain declared for parser compatibility, but grid_only
-    # prevents Sampling graph construction in this experiment profile.
     sampling.policy: original_trg_random_ring
     sampling.trg_expand_distance_m: 0.40
     sampling.trg_robot_size_m: 0.30
