@@ -9,6 +9,8 @@
 namespace rubi_heightmap_step_wavefront_planner
 {
 
+class GridPathEvaluator;
+
 struct TerrainPoint
 {
   double x{0.0};
@@ -38,5 +40,9 @@ PathValidationResult validateRemainingPath(
   const std::vector<TerrainPoint> & path,
   std::size_t start_index,
   const StepEvaluator & evaluator);
+PathValidationResult validateRemainingGridPath(
+  const std::vector<TerrainPoint> & path,
+  std::size_t start_index,
+  const GridPathEvaluator & evaluator);
 
 }  // namespace rubi_heightmap_step_wavefront_planner

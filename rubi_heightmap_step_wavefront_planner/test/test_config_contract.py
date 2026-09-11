@@ -232,6 +232,31 @@ def test_hybrid_navigation_launches_use_one_identical_controller_profile():
         assert 'Do not run another controller on /cmd_vel simultaneously.' in text
 
 
+def test_grid_terrain_clearance_profiles_differ_only_by_enable_switch():
+    config_dir = CONFIG.parent
+    control = _parameters(config_dir / 'hybrid_grid_clearance_control.yaml')
+    clearance = _parameters(config_dir / 'hybrid_grid_clearance_020m.yaml')
+
+    assert control['planner_run_mode'] == 'grid_only'
+    assert control['evaluation.grid_terrain_clearance_enabled'] is False
+    assert clearance['evaluation.grid_terrain_clearance_enabled'] is True
+    for parameters in (control, clearance):
+        assert parameters['evaluation.grid_terrain_clearance_distance_m'] == 0.20
+        assert parameters['evaluation.local_relief_hard_reject_enabled'] is True
+        assert parameters['evaluation.local_relief_threshold_m'] == 0.10
+        assert parameters['evaluation.grid_sobel_hard_reject_enabled'] is False
+        assert parameters['evaluation.grid_sobel_kernel_size'] == 5
+        assert parameters['evaluation.grid_sobel_gradient_cost_weight'] == 2.0
+        assert parameters['tracking_refiner.enabled'] is False
+        assert parameters['replanning.enabled'] is False
+
+    control_without_switch = dict(control)
+    clearance_without_switch = dict(clearance)
+    control_without_switch.pop('evaluation.grid_terrain_clearance_enabled')
+    clearance_without_switch.pop('evaluation.grid_terrain_clearance_enabled')
+    assert control_without_switch == clearance_without_switch
+
+
 def test_v5_tracking_refiner_and_replanning_contract():
     parameters = _parameters(CONFIG.parent / 'hybrid_grid_trg_comparison_v1.yaml')
     expected = {

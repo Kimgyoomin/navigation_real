@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "rubi_heightmap_step_wavefront_planner/planning/path_cost_evaluator.hpp"
+#include "rubi_heightmap_step_wavefront_planner/planning/grid_path_evaluator.hpp"
 
 namespace rubi_heightmap_step_wavefront_planner
 {
@@ -40,12 +41,19 @@ public:
   TrackingPathRefinerResult refine(
     const std::vector<TerrainPoint> & raw_path,
     const StepEvaluator & evaluator) const;
+  TrackingPathRefinerResult refineGrid(
+    const std::vector<TerrainPoint> & raw_path,
+    const GridPathEvaluator & evaluator) const;
 
 private:
   static double maximumHeadingChange(const std::vector<TerrainPoint> & path) noexcept;
   std::vector<TerrainPoint> resample(
     const std::vector<TerrainPoint> & path,
     const StepEvaluator & evaluator,
+    bool & valid) const;
+  std::vector<TerrainPoint> resampleGrid(
+    const std::vector<TerrainPoint> & path,
+    const GridPathEvaluator & evaluator,
     bool & valid) const;
 
   TrackingPathRefinerParameters parameters_;

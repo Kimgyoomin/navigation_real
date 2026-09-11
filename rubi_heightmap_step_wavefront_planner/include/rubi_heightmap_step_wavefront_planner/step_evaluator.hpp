@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string_view>
 #include <unordered_map>
@@ -29,6 +30,9 @@ enum class StepInvalidReason
   kHeightEvidenceGap,
   kIsolatedNode,
   kTrgCollision,
+  kTerrainClearanceViolation,
+  kTerrainClearanceEvidenceMissing,
+  kTerrainClearanceContextUnavailable,
 };
 
 enum class StepEvaluationMode {kHeightOnlyStrict, kCostmapHeightHybrid};
@@ -69,6 +73,8 @@ struct StepEvaluatorParameters
   bool grid_sobel_hard_reject_enabled{false};
   int grid_sobel_kernel_size{3};
   double grid_sobel_gradient_cost_weight{0.0};
+  bool grid_terrain_clearance_enabled{false};
+  double grid_terrain_clearance_distance_m{0.20};
   bool local_relief_hard_reject_enabled{false};
   double local_relief_threshold_m{0.10};
   double local_relief_first_window_radius_m{0.10};
@@ -122,6 +128,8 @@ struct EdgeEvaluation
   double minimum_clearance_m{0.0};
   double clearance_score_m{0.0};
   double inflation_score_m{0.0};
+  double minimum_terrain_clearance_m{std::numeric_limits<double>::infinity()};
+  bool minimum_terrain_clearance_exact{true};
   std::uint8_t maximum_raw_cost{0U};
   std::size_t height_evidence_missing_samples{0U};
   double cost{0.0};
@@ -168,6 +176,8 @@ public:
     GridCell from, GridCell to,
     const NodeEvaluation & from_evaluation,
     const NodeEvaluation & to_evaluation) const;
+  std::optional<double> supportedLocalReliefAt(GridCell cell) const;
+  std::optional<double> gridSobelGradientAt(Point2D point) const;
   std::vector<GridCell> supercover(Point2D from, Point2D to) const;
 
 private:

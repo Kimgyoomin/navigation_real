@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -54,6 +55,10 @@ struct PlanningStatistics
   std::size_t grid_sobel_5x5_valid{0U};
   std::size_t grid_sobel_5x5_fallback_to_3x3{0U};
   std::size_t grid_sobel_missing{0U};
+  std::size_t terrain_seed_count{0U};
+  std::size_t terrain_evidence_invalid_count{0U};
+  std::size_t grid_terrain_clearance_rejects{0U};
+  std::size_t grid_terrain_clearance_evidence_rejects{0U};
 };
 
 struct PathMetrics
@@ -66,6 +71,10 @@ struct PathMetrics
   double sobel_gradient_exposure_m{0.0};
   double sobel_cost{0.0};
   double max_grid_sobel_gradient{0.0};
+  double minimum_terrain_clearance_m{std::numeric_limits<double>::infinity()};
+  bool minimum_terrain_clearance_exact{true};
+  double grid_search_cost{0.0};
+  double grid_validation_cost{0.0};
   double max_local_relief_m{0.0};
   double max_supported_local_relief_m{0.0};
   double height_score_m{0.0};
@@ -93,6 +102,9 @@ struct PlanResult
   double path_finalize_time_ms{0.0};
   double graph_clean_time_ms{0.0};
   double core_total_time_ms{0.0};
+  double terrain_preprocess_time_ms{0.0};
+  double path_validation_time_ms{0.0};
+  double total_request_time_ms{0.0};
   PathMetrics path_metrics;
   PlanningStatistics statistics;
 };

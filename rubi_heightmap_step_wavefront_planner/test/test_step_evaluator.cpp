@@ -44,6 +44,8 @@ TEST(StepEvaluator, SobelHardRejectRequiresExplicitOptIn)
   EXPECT_DOUBLE_EQ(defaults.local_relief_upper_quantile, 0.90);
   EXPECT_DOUBLE_EQ(defaults.local_relief_min_observed_ratio, 0.70);
   EXPECT_EQ(defaults.local_relief_critical_cell_count, 3U);
+  EXPECT_FALSE(defaults.grid_terrain_clearance_enabled);
+  EXPECT_DOUBLE_EQ(defaults.grid_terrain_clearance_distance_m, 0.20);
 }
 
 TEST(StepEvaluator, RejectsInvalidLocalReliefParameters)

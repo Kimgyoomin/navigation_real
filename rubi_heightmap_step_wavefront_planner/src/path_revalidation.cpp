@@ -1,5 +1,7 @@
 #include "rubi_heightmap_step_wavefront_planner/path_revalidation.hpp"
 
+#include "rubi_heightmap_step_wavefront_planner/planning/grid_path_evaluator.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -57,6 +59,41 @@ PathValidationResult validateRemainingPath(
       result.max_height_jump_m = edge.max_height_jump_m;
       result.max_clearance_height_jump_m = edge.max_clearance_height_jump_m;
       result.observed_support_ratio = edge.observed_support_ratio;
+      return result;
+    }
+  }
+  result.valid = true;
+  result.reason = StepInvalidReason::kNone;
+  return result;
+}
+
+PathValidationResult validateRemainingGridPath(
+  const std::vector<TerrainPoint> & path, const std::size_t start_index,
+  const GridPathEvaluator & evaluator)
+{
+  PathValidationResult result;
+  if (path.empty() || start_index >= path.size()) {return result;}
+  const Point2D start{path[start_index].x, path[start_index].y};
+  const auto start_evaluation = evaluator.evaluatePoint(start);
+  if (!start_evaluation.valid) {
+    result.reason = start_evaluation.reason;
+    result.failing_segment = start_index;
+    result.failing_from = start;
+    result.failing_to = start;
+    result.minimum_clearance_m = start_evaluation.minimum_terrain_clearance_m;
+    return result;
+  }
+  for (std::size_t index = start_index + 1U; index < path.size(); ++index) {
+    const Point2D from{path[index - 1U].x, path[index - 1U].y};
+    const Point2D to{path[index].x, path[index].y};
+    const EdgeEvaluation edge = evaluator.evaluateSegment(from, to);
+    if (!edge.valid) {
+      result.reason = edge.reason;
+      result.failing_segment = index - 1U;
+      result.failing_from = from;
+      result.failing_to = to;
+      result.minimum_clearance_m = edge.minimum_terrain_clearance_m;
+      result.max_height_jump_m = edge.max_height_jump_m;
       return result;
     }
   }

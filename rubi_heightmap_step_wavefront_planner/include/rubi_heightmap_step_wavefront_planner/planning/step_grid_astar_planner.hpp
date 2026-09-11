@@ -3,6 +3,7 @@
 #include <cstddef>
 
 #include "rubi_heightmap_step_wavefront_planner/planning/plan_result.hpp"
+#include "rubi_heightmap_step_wavefront_planner/terrain/local_relief_hazard_snapshot.hpp"
 
 namespace rubi_heightmap_step_wavefront_planner
 {
@@ -18,7 +19,9 @@ class StepGridAStarPlanner
 {
 public:
   explicit StepGridAStarPlanner(GridAStarParameters parameters);
-  PlanResult plan(const StepEvaluator & evaluator, Point2D start, Point2D goal) const;
+  PlanResult plan(
+    const StepEvaluator & evaluator, Point2D start, Point2D goal,
+    const LocalReliefHazardSnapshot * terrain_hazards = nullptr) const;
 
   static double octileDistance(int dx, int dy) noexcept;
 

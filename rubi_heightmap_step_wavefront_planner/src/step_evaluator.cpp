@@ -38,6 +38,11 @@ std::string_view toString(const StepInvalidReason reason) noexcept
     case StepInvalidReason::kHeightEvidenceGap: return "height_evidence_gap";
     case StepInvalidReason::kIsolatedNode: return "isolated_node";
     case StepInvalidReason::kTrgCollision: return "trg_collision";
+    case StepInvalidReason::kTerrainClearanceViolation: return "terrain_clearance_violation";
+    case StepInvalidReason::kTerrainClearanceEvidenceMissing:
+      return "terrain_clearance_evidence_missing";
+    case StepInvalidReason::kTerrainClearanceContextUnavailable:
+      return "terrain_clearance_context_unavailable";
   }
   return "invalid_input";
 }
@@ -72,6 +77,10 @@ StepEvaluator::StepEvaluator(
     !std::isfinite(parameters_.grid_sobel_gradient_cost_weight) ||
     parameters_.grid_sobel_gradient_cost_weight < 0.0 ||
     (parameters_.grid_sobel_kernel_size != 3 && parameters_.grid_sobel_kernel_size != 5) ||
+    !std::isfinite(parameters_.grid_terrain_clearance_distance_m) ||
+    parameters_.grid_terrain_clearance_distance_m < 0.0 ||
+    (parameters_.grid_terrain_clearance_enabled &&
+    !parameters_.local_relief_hard_reject_enabled) ||
     !std::isfinite(parameters_.local_relief_threshold_m) ||
     parameters_.local_relief_threshold_m <= 0.0 ||
     !std::isfinite(parameters_.local_relief_first_window_radius_m) ||
@@ -354,6 +363,18 @@ void StepEvaluator::accumulateLocalReliefEvidence(
   if (relief.supported_relief_m > parameters_.local_relief_threshold_m) {
     result.local_relief_hard_rejection = true;
   }
+}
+
+std::optional<double> StepEvaluator::supportedLocalReliefAt(const GridCell cell) const
+{
+  const SupportedLocalReliefResult result = supportedLocalRelief(cell);
+  return result.valid ? std::optional<double>(result.supported_relief_m) : std::nullopt;
+}
+
+std::optional<double> StepEvaluator::gridSobelGradientAt(const Point2D point) const
+{
+  if (!std::isfinite(point.x) || !std::isfinite(point.y)) {return std::nullopt;}
+  return gridSobelGradientMagnitude(snapshot_.worldToCell(point));
 }
 
 double StepEvaluator::nearestHazardDistance(const GridCell center) const

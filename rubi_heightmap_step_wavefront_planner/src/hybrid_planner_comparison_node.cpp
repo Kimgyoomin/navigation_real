@@ -22,6 +22,7 @@
 
 #include "rubi_heightmap_step_wavefront_planner/planner_visualization.hpp"
 #include "rubi_heightmap_step_wavefront_planner/planning/path_cost_evaluator.hpp"
+#include "rubi_heightmap_step_wavefront_planner/planning/grid_path_evaluator.hpp"
 #include "rubi_heightmap_step_wavefront_planner/planning/step_grid_astar_planner.hpp"
 #include "rubi_heightmap_step_wavefront_planner/planning/tracking_path_refiner.hpp"
 #include "rubi_heightmap_step_wavefront_planner/ros/nav2_costmap_adapter.hpp"
@@ -141,6 +142,8 @@ public:
       "sobel_threshold_m=%.3f\n"
       "legacy_sampling_sobel_cost_weight=%.3f\n"
       "grid_sobel_gradient_cost_weight=%.3f\nsobel_cost_exponent=%.3f\n"
+      "grid_terrain_clearance_enabled=%s\n"
+      "grid_terrain_clearance_distance_m=%.3f\n"
       "local_relief_enabled=%s\nlocal_relief_threshold_m=%.3f\n"
       "local_relief_first_window_radius_m=%.3f\n"
       "local_relief_second_window_radius_m=%.3f\n"
@@ -155,6 +158,8 @@ public:
       evaluator_parameters_.sobel_cost_weight,
       evaluator_parameters_.grid_sobel_gradient_cost_weight,
       evaluator_parameters_.sobel_cost_exponent,
+      evaluator_parameters_.grid_terrain_clearance_enabled ? "true" : "false",
+      evaluator_parameters_.grid_terrain_clearance_distance_m,
       evaluator_parameters_.local_relief_hard_reject_enabled ? "true" : "false",
       evaluator_parameters_.local_relief_threshold_m,
       evaluator_parameters_.local_relief_first_window_radius_m,
@@ -289,6 +294,16 @@ private:
     evaluator_parameters_.local_relief_critical_cell_count = positiveSize(
       "evaluation.local_relief_critical_cell_count",
       static_cast<std::int64_t>(evaluator_parameters_.local_relief_critical_cell_count));
+    evaluator_parameters_.grid_terrain_clearance_enabled = declare_parameter(
+      "evaluation.grid_terrain_clearance_enabled", false);
+    evaluator_parameters_.grid_terrain_clearance_distance_m = declare_parameter(
+      "evaluation.grid_terrain_clearance_distance_m", 0.20);
+    if (evaluator_parameters_.grid_terrain_clearance_enabled &&
+      !evaluator_parameters_.local_relief_hard_reject_enabled)
+    {
+      throw std::invalid_argument(
+              "grid terrain clearance requires local relief hard rejection");
+    }
     grid_parameters_.allow_diagonal = declare_parameter("grid_allow_diagonal", true);
     grid_parameters_.max_expanded_states = positiveSize("grid_max_expanded_states", 500000);
     grid_parameters_.max_planning_time_ms = positiveSize("grid_max_planning_time_ms", 5000);
@@ -767,6 +782,30 @@ private:
       improvement, min_cost_improvement_ratio_);
   }
 
+  std::shared_ptr<const LocalReliefHazardSnapshot> terrainHazards(
+    const StepEvaluator & evaluator, double & elapsed_ms, bool & cache_hit)
+  {
+    const auto started = std::chrono::steady_clock::now();
+    cache_hit = false;
+    if (!evaluator.parameters().grid_terrain_clearance_enabled) {
+      elapsed_ms = 0.0;
+      return {};
+    }
+    if (terrain_hazard_cache_ && terrain_hazard_cache_->matches(evaluator)) {
+      cache_hit = true;
+      ++terrain_hazard_cache_hits_;
+      elapsed_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - started).count();
+      return terrain_hazard_cache_;
+    }
+    terrain_hazard_cache_ = std::make_shared<const LocalReliefHazardSnapshot>(
+      LocalReliefHazardSnapshot::build(evaluator));
+    ++terrain_hazard_cache_builds_;
+    elapsed_ms = std::chrono::duration<double, std::milli>(
+      std::chrono::steady_clock::now() - started).count();
+    return terrain_hazard_cache_;
+  }
+
   void processPendingReplan()
   {
     bool pending = false;
@@ -822,10 +861,18 @@ private:
     }
 
     StepEvaluator evaluator(*heightmap, *costmap, evaluator_parameters_);
+    double terrain_preprocess_ms = 0.0;
+    bool terrain_cache_hit = false;
+    const auto terrain_hazards = grid_active_.active ?
+      terrainHazards(evaluator, terrain_preprocess_ms, terrain_cache_hit) :
+      std::shared_ptr<const LocalReliefHazardSnapshot>{};
+    const std::optional<GridPathEvaluator> grid_path_evaluator = grid_active_.active ?
+      std::optional<GridPathEvaluator>(GridPathEvaluator(evaluator, terrain_hazards.get())) :
+      std::nullopt;
     bool hard_invalid = retry;
     StepInvalidReason invalid_reason = StepInvalidReason::kNone;
     std::size_t failing_segment = 0U;
-    auto validate = [&](ActivePlanState & state) {
+    auto validate_sampling = [&](ActivePlanState & state) {
         if (!state.active || state.tracking_path.empty()) {return;}
         state.nearest_index = nearestPathIndex(
           state.tracking_path, robot, state.nearest_index);
@@ -837,8 +884,18 @@ private:
           failing_segment = validation.failing_segment;
         }
       };
-    validate(grid_active_);
-    validate(sampling_active_);
+    if (grid_active_.active && !grid_active_.tracking_path.empty()) {
+      grid_active_.nearest_index = nearestPathIndex(
+        grid_active_.tracking_path, robot, grid_active_.nearest_index);
+      const auto validation = validateRemainingGridPath(
+        grid_active_.tracking_path, grid_active_.nearest_index, *grid_path_evaluator);
+      if (!validation.valid && !hard_invalid) {
+        hard_invalid = true;
+        invalid_reason = validation.reason;
+        failing_segment = validation.failing_segment;
+      }
+    }
+    validate_sampling(sampling_active_);
 
     const rclcpp::Time current = now();
     if (hard_invalid && !hard_stop_latched_ && stop_before_hard_replan_) {
@@ -985,6 +1042,7 @@ private:
       }
       const Point2D start = costmap->cellCenter(*start_cell);
       const Point2D target = costmap->cellCenter(*goal_cell);
+      const auto request_started = std::chrono::steady_clock::now();
       if (!automatic) {resetRobotTrace(target);}
       goal_active_ = true;
       active_goal_map_ = goal_in_map;
@@ -993,14 +1051,22 @@ private:
       std::optional<double> old_grid_cost;
       std::optional<double> old_sampling_cost;
       StepEvaluator current_evaluator(*heightmap, *costmap, evaluator_parameters_);
+      double terrain_preprocess_ms = 0.0;
+      bool terrain_cache_hit = false;
+      const auto terrain_hazards = grid_planner_ ?
+        terrainHazards(current_evaluator, terrain_preprocess_ms, terrain_cache_hit) :
+        std::shared_ptr<const LocalReliefHazardSnapshot>{};
+      const std::optional<GridPathEvaluator> current_grid_evaluator = grid_planner_ ?
+        std::optional<GridPathEvaluator>(
+        GridPathEvaluator(current_evaluator, terrain_hazards.get())) : std::nullopt;
       const Point2D robot_position{
         start_transform.transform.translation.x,
         start_transform.transform.translation.y};
       if (grid_active_.active && !grid_active_.tracking_path.empty()) {
         grid_active_.nearest_index = nearestPathIndex(
           grid_active_.tracking_path, robot_position, grid_active_.nearest_index);
-        const auto evaluation = evaluatePolyline(
-          grid_active_.tracking_path, grid_active_.nearest_index, current_evaluator);
+        const auto evaluation = current_grid_evaluator->evaluatePolyline(
+          grid_active_.tracking_path, grid_active_.nearest_index);
         if (evaluation.valid) {old_grid_cost = evaluation.total_cost;}
       }
       if (sampling_active_.active && !sampling_active_.tracking_path.empty()) {
@@ -1014,7 +1080,8 @@ private:
       std::optional<PlanResult> sampling;
       if (grid_planner_) {
         StepEvaluator evaluator(*heightmap, *costmap, evaluator_parameters_);
-        grid = grid_planner_->plan(evaluator, start, target);
+        grid = grid_planner_->plan(evaluator, start, target, terrain_hazards.get());
+        grid->terrain_preprocess_time_ms = terrain_preprocess_ms;
       }
       if (sampling_planner_) {
         StepEvaluator evaluator(*heightmap, *costmap, evaluator_parameters_);
@@ -1026,8 +1093,15 @@ private:
       if (grid) {
         const auto raw = terrainPath(*grid);
         StepEvaluator evaluator(*heightmap, *costmap, evaluator_parameters_);
-        const auto refined = TrackingPathRefiner(tracking_refiner_parameters_).refine(
-          raw, evaluator);
+        const GridPathEvaluator grid_evaluator(evaluator, terrain_hazards.get());
+        const auto validation_started = std::chrono::steady_clock::now();
+        const auto refined = TrackingPathRefiner(tracking_refiner_parameters_).refineGrid(
+          raw, grid_evaluator);
+        grid->path_validation_time_ms = std::chrono::duration<double, std::milli>(
+          std::chrono::steady_clock::now() - validation_started).count();
+        grid->path_metrics.grid_validation_cost = refined.tracking_cost;
+        grid->total_request_time_ms = std::chrono::duration<double, std::milli>(
+          std::chrono::steady_clock::now() - request_started).count();
         const double candidate_cost = refined.tracking_cost;
         const double improvement = old_grid_cost && *old_grid_cost > 1.0e-12 ?
           (*old_grid_cost - candidate_cost) / *old_grid_cost : 0.0;
@@ -1126,6 +1200,26 @@ private:
         sampling_parameters_.sampling_policy == SamplingPolicy::kOriginalTrgRandomRing ?
         sampling_parameters_.trg_random_seed : sampling_parameters_.random_seed);
       if (grid) {
+        RCLCPP_INFO(
+          get_logger(),
+          "[GRID TERRAIN CLEARANCE] enabled=%s configured_distance_m=%.6f "
+          "seed_count=%zu evidence_invalid_count=%zu rejects=%zu evidence_rejects=%zu "
+          "minimum_clearance_m=%.6f minimum_clearance_kind=%s "
+          "preprocess_ms=%.6f cache_hit=%s "
+          "cache_builds=%zu cache_hits=%zu search_cost=%.9f validation_cost=%.9f "
+          "path_validation_ms=%.6f total_request_ms=%.6f",
+          evaluator_parameters_.grid_terrain_clearance_enabled ? "true" : "false",
+          evaluator_parameters_.grid_terrain_clearance_distance_m,
+          grid->statistics.terrain_seed_count,
+          grid->statistics.terrain_evidence_invalid_count,
+          grid->statistics.grid_terrain_clearance_rejects,
+          grid->statistics.grid_terrain_clearance_evidence_rejects,
+          grid->path_metrics.minimum_terrain_clearance_m,
+          grid->path_metrics.minimum_terrain_clearance_exact ? "exact" : "lower_bound",
+          grid->terrain_preprocess_time_ms, terrain_cache_hit ? "true" : "false",
+          terrain_hazard_cache_builds_, terrain_hazard_cache_hits_,
+          grid->path_metrics.grid_search_cost, grid->path_metrics.grid_validation_cost,
+          grid->path_validation_time_ms, grid->total_request_time_ms);
         logDiagnostics("grid", *grid, *heightmap, *costmap);
         logResultBlock("GRID A* RESULT", *grid, costmap_generation, heightmap_generation);
       } else {
@@ -1184,6 +1278,9 @@ private:
   std::uint64_t costmap_content_hash_{0U}, heightmap_content_hash_{0U};
   std::uint64_t last_processed_costmap_generation_{0U};
   std::uint64_t last_processed_heightmap_generation_{0U};
+  std::shared_ptr<const LocalReliefHazardSnapshot> terrain_hazard_cache_;
+  std::size_t terrain_hazard_cache_builds_{0U};
+  std::size_t terrain_hazard_cache_hits_{0U};
   bool pending_costmap_change_{false}, pending_heightmap_change_{false};
   bool replanning_enabled_{true};
   bool replan_on_heightmap_change_{true}, replan_on_costmap_change_{true};

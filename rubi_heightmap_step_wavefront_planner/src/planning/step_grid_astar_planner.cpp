@@ -53,7 +53,8 @@ double StepGridAStarPlanner::octileDistance(const int dx, const int dy) noexcept
 }
 
 PlanResult StepGridAStarPlanner::plan(
-  const StepEvaluator & evaluator, const Point2D start, const Point2D goal) const
+  const StepEvaluator & evaluator, const Point2D start, const Point2D goal,
+  const LocalReliefHazardSnapshot * terrain_hazards) const
 {
   const auto started = Clock::now();
   PlanResult result;
@@ -61,6 +62,20 @@ PlanResult StepGridAStarPlanner::plan(
   if (!costmap || evaluator.mode() != StepEvaluationMode::kCostmapHeightHybrid) {
     result.message = "grid planner requires hybrid evaluator";
     return result;
+  }
+  const bool clearance_enabled = evaluator.parameters().grid_terrain_clearance_enabled;
+  if (clearance_enabled &&
+    (!terrain_hazards || !terrain_hazards->matches(evaluator)))
+  {
+    result.message = "grid terrain clearance context unavailable";
+    result.rejected.push_back({RejectionKind::kNode,
+      StepInvalidReason::kTerrainClearanceContextUnavailable, start, start});
+    return result;
+  }
+  if (terrain_hazards) {
+    result.statistics.terrain_seed_count = terrain_hazards->seedCount();
+    result.statistics.terrain_evidence_invalid_count =
+      terrain_hazards->evidenceInvalidCount();
   }
   const auto start_cell = costmap->worldToCell(start);
   const auto goal_cell = costmap->worldToCell(goal);
@@ -80,6 +95,37 @@ PlanResult StepGridAStarPlanner::plan(
       !start_evaluation.valid ? start_evaluation.reason : goal_evaluation.reason,
       !start_evaluation.valid ? start : goal, !start_evaluation.valid ? start : goal});
     return result;
+  }
+  if (clearance_enabled) {
+    const auto reject_endpoint = [&](const Point2D point) {
+        const TerrainClearanceQuery query = terrain_hazards->queryPoint(
+          point, evaluator.parameters().grid_terrain_clearance_distance_m);
+        result.path_metrics.minimum_terrain_clearance_m = std::min(
+          result.path_metrics.minimum_terrain_clearance_m, query.minimum_distance_m);
+        result.path_metrics.minimum_terrain_clearance_exact =
+          result.path_metrics.minimum_terrain_clearance_exact &&
+          query.minimum_distance_exact;
+        if (!query.evidence_valid) {
+          ++result.statistics.grid_terrain_clearance_evidence_rejects;
+          result.message = "grid endpoint terrain clearance evidence missing";
+          result.rejected.push_back({RejectionKind::kNode,
+            StepInvalidReason::kTerrainClearanceEvidenceMissing, point, point});
+          return true;
+        }
+        if (query.violation) {
+          ++result.statistics.grid_terrain_clearance_rejects;
+          result.message = "grid endpoint violates terrain clearance";
+          result.rejected.push_back({RejectionKind::kNode,
+            StepInvalidReason::kTerrainClearanceViolation, point, point});
+          return true;
+        }
+        return false;
+      };
+    if (reject_endpoint(costmap->cellCenter(*start_cell)) ||
+      reject_endpoint(costmap->cellCenter(*goal_cell)))
+    {
+      return result;
+    }
   }
 
   const std::size_t width = costmap->sizeX();
@@ -185,6 +231,23 @@ PlanResult StepGridAStarPlanner::plan(
           costmap->cellCenter(current_cell), neighbor_point});
         continue;
       }
+      if (clearance_enabled) {
+        const TerrainClearanceQuery clearance = terrain_hazards->querySegment(
+          costmap->cellCenter(current_cell), neighbor_point,
+          evaluator.parameters().grid_terrain_clearance_distance_m);
+        if (!clearance.evidence_valid || clearance.violation) {
+          const StepInvalidReason reason = clearance.evidence_valid ?
+            StepInvalidReason::kTerrainClearanceViolation :
+            StepInvalidReason::kTerrainClearanceEvidenceMissing;
+          result.statistics.grid_terrain_clearance_rejects +=
+            clearance.violation ? 1U : 0U;
+          result.statistics.grid_terrain_clearance_evidence_rejects +=
+            clearance.evidence_valid ? 0U : 1U;
+          result.rejected.push_back({RejectionKind::kEdge, reason,
+            costmap->cellCenter(current_cell), neighbor_point});
+          continue;
+        }
+      }
       const double tentative = g[current.index] + edge.cost;
       if (tentative + kTolerance < g[neighbor_index] ||
         (std::abs(tentative - g[neighbor_index]) <= kTolerance &&
@@ -273,6 +336,18 @@ PlanResult StepGridAStarPlanner::plan(
     result.path_metrics.inflation_score_m += edge.inflation_score_m;
     result.path_metrics.maximum_raw_cost = std::max(
       result.path_metrics.maximum_raw_cost, edge.maximum_raw_cost);
+    if (clearance_enabled) {
+      const TerrainClearanceQuery clearance = terrain_hazards->querySegment(
+        costmap->cellCenter(toCell(previous_index)),
+        costmap->cellCenter(toCell(cell_index)),
+        evaluator.parameters().grid_terrain_clearance_distance_m);
+      result.path_metrics.minimum_terrain_clearance_m = std::min(
+        result.path_metrics.minimum_terrain_clearance_m,
+        clearance.minimum_distance_m);
+      result.path_metrics.minimum_terrain_clearance_exact =
+        result.path_metrics.minimum_terrain_clearance_exact &&
+        clearance.minimum_distance_exact;
+    }
   }
   result.path_metrics.height_cost = evaluator.parameters().height_cost_weight *
     result.path_metrics.height_score_m;
@@ -281,6 +356,11 @@ PlanResult StepGridAStarPlanner::plan(
   result.path_metrics.sobel_cost = evaluator.parameters().grid_sobel_gradient_cost_weight *
     result.path_metrics.sobel_gradient_exposure_m;
   result.path_metrics.total_cost = g[goal_index];
+  result.path_metrics.grid_search_cost = g[goal_index];
+  result.path_metrics.grid_validation_cost =
+    evaluator.parameters().distance_weight * result.path_metrics.length_xy_m +
+    result.path_metrics.height_cost + result.path_metrics.inflation_cost +
+    result.path_metrics.sobel_cost;
   result.success = true;
   result.termination = PlanTermination::kPostGoalComplete;
   result.message = "grid path found";

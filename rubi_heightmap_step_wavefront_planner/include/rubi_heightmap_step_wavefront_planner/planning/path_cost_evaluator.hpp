@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <limits>
 #include <vector>
 
 #include "rubi_heightmap_step_wavefront_planner/path_revalidation.hpp"
@@ -16,6 +17,10 @@ struct PolylineEvaluation
   double length_xy_m{0.0};
   double inflation_cost{0.0};
   double height_cost{0.0};
+  double sobel_gradient_exposure_m{0.0};
+  double sobel_cost{0.0};
+  double minimum_terrain_clearance_m{std::numeric_limits<double>::infinity()};
+  bool minimum_terrain_clearance_exact{true};
   std::size_t failing_segment{0U};
 };
 

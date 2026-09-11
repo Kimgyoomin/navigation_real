@@ -11,7 +11,7 @@ simple_pure_pursuit_controller:
     base_frame: base_link
     
     
-    control_frequency_hz: 20.0
+    control_frequency_hz: 10.0        # 20 -> 10
     transform_timeout_s: 0.03
     path_timeout_s: 0.0
     
@@ -23,11 +23,11 @@ simple_pure_pursuit_controller:
     
     
     nominal_linear_velocity_mps: 0.70       # 0.55 -> 0.70
-    min_tracking_velocity_mps: 0.25
-    curvature_velocity_gain: 0.50           # 1.0 -> 0.5
+    min_tracking_velocity_mps: 0.10         # 0.25 -> 0.1
+    curvature_velocity_gain: 1.0            # 1.0 -> 0.5 -> 1.0
 
 
-    max_linear_velocity_mps: 0.70
+    max_linear_velocity_mps: 0.50           # 0.7 -> 0.5
     max_angular_velocity_rps: 1.50
     
     

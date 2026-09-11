@@ -8,7 +8,7 @@ simple_pure_pursuit_controller:
     map_frame: map
     base_frame: base_link
 
-    control_frequency_hz: 20.0
+    control_frequency_hz: 10.0
     transform_timeout_s: 0.03
     path_timeout_s: 0.0  # Disabled: the planner Path is transient-local, not periodic.
 

@@ -23,6 +23,7 @@ add_library(${PROJECT_NAME}_core
   src/heightmap_snapshot.cpp
   src/map/costmap_snapshot.cpp
   src/terrain/height_evidence.cpp
+  src/terrain/local_relief_hazard_snapshot.cpp
   src/step_evaluator.cpp
   src/graph/spatial_index_2d.cpp
   src/graph/wavefront_graph_builder.cpp
@@ -31,6 +32,7 @@ add_library(${PROJECT_NAME}_core
   src/planning/planning_fsm.cpp
   src/planning/planning_query_resolver.cpp
   src/planning/path_cost_evaluator.cpp
+  src/planning/grid_path_evaluator.cpp
   src/planning/step_grid_astar_planner.cpp
   src/planning/tracking_path_refiner.cpp
   src/path_revalidation.cpp
@@ -135,6 +137,10 @@ if(BUILD_TESTING)
     ament_add_gtest(${test_name} test/${test_name}.cpp)
     target_link_libraries(${test_name} ${PROJECT_NAME}_core)
   endforeach()
+
+  ament_add_gtest(test_local_relief_hazard_snapshot
+    test/test_local_relief_hazard_snapshot.cpp)
+  target_link_libraries(test_local_relief_hazard_snapshot ${PROJECT_NAME}_core)
 
   ament_add_gtest(test_planning_fsm test/test_planning_fsm.cpp)
   target_link_libraries(test_planning_fsm ${PROJECT_NAME}_core)
