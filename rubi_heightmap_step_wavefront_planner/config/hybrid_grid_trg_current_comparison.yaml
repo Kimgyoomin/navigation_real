@@ -1,0 +1,269 @@
+rubi_hybrid_planner_comparison:
+  ros__parameters:
+    # =========================================================
+    # Runtime / Input
+    # =========================================================
+    use_sim_time: false
+
+    # Comparison launch에서도 "both"로 override됨.
+    planner_run_mode: both
+    detailed_timing: false
+
+    input_costmap_topic: /global_costmap/costmap_raw
+    input_heightmap_topic: /fastdem/mapping/cloud_global
+    comparison_goal_topic: /rubi/planner_comparison/goal
+
+    base_frame: base_link
+    required_map_frame: map
+
+    max_costmap_age_s: 1.0
+    max_heightmap_age_s: 2.5
+    max_input_stamp_skew_s: 2.0
+    transform_timeout_s: 0.20
+
+    map_resolution_m: 0.05
+    lattice_tolerance_m: 0.01
+    max_grid_cells: 5000000
+
+    costmap_unknown_is_blocked: true
+
+
+    # =========================================================
+    # Common Traversability / Cost Parameters
+    # =========================================================
+
+    # Sampling:
+    # 긴 graph edge를 2.5 cm 간격으로 continuous validation.
+    #
+    # Grid:
+    # evaluateGridTransition()을 사용하므로
+    # 5 cm / diagonal 7.07 cm native cell transition을 직접 평가.
+    evaluation.edge_check_spacing_m: 0.025
+
+    # 공통 최대 허용 단차
+    evaluation.max_crossable_height_jump_m: 0.10
+
+    evaluation.height_noise_floor_m: 0.01
+    evaluation.height_cost_exponent: 2.0
+
+    evaluation.distance_weight: 20.0                     # 1.0 -> 10.0
+    evaluation.height_cost_weight: 0.05                    # 5.0 -> 0.0
+
+    evaluation.inflation_cost_weight: 5.0
+    evaluation.inflation_cost_exponent: 1.0
+
+
+    # =========================================================
+    # Sampling / Legacy Sobel
+    # =========================================================
+
+    # IMPORTANT:
+    # Original-TRG Sampling edge의 legacy 3x3 Sobel hard reject.
+    #
+    # Sampling edge:
+    # evaluateEdge()
+    #   -> evaluateHybridEdge()
+    #   -> accumulateSobelEvidence()
+    #   -> sobel_hard_reject_enabled
+    #
+    # Grid hard gate에는 아래 값이 아니라
+    # grid_sobel_hard_reject_enabled가 별도로 사용됨.
+    evaluation.sobel_hard_reject_enabled: true
+
+    evaluation.sobel_equivalent_step_height_m: 0.10
+
+    # Sampling에서 Sobel은 현재 soft cost가 아니라 hard criterion으로 사용.
+    evaluation.sobel_cost_weight: 0.0
+    evaluation.sobel_cost_exponent: 2.0
+
+
+    # =========================================================
+    # Local Relief Hard Reject
+    # =========================================================
+
+    # Grid와 Sampling 모두 사용하는 robust terrain evidence.
+    #
+    # FastDEM에서 step boundary가 여러 cell로 smear되어
+    # adjacent height difference가 작아지는 상황을
+    # neighborhood relief로 검출.
+    evaluation.local_relief_hard_reject_enabled: true
+
+    evaluation.local_relief_threshold_m: 0.10
+
+    # First window:
+    # R_raw = Q90(height) - Q10(height)
+    evaluation.local_relief_first_window_radius_m: 0.10
+
+    # Second window:
+    # 주변 Local Relief의 spatial support 확인
+    evaluation.local_relief_second_window_radius_m: 0.10
+
+    evaluation.local_relief_lower_quantile: 0.10
+    evaluation.local_relief_upper_quantile: 0.90
+
+    evaluation.local_relief_min_observed_ratio: 0.70
+    evaluation.local_relief_critical_cell_count: 3
+
+
+    # =========================================================
+    # Common Node / Height Evidence
+    # =========================================================
+
+    node_evidence_radius_m: 0.10
+    node_min_observed_cells: 3
+    node_max_nearest_evidence_distance_m: 0.075
+
+    node_height_outlier_threshold_m: 0.08
+    node_max_height_outlier_ratio: 0.30
+
+    edge_height_query_radius_m: 0.075
+    edge_max_height_evidence_gap_m: 0.10
+
+
+    # =========================================================
+    # GRID A*
+    # =========================================================
+
+    grid_allow_diagonal: true
+
+    grid_max_expanded_states: 500000
+    grid_max_planning_time_ms: 5000
+
+    grid_visualization_max_cells: 10000
+    grid_visualization_stride: 1
+
+
+    # ---------------------------------------------------------
+    # Grid-only 5x5 Sobel Soft Cost
+    # ---------------------------------------------------------
+
+    # Grid에서는 Sobel로 hard reject하지 않음.
+    evaluation.grid_sobel_hard_reject_enabled: false
+
+    # Current Grid implementation
+    evaluation.grid_sobel_kernel_size: 5
+
+    # 5x5 Sobel gradient를 terrain soft cost로 사용
+    evaluation.grid_sobel_gradient_cost_weight: 2.0
+
+
+    # ---------------------------------------------------------
+    # Grid-only Local Relief Terrain Clearance
+    # ---------------------------------------------------------
+
+    # Local Relief로 검출된 hazard seed cell 면적에서
+    # path segment가 최소 0.20 m 이상 떨어지도록 hard reject.
+    #
+    # 현재 Sampling에는 동일한 0.20 m clearance layer가 없음.
+    evaluation.grid_terrain_clearance_enabled: true
+    evaluation.grid_terrain_clearance_distance_m: 0.20
+
+
+    # =========================================================
+    # ORIGINAL TRG / SAMPLING A*
+    # =========================================================
+
+    sampling.policy: original_trg_random_ring
+
+    # Expansion radius
+    sampling.trg_expand_distance_m: 0.40
+
+    # TRG spatial / collision-support scale
+    sampling.trg_robot_size_m: 0.30
+
+    # Number of accepted samples per expansion
+    sampling.trg_sample_num: 8
+    sampling.trg_max_trial_samples: 1000
+
+    # Original TRG candidate-node terrain validity
+    sampling.trg_height_threshold_m: 0.10
+    sampling.trg_collision_threshold: 0.10
+
+    # Benchmark reproducibility
+    sampling.trg_random_seed: 42
+    sampling.trg_randomize_seed: false
+
+    # Graph connectivity
+    sampling.trg_neighbor_connection_radius_m: 0.45
+    sampling.goal_connection_distance_m: 0.45
+
+    sampling.max_nodes: 4000
+    sampling.max_expansions: 4000
+    sampling.max_graph_build_time_ms: 5000
+
+    # Goal 연결 이후 추가 expansion
+    sampling.post_goal_expansions: 50
+
+
+    # =========================================================
+    # Tracking Path Refiner
+    # =========================================================
+
+    # IMPORTANT:
+    # Planner search 결과 자체 비교이므로 OFF.
+    #
+    # Raw Grid A* vs Raw Sampling/TRG 결과를 비교.
+    tracking_refiner.enabled: false
+
+    # 아래 값은 refiner를 나중에 켤 때 사용할 설정이며,
+    # enabled=false에서는 현재 benchmark 결과에 영향을 주지 않음.
+    tracking_refiner.method: trg_three_point_mean_validated
+    tracking_refiner.smoothing_passes: 1
+    tracking_refiner.resample_spacing_m: 0.10
+    tracking_refiner.max_cost_increase_ratio: 0.05
+
+
+    # =========================================================
+    # Replanning
+    # =========================================================
+
+    # IMPORTANT:
+    # One Goal -> One paired Grid / Sampling benchmark.
+    # 실행 중 map update로 자동 재계획하지 않음.
+    replanning.enabled: false
+
+    # 아래 설정은 enabled=false이므로 현재 benchmark에서는 비활성.
+    replanning.check_period_s: 0.10
+    replanning.min_replan_interval_s: 0.50
+    replanning.soft_reoptimize_min_interval_s: 1.50
+
+    replanning.on_heightmap_change: true
+    replanning.on_costmap_change: true
+
+    replanning.stop_before_hard_replan: true
+    replanning.min_cost_improvement_ratio: 0.05
+
+    replanning.goal_tolerance_m: 0.20
+
+    replanning.retry_failed_plan: true
+    replanning.failed_retry_interval_s: 1.0
+
+
+    # =========================================================
+    # Legacy / Compatibility Parameters
+    # =========================================================
+
+    # 아래 parameter들은 deterministic_ring / trg_random_ring 등의
+    # legacy compatibility를 위해 유지.
+    #
+    # 현재 실제 Sampling policy는 위의
+    # sampling.policy: original_trg_random_ring
+    # 을 사용함.
+
+    sampling_policy: trg_random_ring
+    sampling_random_seed: 42
+
+    max_sampling_trials_per_expansion: 1000
+
+    node_sampling_distance_m: 0.30
+    samples_per_expansion: 20
+
+    merge_radius_m: 0.20
+    neighbor_connection_radius_m: 0.45
+    goal_connection_distance_m: 0.45
+
+    max_nodes: 4000
+    max_expansions: 4000
+    max_graph_build_time_ms: 5000
+
+    post_goal_expansions: 50

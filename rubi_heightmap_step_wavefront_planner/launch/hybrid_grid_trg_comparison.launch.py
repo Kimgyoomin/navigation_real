@@ -16,7 +16,8 @@ def generate_launch_description():
     package_share = get_package_share_directory(
         'rubi_heightmap_step_wavefront_planner')
     default_parameters = os.path.join(
-        package_share, 'config', 'hybrid_grid_trg_comparison_v1.yaml')
+        # package_share, 'config', 'hybrid_grid_trg_comparison_v1.yaml')
+        package_share, 'config', 'hybrid_grid_trg_current_comparison.yaml')
     params_file = LaunchConfiguration('params_file')
     use_sim_time = LaunchConfiguration('use_sim_time')
     launch_rviz = LaunchConfiguration('launch_rviz')
