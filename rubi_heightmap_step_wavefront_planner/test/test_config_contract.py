@@ -257,6 +257,25 @@ def test_grid_terrain_clearance_profiles_differ_only_by_enable_switch():
     assert control_without_switch == clearance_without_switch
 
 
+def test_grid_cot_cost_profile_contract():
+    root = CONFIG.parents[1]
+    parameters = _parameters(root / 'config' / 'hybrid_grid_cot_cost.yaml')
+    assert parameters['planner_run_mode'] == 'grid_only'
+    assert parameters['evaluation.grid_cot_height_cost_enabled'] is True
+    assert len(parameters['evaluation.grid_cot_step_heights_m']) == 7
+    assert len(parameters['evaluation.grid_cot_equivalent_penalties_m']) == 7
+    assert parameters['evaluation.distance_weight'] == 1.0
+    assert parameters['evaluation.height_cost_weight'] == 1.0
+    assert parameters['evaluation.grid_sobel_gradient_cost_weight'] == 0.0
+
+    launch = (root / 'launch' / 'hybrid_grid_cot_cost.launch.py').read_text(
+        encoding='utf-8')
+    assert "ParameterValue(" in launch
+    assert "value_type=float" in launch
+    assert "'planner_run_mode': 'grid_only'" in launch
+    assert "'replanning.enabled': False" in launch
+
+
 def test_v5_tracking_refiner_and_replanning_contract():
     parameters = _parameters(CONFIG.parent / 'hybrid_grid_trg_comparison_v1.yaml')
     expected = {

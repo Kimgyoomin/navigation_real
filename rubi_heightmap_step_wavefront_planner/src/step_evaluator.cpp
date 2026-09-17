@@ -101,6 +101,26 @@ StepEvaluator::StepEvaluator(
   {
     throw std::invalid_argument("invalid StepEvaluator parameters");
   }
+  if (parameters_.grid_cot_height_cost_enabled) {
+    const auto & heights = parameters_.grid_cot_step_heights_m;
+    const auto & penalties = parameters_.grid_cot_equivalent_penalties_m;
+    if (heights.size() != penalties.size() || heights.size() < 2U ||
+      std::abs(heights.front()) > 1.0e-12 ||
+      std::abs(penalties.front()) > 1.0e-12 ||
+      heights.back() + 1.0e-12 < parameters_.max_crossable_height_jump_m)
+    {
+      throw std::invalid_argument("invalid Grid CoT height calibration");
+    }
+    for (std::size_t index = 0U; index < heights.size(); ++index) {
+      if (!std::isfinite(heights[index]) || !std::isfinite(penalties[index]) ||
+        heights[index] < 0.0 || penalties[index] < 0.0 ||
+        (index > 0U && heights[index] <= heights[index - 1U]) ||
+        (index > 0U && penalties[index] < penalties[index - 1U]))
+      {
+        throw std::invalid_argument("invalid Grid CoT height calibration");
+      }
+    }
+  }
 }
 
 StepEvaluator::StepEvaluator(
@@ -222,6 +242,21 @@ std::optional<double> StepEvaluator::gridSobelGradientMagnitude(const GridCell c
   }
   grid_sobel_gradient_cache_[*center_index] = *gradient;
   return gradient;
+}
+
+double StepEvaluator::gridCotEquivalentPenalty(const double step_height_m) const
+{
+  const auto & heights = parameters_.grid_cot_step_heights_m;
+  const auto & penalties = parameters_.grid_cot_equivalent_penalties_m;
+  if (step_height_m <= heights.front()) {return penalties.front();}
+  if (step_height_m >= heights.back()) {return penalties.back();}
+  const auto upper = std::upper_bound(heights.begin(), heights.end(), step_height_m);
+  const std::size_t upper_index = static_cast<std::size_t>(upper - heights.begin());
+  const std::size_t lower_index = upper_index - 1U;
+  const double fraction = (step_height_m - heights[lower_index]) /
+    (heights[upper_index] - heights[lower_index]);
+  return penalties[lower_index] + fraction *
+    (penalties[upper_index] - penalties[lower_index]);
 }
 
 void StepEvaluator::accumulateSobelEvidence(
@@ -600,13 +635,23 @@ EdgeEvaluation StepEvaluator::evaluateGridTransition(
     result.sobel_gradient_exposure_m = result.length_xy_m * mean_gradient;
   }
 
-  const double jump = std::abs(to_evaluation.elevation_m - from_evaluation.elevation_m);
+  const double signed_jump = to_evaluation.elevation_m - from_evaluation.elevation_m;
+  const double jump = std::abs(signed_jump);
   result.max_height_jump_m = jump;
   if (jump > parameters_.max_crossable_height_jump_m) {
     result.reason = StepInvalidReason::kStepLimit;
     return result;
   }
-  if (jump > parameters_.height_noise_floor_m) {
+  if (parameters_.grid_cot_height_cost_enabled) {
+    const double event_height_m = std::max(jump, result.max_local_relief_m);
+    if (event_height_m > parameters_.height_noise_floor_m && signed_jump > 0.0) {
+      ++result.height_jump_event_count;
+      const double progress_fraction = std::clamp(
+        signed_jump / event_height_m, 0.0, 1.0);
+      result.height_jump_score_m =
+        gridCotEquivalentPenalty(event_height_m) * progress_fraction;
+    }
+  } else if (jump > parameters_.height_noise_floor_m) {
     result.height_jump_event_count = 1U;
     const double normalized = std::clamp(
       (jump - parameters_.height_noise_floor_m) /

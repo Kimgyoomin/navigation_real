@@ -53,6 +53,14 @@ planner::StepEvaluatorParameters hybridParameters()
   return p;
 }
 
+void enableGridCot(planner::StepEvaluatorParameters & parameters)
+{
+  parameters.grid_cot_height_cost_enabled = true;
+  parameters.grid_cot_step_heights_m = {0.00, 0.05, 0.07, 0.09, 0.11, 0.13, 0.15};
+  parameters.grid_cot_equivalent_penalties_m = {
+    0.000, 0.361, 0.716, 1.083, 1.272, 1.604, 1.634};
+}
+
 TEST(HybridStepEvaluator, RawHardCostsRejectAndInflationIsSoft)
 {
   auto heights = planner::HeightmapSnapshot::fromPoints(hybridHeights(), 0.1, 0.001, 100U);
@@ -441,4 +449,156 @@ TEST(HybridStepEvaluator, LocalReliefUsesHeightmapNeighborhoodInHybridMode)
   EXPECT_FALSE(grid_transition.valid);
   EXPECT_EQ(grid_transition.reason, planner::StepInvalidReason::kStepLimit);
   EXPECT_TRUE(grid_transition.local_relief_hard_rejection);
+}
+
+TEST(HybridStepEvaluator, GridCotDisabledPreservesLegacyQuadraticHeightScore)
+{
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    hybridHeights(0.08), 0.1, 0.001, 100U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    9U, 5U, 0.1, 0.0, 0.0, std::vector<std::uint8_t>(45U, 0U));
+  auto parameters = hybridParameters();
+  parameters.max_crossable_height_jump_m = 0.08;
+  parameters.grid_cot_height_cost_enabled = false;
+  const planner::StepEvaluator evaluator(heights, costs, parameters);
+  const auto edge = evaluator.evaluateGridTransition(
+    {3, 2}, {4, 2}, evaluator.evaluateNode({0.35, 0.25}),
+    evaluator.evaluateNode({0.45, 0.25}));
+  ASSERT_TRUE(edge.valid);
+  EXPECT_NEAR(edge.height_jump_score_m, 0.08, 1.0e-12);
+}
+
+TEST(HybridStepEvaluator, GridCotUsesExactCalibrationAndLinearInterpolation)
+{
+  const auto costs = planner::CostmapSnapshot::fromData(
+    9U, 5U, 0.1, 0.0, 0.0, std::vector<std::uint8_t>(45U, 0U));
+  auto parameters = hybridParameters();
+  parameters.max_crossable_height_jump_m = 0.10;
+  parameters.distance_weight = 1.0;
+  parameters.height_cost_weight = 1.0;
+  enableGridCot(parameters);
+
+  const auto five_cm = planner::HeightmapSnapshot::fromPoints(
+    hybridHeights(0.05), 0.1, 0.001, 100U);
+  const planner::StepEvaluator five_evaluator(five_cm, costs, parameters);
+  const auto five_edge = five_evaluator.evaluateGridTransition(
+    {3, 2}, {4, 2}, five_evaluator.evaluateNode({0.35, 0.25}),
+    five_evaluator.evaluateNode({0.45, 0.25}));
+  ASSERT_TRUE(five_edge.valid);
+  EXPECT_NEAR(five_edge.height_jump_score_m, 0.361, 1.0e-12);
+
+  const auto ten_cm = planner::HeightmapSnapshot::fromPoints(
+    hybridHeights(0.10), 0.1, 0.001, 100U);
+  const planner::StepEvaluator ten_evaluator(ten_cm, costs, parameters);
+  const auto ten_edge = ten_evaluator.evaluateGridTransition(
+    {3, 2}, {4, 2}, ten_evaluator.evaluateNode({0.35, 0.25}),
+    ten_evaluator.evaluateNode({0.45, 0.25}));
+  ASSERT_TRUE(ten_edge.valid);
+  EXPECT_NEAR(ten_edge.height_jump_score_m, 1.1775, 1.0e-12);
+}
+
+TEST(HybridStepEvaluator, GridCotAppliesOnlyToAscent)
+{
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    hybridHeights(0.05), 0.1, 0.001, 100U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    9U, 5U, 0.1, 0.0, 0.0, std::vector<std::uint8_t>(45U, 0U));
+  auto parameters = hybridParameters();
+  parameters.max_crossable_height_jump_m = 0.10;
+  enableGridCot(parameters);
+  const planner::StepEvaluator evaluator(heights, costs, parameters);
+  const auto descent = evaluator.evaluateGridTransition(
+    {4, 2}, {3, 2}, evaluator.evaluateNode({0.45, 0.25}),
+    evaluator.evaluateNode({0.35, 0.25}));
+  ASSERT_TRUE(descent.valid);
+  EXPECT_NEAR(descent.max_height_jump_m, 0.05, 1.0e-12);
+  EXPECT_DOUBLE_EQ(descent.height_jump_score_m, 0.0);
+}
+
+TEST(HybridStepEvaluator, GridCotDoesNotChangeSamplingEdgeEvaluation)
+{
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    hybridHeights(0.05), 0.1, 0.001, 100U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    9U, 5U, 0.1, 0.0, 0.0, std::vector<std::uint8_t>(45U, 0U));
+  auto legacy_parameters = hybridParameters();
+  legacy_parameters.max_crossable_height_jump_m = 0.10;
+  auto cot_parameters = legacy_parameters;
+  enableGridCot(cot_parameters);
+
+  const auto legacy = planner::StepEvaluator(heights, costs, legacy_parameters).evaluateEdge(
+    {0.35, 0.25}, {0.45, 0.25});
+  const auto cot = planner::StepEvaluator(heights, costs, cot_parameters).evaluateEdge(
+    {0.35, 0.25}, {0.45, 0.25});
+  ASSERT_TRUE(legacy.valid);
+  ASSERT_TRUE(cot.valid);
+  EXPECT_DOUBLE_EQ(cot.height_jump_score_m, legacy.height_jump_score_m);
+  EXPECT_DOUBLE_EQ(cot.cost, legacy.cost);
+}
+
+TEST(HybridStepEvaluator, GridCotConservesMonotonicSmearedAscentCost)
+{
+  std::vector<planner::HeightPoint> points;
+  for (int y = 0; y < 7; ++y) {
+    for (int x = 0; x < 13; ++x) {
+      const double elevation = x <= 4 ? 0.0 : (x == 5 ? 0.02 : 0.05);
+      points.push_back({0.05 + 0.1 * x, 0.05 + 0.1 * y, elevation});
+    }
+  }
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    points, 0.1, 0.001, 1000U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    13U, 7U, 0.1, 0.0, 0.0, std::vector<std::uint8_t>(91U, 0U));
+  auto parameters = hybridParameters();
+  parameters.max_crossable_height_jump_m = 0.10;
+  parameters.local_relief_first_window_radius_m = 0.31;
+  enableGridCot(parameters);
+  const planner::StepEvaluator evaluator(heights, costs, parameters);
+  const auto first = evaluator.evaluateGridTransition(
+    {4, 3}, {5, 3}, evaluator.evaluateNode({0.45, 0.35}),
+    evaluator.evaluateNode({0.55, 0.35}));
+  const auto second = evaluator.evaluateGridTransition(
+    {5, 3}, {6, 3}, evaluator.evaluateNode({0.55, 0.35}),
+    evaluator.evaluateNode({0.65, 0.35}));
+  ASSERT_TRUE(first.valid);
+  ASSERT_TRUE(second.valid);
+  EXPECT_NEAR(first.max_local_relief_m, 0.05, 1.0e-12);
+  EXPECT_NEAR(second.max_local_relief_m, 0.05, 1.0e-12);
+  EXPECT_NEAR(first.height_jump_score_m + second.height_jump_score_m, 0.361, 1.0e-12);
+}
+
+TEST(HybridStepEvaluator, GridCotRejectsInvalidCalibration)
+{
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    hybridHeights(), 0.1, 0.001, 100U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    9U, 5U, 0.1, 0.0, 0.0, std::vector<std::uint8_t>(45U, 0U));
+  const auto invalid = [&](planner::StepEvaluatorParameters parameters) {
+      EXPECT_THROW(planner::StepEvaluator(heights, costs, parameters), std::invalid_argument);
+    };
+  auto parameters = hybridParameters();
+  parameters.max_crossable_height_jump_m = 0.10;
+  enableGridCot(parameters);
+  parameters.grid_cot_equivalent_penalties_m.pop_back();
+  invalid(parameters);
+
+  parameters = hybridParameters(); parameters.max_crossable_height_jump_m = 0.10;
+  enableGridCot(parameters); parameters.grid_cot_step_heights_m[2] = 0.05;
+  invalid(parameters);
+
+  parameters = hybridParameters(); parameters.max_crossable_height_jump_m = 0.10;
+  enableGridCot(parameters); parameters.grid_cot_equivalent_penalties_m[2] = -0.1;
+  invalid(parameters);
+
+  parameters = hybridParameters(); parameters.max_crossable_height_jump_m = 0.10;
+  enableGridCot(parameters); parameters.grid_cot_step_heights_m[0] = 0.01;
+  invalid(parameters);
+
+  parameters = hybridParameters(); parameters.max_crossable_height_jump_m = 0.10;
+  enableGridCot(parameters); parameters.grid_cot_equivalent_penalties_m[0] = 0.01;
+  invalid(parameters);
+
+  parameters = hybridParameters(); parameters.max_crossable_height_jump_m = 0.10;
+  enableGridCot(parameters); parameters.grid_cot_step_heights_m.back() = 0.09;
+  invalid(parameters);
 }

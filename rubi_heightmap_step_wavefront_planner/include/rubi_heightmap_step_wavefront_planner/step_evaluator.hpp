@@ -48,6 +48,9 @@ struct StepEvaluatorParameters
   double height_cost_exponent{2.0};
   double distance_weight{1.0};
   double height_cost_weight{5.0};
+  bool grid_cot_height_cost_enabled{false};
+  std::vector<double> grid_cot_step_heights_m;
+  std::vector<double> grid_cot_equivalent_penalties_m;
   double preferred_clearance_radius_m{0.20};
   double clearance_cost_weight{0.0};
   double clearance_cost_exponent{2.0};
@@ -110,6 +113,8 @@ struct EdgeEvaluation
   double max_clearance_height_jump_m{0.0};
   double observed_support_ratio{0.0};
   std::size_t height_jump_event_count{0U};
+  // Legacy mode: transformed adjacent height score [m]. Grid CoT mode:
+  // distributed equivalent-flat-distance ascent score [m].
   double height_jump_score_m{0.0};
   double max_sobel_gradient{0.0};
   double max_sobel_equivalent_step_height_m{0.0};
@@ -204,6 +209,7 @@ private:
   EdgeEvaluation evaluateHybridEdge(Point2D from, Point2D to) const;
   std::optional<double> sobelGradientMagnitude(GridCell center) const;
   std::optional<double> gridSobelGradientMagnitude(GridCell center) const;
+  double gridCotEquivalentPenalty(double step_height_m) const;
   void accumulateSobelEvidence(GridCell cell, EdgeEvaluation & result) const;
   LocalReliefResult localRelief(GridCell center) const;
   SupportedLocalReliefResult supportedLocalRelief(GridCell center) const;

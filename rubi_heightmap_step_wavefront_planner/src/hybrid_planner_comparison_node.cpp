@@ -137,6 +137,8 @@ public:
       get_logger(),
       "\n[STEP EVALUATION CONFIG]\n"
       "planner_run_mode=%s\nadjacent_threshold_m=%.3f\n"
+      "distance_weight=%.3f\nheight_cost_weight=%.3f\n"
+      "grid_cot_height_cost_enabled=%s\ngrid_cot_calibration_points=%zu\n"
       "sampling_sobel_hard_reject_enabled=%s\n"
       "grid_sobel_hard_reject_enabled=%s\ngrid_sobel_kernel_size=%d\n"
       "sobel_threshold_m=%.3f\n"
@@ -151,6 +153,9 @@ public:
       "local_relief_min_observed_ratio=%.3f\n"
       "local_relief_critical_cell_count=%zu",
       run_mode_text_.c_str(), evaluator_parameters_.max_crossable_height_jump_m,
+      evaluator_parameters_.distance_weight, evaluator_parameters_.height_cost_weight,
+      evaluator_parameters_.grid_cot_height_cost_enabled ? "true" : "false",
+      evaluator_parameters_.grid_cot_step_heights_m.size(),
       evaluator_parameters_.sobel_hard_reject_enabled ? "true" : "false",
       evaluator_parameters_.grid_sobel_hard_reject_enabled ? "true" : "false",
       evaluator_parameters_.grid_sobel_kernel_size,
@@ -248,6 +253,13 @@ private:
       "evaluation.distance_weight", evaluator_parameters_.distance_weight);
     evaluator_parameters_.height_cost_weight = declare_parameter(
       "evaluation.height_cost_weight", evaluator_parameters_.height_cost_weight);
+    evaluator_parameters_.grid_cot_height_cost_enabled = declare_parameter(
+      "evaluation.grid_cot_height_cost_enabled", false);
+    evaluator_parameters_.grid_cot_step_heights_m = declare_parameter<std::vector<double>>(
+      "evaluation.grid_cot_step_heights_m", std::vector<double>{});
+    evaluator_parameters_.grid_cot_equivalent_penalties_m =
+      declare_parameter<std::vector<double>>(
+      "evaluation.grid_cot_equivalent_penalties_m", std::vector<double>{});
     evaluator_parameters_.inflation_cost_weight = declare_parameter(
       "evaluation.inflation_cost_weight", evaluator_parameters_.inflation_cost_weight);
     evaluator_parameters_.inflation_cost_exponent = declare_parameter(

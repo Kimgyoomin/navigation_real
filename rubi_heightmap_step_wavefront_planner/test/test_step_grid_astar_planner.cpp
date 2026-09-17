@@ -358,3 +358,52 @@ TEST(StepGridAStarPlanner, ElevenCentimeterMeasuredStepIsHardRejectedForBothKern
     EXPECT_GT(result.statistics.adjacent_step_rejects, 0U);
   }
 }
+
+TEST(StepGridAStarPlanner, CotWeightChangesRouteChoiceWithoutChangingHardStepValidity)
+{
+  constexpr int width = 14;
+  constexpr int height = 15;
+  constexpr double resolution = 0.1;
+  std::vector<planner::HeightPoint> points;
+  for (int y = -1; y <= height; ++y) {
+    for (int x = -1; x <= width; ++x) {
+      const bool raised_barrier = x == 6 && y >= 1 && y <= 13;
+      points.push_back({
+        0.05 + resolution * x, 0.05 + resolution * y,
+        raised_barrier ? 0.09 : 0.0});
+    }
+  }
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    points, resolution, 0.001, 10000U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    width, height, resolution, 0.0, 0.0,
+    std::vector<std::uint8_t>(width * height, 0U));
+
+  auto parameters = gridParams();
+  parameters.max_crossable_height_jump_m = 0.10;
+  parameters.grid_cot_height_cost_enabled = true;
+  parameters.grid_cot_step_heights_m = {0.0, 0.05, 0.07, 0.09, 0.11, 0.13, 0.15};
+  parameters.grid_cot_equivalent_penalties_m = {0.0, 0.361, 0.716, 1.083, 1.272, 1.604, 1.634};
+
+  const auto crosses_raised_barrier = [](const planner::PlanResult & result) {
+      return std::any_of(
+        result.path_node_ids.begin(), result.path_node_ids.end(),
+        [&result](const auto node_id) {
+          const auto & point = result.nodes[node_id].point;
+          return std::abs(point.x - 0.65) < 1e-12 && point.y > 0.05 && point.y < 1.45;
+        });
+    };
+  parameters.height_cost_weight = 0.5;
+  const auto low_weight = planner::StepGridAStarPlanner({}).plan(
+    planner::StepEvaluator(heights, costs, parameters), {0.05, 0.75}, {1.35, 0.75});
+  parameters.height_cost_weight = 2.0;
+  const auto high_weight = planner::StepGridAStarPlanner({}).plan(
+    planner::StepEvaluator(heights, costs, parameters), {0.05, 0.75}, {1.35, 0.75});
+
+  ASSERT_TRUE(low_weight.success);
+  ASSERT_TRUE(high_weight.success);
+  EXPECT_TRUE(crosses_raised_barrier(low_weight));
+  EXPECT_FALSE(crosses_raised_barrier(high_weight));
+  EXPECT_LT(low_weight.path_metrics.length_xy_m, high_weight.path_metrics.length_xy_m);
+  EXPECT_NEAR(low_weight.path_metrics.max_height_jump_m, 0.09, 1e-12);
+}
