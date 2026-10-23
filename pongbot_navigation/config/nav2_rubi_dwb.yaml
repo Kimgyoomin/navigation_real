@@ -232,9 +232,10 @@ global_costmap:
       robot_radius: 0.25
       footprint_padding: 0.01
 
+      # Apply the static map before live obstacles, then inflate the result.
       plugins:
-        - "obstacle_layer"
         - "static_layer"
+        - "obstacle_layer"
         - "inflation_layer"
 
       static_layer:

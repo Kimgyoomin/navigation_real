@@ -518,6 +518,7 @@ For more infomation about the HAP config, please refer to:
 
 * HAP
 * Mid360
+* Mid360s (this workspace's ROS 2 patch requires SDK 1.5.2)
 * (more types are comming soon...)
 
 ## 6. FAQ
@@ -543,3 +544,56 @@ Please add '/usr/local/lib' to the env LD_LIBRARY_PATH.
   export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib
   source ~/.bashrc
   ```
+
+## 7. RUBI MID-360S migration (2026-10-22, ROS 2 Humble)
+
+This legacy workspace now defaults to the same physical MID-360S configuration
+as `legged_robot_ws`: sensor `192.168.1.145`, host `192.168.1.5`, roll 180 degrees,
+zero translation. The new file is `config/MID360s_config.json` with model key
+`Mid360s`. `MID360_config.json` is preserved as the old MID360/.182 configuration.
+Both `rviz_MID360_launch.py` (existing command) and `rviz_MID360s_launch.py`
+(explicit alias) select the new MID-360S file.
+
+The legacy CustomMsg pipeline is deliberately preserved: `/livox/lidar` is
+CustomMsg at 10 Hz and `/livox/lidar_pointcloud` is the secondary PointCloud2 at
+5 Hz. This keeps the old FAST-LIO `lidar_type: 1` and costmap consumers compatible.
+Unlike this legacy workspace, the new `legged_robot_ws` uses one timestamped
+PointCloud2 stream with FAST-LIO `lidar_type: 4`. Do not mix their profiles.
+Existing point/IMU rotation and timing/queue fixes were not replaced with upstream
+defaults. The parser adds MID-360S to the MID360 line-count handling.
+
+This migration is built against private SDK 1.5.2, not the legacy SDK 1.3.1 in
+`/usr/local` or `ros2_ws/install/livox_sdk2`. Use the SDK already built under
+`legged_robot_ws/.sdk`; no system SDK or CUDA replacement is required. In a fresh shell:
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/humble/setup.bash
+source install/local_setup.bash
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+CMAKE_BUILD_PARALLEL_LEVEL=2 MAKEFLAGS=-j2 colcon build --symlink-install \
+  --executor sequential --packages-select livox_ros_driver2 \
+  --allow-overriding livox_ros_driver2 \
+  --cmake-args -DROS_EDITION=ROS2 -DHUMBLE_ROS=humble \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DLIVOX_SDK_ROOT=/home/rclab/legged_robot_ws/.sdk
+source install/local_setup.bash
+ros2 launch livox_ros_driver2 rviz_MID360s_launch.py
+```
+
+Adjust `LIVOX_SDK_ROOT` on other machines. The SDK include/library paths and install
+RPATH are selected together; configure fails if the header lacks MID-360S support.
+Verify `ldd ~/ros2_ws/install/livox_ros_driver2/lib/liblivox_ros_driver2.so` resolves
+`liblivox_lidar_sdk_shared.so` to the intended private prefix **after sourcing
+the old workspace**. On Linux this driver uses DT_RPATH when a private prefix is
+selected. Ordinary DT_RUNPATH was insufficient: sourcing the old workspace put
+`install/livox_sdk2/lib` in LD_LIBRARY_PATH and silently selected SDK 1.3.1 instead.
+The explicit private RPATH avoids that collision without modifying either old
+SDK. Rebuild with a different `LIVOX_SDK_ROOT` to change SDK; do not apply the old
+FAQ's `/usr/local/lib` workaround blindly to this configuration.
+
+The build and installed launch graph were checked; hardware output was not tested
+in this migration step. Do not run the old and new workspace drivers together:
+they use the same UDP ports and ROS package/topic names. Use a clean terminal and
+`ros2 pkg prefix livox_ros_driver2` to verify which workspace is selected. No
+`apt upgrade`, live driver launch, robot command or Git commit/push was performed.

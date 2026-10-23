@@ -110,7 +110,7 @@ private:
   }
 
   // -------------------------
-  // JOY CALLBACK
+  // JOY CALLBACKy
   // -------------------------
   void joyCb(const sensor_msgs::msg::Joy::SharedPtr msg)
   {

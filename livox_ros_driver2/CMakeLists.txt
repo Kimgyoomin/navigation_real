@@ -245,13 +245,27 @@ else(ROS_EDITION STREQUAL "ROS2")
     LIBRARY_NAME ${PROJECT_NAME}
   )
 
-  ## make sure the livox_lidar_sdk_shared library is installed
-  find_library(LIVOX_LIDAR_SDK_LIBRARY liblivox_lidar_sdk_shared.so /usr/local/lib REQUIRED)
-
-  ##
-  find_path(LIVOX_LIDAR_SDK_INCLUDE_DIR
-    NAMES "livox_lidar_api.h" "livox_lidar_def.h"
-    REQUIRED)
+  # MID-360S needs a recent SDK. Select a private prefix without replacing /usr/local.
+  set(LIVOX_SDK_ROOT "" CACHE PATH "Private Livox SDK prefix (e.g. legged_robot_ws/.sdk)")
+  if(LIVOX_SDK_ROOT)
+    # Do not reuse cached library/header paths from the previous SDK build.
+    unset(LIVOX_LIDAR_SDK_LIBRARY CACHE)
+    unset(LIVOX_LIDAR_SDK_INCLUDE_DIR CACHE)
+    find_library(LIVOX_LIDAR_SDK_LIBRARY NAMES livox_lidar_sdk_shared
+      PATHS "${LIVOX_SDK_ROOT}/lib" NO_DEFAULT_PATH REQUIRED)
+    find_path(LIVOX_LIDAR_SDK_INCLUDE_DIR NAMES livox_lidar_def.h
+      PATHS "${LIVOX_SDK_ROOT}/include" NO_DEFAULT_PATH REQUIRED)
+    set(CMAKE_INSTALL_RPATH "${LIVOX_SDK_ROOT}/lib")
+  else()
+    find_library(LIVOX_LIDAR_SDK_LIBRARY NAMES livox_lidar_sdk_shared
+      PATHS /usr/local/lib REQUIRED)
+    find_path(LIVOX_LIDAR_SDK_INCLUDE_DIR NAMES livox_lidar_def.h REQUIRED)
+  endif()
+  file(STRINGS "${LIVOX_LIDAR_SDK_INCLUDE_DIR}/livox_lidar_def.h" mid360s_support
+    REGEX "kLivoxLidarTypeMid360s")
+  if(NOT mid360s_support)
+    message(FATAL_ERROR "SDK lacks MID-360S support; set -DLIVOX_SDK_ROOT to the private SDK 1.5.2 prefix")
+  endif()
 
   ## PCL library
   link_directories(${PCL_LIBRARY_DIRS})
@@ -280,6 +294,13 @@ else(ROS_EDITION STREQUAL "ROS2")
   )
 
   target_include_directories(${PROJECT_NAME} PRIVATE ${livox_sdk_INCLUDE_DIRS})
+
+  if(LIVOX_SDK_ROOT AND UNIX AND NOT APPLE)
+    # The legacy livox_sdk2 ament package adds SDK 1.3.1 to LD_LIBRARY_PATH.
+    # Pin this standalone driver's private SDK with DT_RPATH rather than
+    # DT_RUNPATH, so sourcing the old workspace cannot silently change its ABI.
+    target_link_options(${PROJECT_NAME} PRIVATE "LINKER:--disable-new-dtags")
+  endif()
 
   # get include directories of custom msg headers
   if(HUMBLE_ROS STREQUAL "humble")

@@ -139,13 +139,16 @@ def generate_launch_description():
     #     yaw="0.0",
     #     condition=IfCondition(publish_livox_tf),
     # )
+    # With identity rotations and BODY == base_link:
+    # body->BODY = body->livox_frame - base_link->livox_frame.
+    # Updated mount: base_link->livox_frame = [0.0995, 0.0, -0.1375] m.
     body_to_robot_body = static_transform_node(
         name="body_to_robot_body",
         frame_id="body",
         child_frame_id="BODY",
-        x="-0.112",
+        x="-0.1105",
         y="0.02329",
-        z="0.07278",
+        z="0.09338",
         roll="0.0",
         pitch="0.0",
         yaw="0.0",
