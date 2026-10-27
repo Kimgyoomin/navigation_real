@@ -125,4 +125,12 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_velocity_output test/test_velocity_output.cpp)
+  ament_target_dependencies(test_velocity_output nav_msgs)
+  target_include_directories(test_velocity_output PRIVATE include)
+  target_link_libraries(test_velocity_output Eigen3::Eigen)
+endif()
+
 ament_package()

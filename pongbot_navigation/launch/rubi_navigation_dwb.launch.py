@@ -68,6 +68,15 @@ def generate_launch_description():
         allow_substs=True,
     )
 
+    # Both costmaps share one lightweight filter. FAST-LIO keeps its raw input.
+    costmap_sector_filter = Node(
+        package="pongbot_navigation",
+        executable="costmap_sector_filter",
+        name="costmap_sector_filter",
+        output="screen",
+        parameters=[configured_params],
+    )
+
     map_server = Node(
         package="nav2_map_server",
         executable="map_server",
@@ -154,6 +163,7 @@ def generate_launch_description():
     return LaunchDescription(
         declared_arguments
         + [
+            costmap_sector_filter,
             map_server,
             planner_server,
             controller_server,

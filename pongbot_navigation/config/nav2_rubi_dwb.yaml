@@ -1,7 +1,19 @@
+costmap_sector_filter:
+  ros__parameters:
+    use_sim_time: false
+    input_topic: /livox/lidar_pointcloud
+    output_topic: /livox/lidar_costmap
+    # Current static TF aligns livox_frame +X with base_link +X.
+    # Distances/bearings are relative to the SENSOR origin, not the body center.
+    expected_frame_id: livox_frame
+    front_half_angle_deg: 60.0
+    front_min_range: 0.3
+    other_min_range: 1.0
+
 planner_server:
   ros__parameters:
     use_sim_time: false
-    expected_planner_frequency: 2.0
+    expected_planner_frequency: 1.0  # duration warning budget; BT RateController drives replanning
     planner_plugins: ["GridBased"]
 
     GridBased:
@@ -106,12 +118,14 @@ controller_server:
         - "RotateToGoal"
         - "Oscillation"
         - "BaseObstacle"
+        - "ObstacleFootprint"  # also check square footprint corners, not just the center cell
         - "GoalAlign"
         - "PathAlign"
         - "PathDist"
         - "GoalDist"
 
       BaseObstacle.scale: 0.02
+      ObstacleFootprint.scale: 0.02
 
       PathAlign.scale: 32.0                    # basic 32.0 8.0 -> 1.0 -> 32.0
       PathAlign.forward_point_distance: 0.1   # 0.15 -> 0.1
@@ -151,7 +165,8 @@ local_costmap:
 
       track_unknown_space: false
 
-      robot_radius: 0.25
+      # 0.55 m x 0.55 m centered on base_link. Padding makes the checked box 0.57 m.
+      footprint: "[[0.275, 0.275], [-0.275, 0.275], [-0.275, -0.275], [0.275, -0.275]]"
       footprint_padding: 0.01
 
       plugins:
@@ -181,14 +196,14 @@ local_costmap:
         observation_sources: "livox_cloud"
 
         livox_cloud:
-          topic: /livox/lidar_pointcloud
+          topic: /livox/lidar_costmap
           data_type: "PointCloud2"
 
           marking: true
           clearing: true
 
-          # Exclude RUBI's own torso/arms around the MID360.
-          obstacle_min_range: 0.5
+          # The upstream sensor-XY sector mask already applies 0.3 m / 1.0 m.
+          obstacle_min_range: 0.3
           obstacle_max_range: 4.0
 
           raytrace_min_range: 0.0          
@@ -221,7 +236,7 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_link
 
-      update_frequency: 2.0
+      update_frequency: 1.0
       publish_frequency: 1.0
       transform_tolerance: 1.0
 
@@ -229,7 +244,7 @@ global_costmap:
       track_unknown_space: true
       rolling_window: false
 
-      robot_radius: 0.25
+      footprint: "[[0.275, 0.275], [-0.275, 0.275], [-0.275, -0.275], [0.275, -0.275]]"
       footprint_padding: 0.01
 
       # Apply the static map before live obstacles, then inflate the result.
@@ -260,13 +275,13 @@ global_costmap:
         observation_sources: "livox_cloud"
 
         livox_cloud:
-          topic: /livox/lidar_pointcloud
+          topic: /livox/lidar_costmap
           data_type: "PointCloud2"
 
           marking: true
           clearing: true
 
-          obstacle_min_range: 0.6                 # 0.3 -> 0.1 -> 
+          obstacle_min_range: 0.3  # upstream sector filter excludes side/rear points within 1 m
           obstacle_max_range: 4.0
 
           raytrace_min_range: 0.0

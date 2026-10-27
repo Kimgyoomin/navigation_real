@@ -19,7 +19,7 @@
                                         # This param will take effect no matter what time_sync_en is. So if the time offset is not known exactly, please set as 0.0
 
         preprocess:
-            lidar_type: 4                # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR, 4 for any other pointcloud input
+            lidar_type: 1                # CustomMsg on /livox/lidar; matches rviz_MID360_launch.py (MID360S)
             scan_line:  4
             blind: 0.5
             timestamp_unit: 3
@@ -32,8 +32,10 @@
             b_gyr_cov: 0.0001
             fov_degree:    360.0
             det_range:     100.0
-            extrinsic_est_en:  true      # true: enable the online estimation of IMU-LiDAR extrinsic
-            extrinsic_T: [ -0.011, -0.02329, 0.04412 ]
+            extrinsic_est_en:  false     # fixed integrated sensor; do not estimate during the velocity check
+            # Current driver applies Rx(pi) to BOTH LiDAR and IMU. Rotate the
+            # internal LiDAR->IMU translation consistently; NOT a base_link offset.
+            extrinsic_T: [ -0.011, 0.02329, -0.04412 ]
             extrinsic_R: [ 1., 0., 0.,
                             0., 1., 0.,
                             0., 0., 1.]
@@ -47,6 +49,6 @@
             scan_bodyframe_pub_en: true  # true: output the point cloud scans in IMU-body-frame
 
         pcd_save:
-            pcd_save_en: true
+            pcd_save_en: false           # sensor-only velocity check; no accumulated PCD writes
             interval: -1                 # how many LiDAR frames saved in each pcd file; 
                                         # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.

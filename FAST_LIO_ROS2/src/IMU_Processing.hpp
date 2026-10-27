@@ -58,6 +58,11 @@ class ImuProcess
   V3D cov_bias_acc;
   double first_lidar_time;
 
+  // Output only: keep the gyro used for the scan-end propagation.
+  // No changes to the estimator prediction/update equations.
+  const V3D &last_propagation_gyro() const { return propagation_gyro_; }
+  bool has_propagation_gyro() const { return propagation_gyro_valid_; }
+
  private:
   void IMU_init(const MeasureGroup &meas, esekfom::esekf<state_ikfom, 12, input_ikfom> &kf_state, int &N);
   void UndistortPcl(const MeasureGroup &meas, esekfom::esekf<state_ikfom, 12, input_ikfom> &kf_state, PointCloudXYZI &pcl_in_out);
@@ -74,6 +79,8 @@ class ImuProcess
   V3D mean_gyr;
   V3D angvel_last;
   V3D acc_s_last;
+  V3D propagation_gyro_ = V3D::Zero();
+  bool propagation_gyro_valid_ = false;
   double start_timestamp_;
   double last_lidar_end_time_;
   int    init_iter_num = 1;
@@ -107,6 +114,8 @@ void ImuProcess::Reset()
   mean_gyr      = V3D(0, 0, 0);
   angvel_last       = Zero3d;
   imu_need_init_    = true;
+  propagation_gyro_.setZero();
+  propagation_gyro_valid_ = false;
   start_timestamp_  = -1;
   init_iter_num     = 1;
   v_imu_.clear();
@@ -238,6 +247,7 @@ void ImuProcess::UndistortPcl(const MeasureGroup &meas, esekfom::esekf<state_ikf
   double dt = 0;
 
   input_ikfom in;
+  propagation_gyro_valid_ = false;
   for (auto it_imu = v_imu.begin(); it_imu < (v_imu.end() - 1); it_imu++)
   {
     auto &&head = *(it_imu);
@@ -271,6 +281,8 @@ void ImuProcess::UndistortPcl(const MeasureGroup &meas, esekfom::esekf<state_ikf
     
     in.acc = acc_avr;
     in.gyro = angvel_avr;
+    propagation_gyro_ = in.gyro;
+    propagation_gyro_valid_ = propagation_gyro_.allFinite();
     Q.block<3, 3>(0, 0).diagonal() = cov_gyr;
     Q.block<3, 3>(3, 3).diagonal() = cov_acc;
     Q.block<3, 3>(6, 6).diagonal() = cov_bias_gyr;

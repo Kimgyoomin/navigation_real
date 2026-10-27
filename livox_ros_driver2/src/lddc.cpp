@@ -278,10 +278,10 @@ void Lddc::PublishCustomAndPointcloud2(LidarDataQueue *queue, uint8_t index) {
     PointCloud2 cloud;
     uint64_t timestamp = 0;
     InitPointcloud2Msg(pkg, cloud, timestamp);
-    // This secondary cloud is dedicated to Nav2 obstacle processing.  Using
-    // the latest TF prevents a delayed costmap callback from raytracing with
-    // an old sensor pose.  The FAST-LIO CustomMsg above keeps the real stamp.
-    cloud.header.stamp = rclcpp::Time(0, 0, RCL_ROS_TIME);
+    // Keep InitPointcloud2Msg's acquisition stamp (pkg.base_time), identical
+    // to the corresponding CustomMsg header. Nav2 must transform this scan
+    // at its measurement time, not at the latest robot pose. Per-point time
+    // offsets remain unchanged. A missing TF must not be hidden by stamp=0.
 
     PublishSecondaryPointcloud2Data(index, cloud);
   }

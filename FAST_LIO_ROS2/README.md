@@ -61,6 +61,143 @@
     <img src="doc/results/HKU_MB_001.png" width = 49% >
 </div> -->
 
+## Jetson MID360S: timestamp / native velocity check (2026-10-27)
+
+This workspace's `mid360.yaml` now matches the current dual-output driver:
+`/livox/lidar` is Livox `CustomMsg` (`lidar_type: 1`), while
+`/livox/lidar_pointcloud` is `PointCloud2` for costmaps. The legacy launch name
+`rviz_MID360_launch.py` selects `MID360s_config.json`. Do not mix overlays from
+`legged_robot_ws` into this test.
+
+### Changes and limits
+
+- The secondary PointCloud2 header keeps the packet's acquisition time
+  (`pkg.base_time`), matching the corresponding CustomMsg header. It is no
+  longer overwritten with zero. Point offsets, IMU timestamps, driver rotation,
+  QoS and the 10 Hz CustomMsg / 5 Hz secondary cloud schedule are unchanged.
+- Zero means latest available TF, not synchronization. Nonzero stamps require
+  TF history at the observation time. Real TF delay, missing transforms or mixed
+  clocks may therefore appear as drops/waits; do not hide them by restamping
+  with zero or `now()`. Nav2 live costmap verification remains a separate test.
+- Both `fast_lio` and `fast_lio_localization` expose an additional
+  `nav_msgs/msg/Odometry` topic, **`/fastlio/odometry_velocity`**. It copies the
+  original pose/header at scan end (`camera_init` parent, `body` child).
+  Legacy `/Odometry` twist, TF and Nav2 configuration are unchanged. The new
+  diagnostic publisher uses BEST_EFFORT, VOLATILE, KEEP_LAST(1) to favor fresh
+  readings over an accumulated diagnostic backlog; subscribers must accept
+  BEST_EFFORT.
+- Linear velocity is the existing posterior filter state transformed into body
+  coordinates: `v_body = R_world_body.transpose() * v_world` [m/s]. Angular
+  velocity is the last averaged gyro used in propagation minus the posterior
+  gyro bias [rad/s], already in body coordinates. There is no pose differencing,
+  additional estimator, command-velocity feedback or additional ICP pass.
+- Twist covariance propagates attitude/velocity/bias uncertainty and adds the
+  configured gyro noise. This is an approximation (gyro/state cross-correlation
+  is not modeled), not an accuracy certificate. Invalid/nonfinite estimates
+  are not published on the new topic. There is no new tracking-quality flag.
+- This is **IMU-origin velocity, not robot-base velocity**. The sensor-only test
+  does not assume a `base_link` transform. A later Nav2 connection needs an
+  explicit frame/lever-arm check and measured validation. No automatic fallback
+  to `/cmd_vel` is provided.
+- The default standalone config fixes the internal LiDAR-to-IMU extrinsic to
+  the existing localization config: `[-0.011, 0.02329, -0.04412]` m. This is
+  consistent with this driver's 180-degree X rotation of BOTH points and IMU;
+  it is not a newly measured MID360S calibration or a robot mounting offset.
+  Use a different config if the driver rotation changes. Automatic PCD saving
+  is disabled for this velocity test.
+
+### Run the sensor-only check
+
+In **each fresh terminal**, use the same workspace, domain and middleware:
+
+```bash
+source /opt/ros/humble/setup.bash
+source /home/rclab/ros2_ws/install/local_setup.bash
+export ROS_DOMAIN_ID=13
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+```
+
+Terminal 1 (user starts the connected sensor):
+
+```bash
+taskset -c 0,1 ros2 launch livox_ros_driver2 rviz_MID360_launch.py
+```
+
+Terminal 2 (no PCD map / initial pose / global localization needed):
+
+```bash
+taskset -c 2,3,4,5 ros2 launch fast_lio mapping.launch.py
+```
+
+Defaults are `use_sim_time:=false`, `rviz:=true`, `config_file:=mid360.yaml`.
+Keep the sensor still during initialization. Keep Nav2/LCM off for this test.
+**Never run `fast_lio` and `fast_lio_localization` together**: they own the same
+Odometry topics and `camera_init -> body` TF. The driver launch itself does not
+start RViz; the mapping launch does.
+
+Terminal 3 (run measurements individually; Ctrl-C between them):
+
+```bash
+ros2 topic echo /livox/lidar_pointcloud --field header --once --qos-reliability best_effort
+ros2 topic hz /fastlio/odometry_velocity --window 30
+ros2 topic delay /fastlio/odometry_velocity --window 30
+ros2 topic echo /fastlio/odometry_velocity --field twist.twist --qos-reliability best_effort
+```
+
+Check that the cloud stamp is nonzero and advances. Its stamp is scan start;
+Odometry is scan end, approximately 0.1 s later for a 10 Hz scan. That difference
+is not, by itself, queue latency. In the new topic, examine `linear.x/y/z` and
+`angular.x/y/z`; the legacy `/Odometry` twist is intentionally not populated.
+
+Observe 30-60 seconds stationary, then translate gently forward/backward and
+rotate gently. Look for near-zero stationary output, consistent signs/units,
+finite values and a rate matching `/Odometry` after initialization (typically
+10 Hz here). Holding and rotating the sensor around the hand can legitimately
+produce translational velocity at the IMU origin. This qualitative check does
+not establish absolute speed accuracy or validate robot-base feedback.
+
+### Rebuild / regression tests
+
+```bash
+cd /home/rclab/ros2_ws
+source /opt/ros/humble/setup.bash
+source install/local_setup.bash
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+CMAKE_BUILD_PARALLEL_LEVEL=2 MAKEFLAGS=-j2 colcon build --symlink-install \
+  --packages-select livox_ros_driver2 fast_lio fast_lio_localization \
+  --executor sequential --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
+  -DRMW_IMPLEMENTATION=rmw_fastrtps_cpp
+colcon test --packages-select fast_lio fast_lio_localization --executor sequential
+colcon test-result --test-result-base build/fast_lio --verbose
+colcon test-result --test-result-base build/fast_lio_localization --verbose
+```
+
+This reuses the already configured driver SDK; it does not install or upgrade
+system packages. The tests cover body-frame transformation, gyro bias,
+covariance, unchanged source messages, copied Odometry timestamps and nonfinite
+rejection. They are not a live sensor/TF/costmap performance test.
+
+Verification on this Jetson (2026-10-27): all three selected packages built;
+five GTest cases passed in each FAST-LIO package (ten cases total), with no
+failures. Launch argument discovery confirmed the standalone defaults, and the
+driver component resolves its SDK from the existing workspace-private install.
+The old `fast_lio` CMake cache selected unavailable `rmw_zenoh_cpp`; the explicit
+Fast DDS build option above corrected that cache without installing middleware.
+Sensor publication, tracking accuracy and live Nav2 costmap updates were not
+run as part of this build/test verification.
+
+Pre-change backup: [backup/jetson_261027](https://github.com/Kimgyoomin/navigation_real/tree/backup/jetson_261027),
+commit `45b280787c609c315d59d99be230f615d195ef02`. This backs up tracked source/config,
+including the pre-existing global obstacle minimum range of 0.6 m, not ignored
+maps, recordings or installed SDK binaries. Implementation branch:
+`jetson/261027-stamp-velocity`.
+
+The velocity conversion follows the approach reviewed in
+[the handoff branch](https://github.com/Kimgyoomin/legged_robot_ws/tree/codex/navigation-handoff-20261027),
+without importing its Nav2 adapter/controller changes.
+ROS defines twist in the [Odometry child frame](https://github.com/ros2/common_interfaces/blob/humble/nav_msgs/msg/Odometry.msg);
+see also the [tf2 time semantics](https://github.com/ros2/ros2_documentation/blob/humble/source/Tutorials/Intermediate/Tf2/Learning-About-Tf2-And-Time-Cpp.rst).
+
 ## 1. Prerequisites
 ### 1.1 **Ubuntu** and **ROS**
 **Ubuntu >= 20.04**
