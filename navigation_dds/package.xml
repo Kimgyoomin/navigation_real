@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>navigation_dds</name>
+  <version>0.1.0</version>
+  <description>Process-scoped Fast DDS transport profiles for RUBI navigation.</description>
+  <maintainer email="kim@todo.todo">kim</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>launch_ros</test_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

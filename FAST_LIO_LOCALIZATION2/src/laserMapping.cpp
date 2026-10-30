@@ -40,6 +40,8 @@
 #include <csignal>
 #include <chrono>
 #include <cstdlib>
+#include <iomanip>
+#include <sstream>
 #include <unistd.h>
 #include <Python.h>
 #include <so3_math.h>
@@ -47,6 +49,7 @@
 #include <Eigen/Core>
 #include "IMU_Processing.hpp"
 #include "velocity_output.hpp"
+#include "pipeline_timing.hpp"
 #include <nav_msgs/msg/odometry.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <visualization_msgs/msg/marker.hpp>
@@ -108,6 +111,87 @@ vector<double> extrinR(9, 0.0);
 deque<double> time_buffer;
 deque<PointCloudXYZI::Ptr> lidar_buffer;
 deque<sensor_msgs::msg::Imu::ConstSharedPtr> imu_buffer;
+
+namespace timing_diag
+{
+const bool enabled = std::getenv("FASTLIO_DIAG_TIMING") != nullptr;
+rclcpp::Clock::SharedPtr clock;  // Assigned before spinning any callbacks.
+// These sensor fields are protected by mtx_buffer.
+fastlio_timing::SensorWindow imu;
+std::uint64_t lidar_received = 0, lidar_replaced = 0;
+double last_lidar_entry = fastlio_timing::missing();
+// Only the mutually-exclusive processing callback accesses these fields.
+std::uint64_t timer_calls = 0, sync_ok = 0, empty_lidar = 0, empty_imu = 0;
+std::uint64_t short_scan = 0, imu_behind = 0;
+fastlio_timing::Metric timer_gap, timer_work, sync_lock, sync_work, ready_age, imu_shortfall;
+double last_timer_entry = fastlio_timing::missing();
+double last_report = fastlio_timing::steady_seconds();
+
+void report(const rclcpp::Logger &logger, double entry)
+{
+    if (entry - last_report < 1.0) return;
+    fastlio_timing::SensorWindow imu_snapshot;
+    std::uint64_t lidar_count, replaced_count;
+    std::size_t lidar_size, imu_size;
+    bool pinned;
+    double latest_imu, pending_end = fastlio_timing::missing(), last_lidar;
+    {
+        std::lock_guard<std::mutex> lock(mtx_buffer);
+        imu_snapshot = imu;
+        imu.reset_window();
+        lidar_count = lidar_received; lidar_received = 0;
+        replaced_count = lidar_replaced; lidar_replaced = 0;
+        lidar_size = lidar_buffer.size(); imu_size = imu_buffer.size();
+        pinned = lidar_pushed;
+        latest_imu = last_timestamp_imu < 0 ? fastlio_timing::missing() : last_timestamp_imu;
+        last_lidar = last_lidar_entry;
+        if (pinned) pending_end = lidar_end_time;
+        else if (!lidar_buffer.empty() && !time_buffer.empty() &&
+                 !lidar_buffer.front()->empty())
+            pending_end = time_buffer.front() + lidar_buffer.front()->back().curvature / 1000.0;
+    }
+    // Format and emit outside the sensor mutex. ROS time for stamp ages,
+    // monotonic time for durations; this also works with use_sim_time.
+    const double now = clock->now().seconds();
+    const double steady_now = fastlio_timing::steady_seconds();
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(3)
+        << "FAST-LIO pipeline diag window_s=" << entry - last_report
+        << " timer_n=" << timer_calls << " timer_gap_max_ms=" << timer_gap.max()
+        << " timer_work_max_ms=" << timer_work.max()
+        << " sync_ok=" << sync_ok << " empty_lidar=" << empty_lidar
+        << " empty_imu=" << empty_imu << " short_scan=" << short_scan
+        << " imu_behind=" << imu_behind
+        << " imu_shortfall_max_ms=" << imu_shortfall.max()
+        << " sync_lock_max_ms=" << sync_lock.max()
+        << " sync_work_max_ms=" << sync_work.max()
+        << " ready_age_max_ms=" << ready_age.max()
+        << " lidar_n=" << lidar_count << " lidar_replaced=" << replaced_count
+        << " lidar_buffer=" << lidar_size << " imu_buffer=" << imu_size
+        << " pinned=" << pinned
+        << " pending_end_age_ms=" << (now - pending_end) * 1000.0
+        << " latest_imu_age_ms=" << (now - latest_imu) * 1000.0
+        << " imu_shortfall_ms=" << (pending_end - latest_imu) * 1000.0
+        << " since_lidar_cb_ms=" << (steady_now - last_lidar) * 1000.0;
+    RCLCPP_INFO(logger, "%s", out.str().c_str());
+    std::ostringstream imu_out;
+    imu_out << std::fixed << std::setprecision(3)
+        << "FAST-LIO imu diag window_s=" << entry - last_report
+        << " imu_n=" << imu_snapshot.count
+        << " gap_max_ms=" << imu_snapshot.gap_ms.max()
+        << " stamp_step_max_ms=" << imu_snapshot.stamp_step_ms.max()
+        << " raw_age_mean_ms=" << imu_snapshot.raw_age_ms.mean()
+        << " raw_age_max_ms=" << imu_snapshot.raw_age_ms.max()
+        << " corrected_age_max_ms=" << imu_snapshot.corrected_age_ms.max()
+        << " lock_max_ms=" << imu_snapshot.lock_ms.max()
+        << " since_imu_cb_ms=" << (steady_now - imu_snapshot.last_entry) * 1000.0;
+    RCLCPP_INFO(logger, "%s", imu_out.str().c_str());
+    timer_calls = sync_ok = empty_lidar = empty_imu = short_scan = imu_behind = 0;
+    timer_gap = {}; timer_work = {}; sync_lock = {}; sync_work = {}; ready_age = {};
+    imu_shortfall = {};
+    last_report = entry;
+}
+}  // namespace timing_diag
 
 PointCloudXYZI::Ptr featsFromMap(new PointCloudXYZI());
 PointCloudXYZI::Ptr feats_undistort(new PointCloudXYZI());
@@ -293,7 +377,13 @@ void lasermap_fov_segment()
 
 void standard_pcl_cbk(const sensor_msgs::msg::PointCloud2::UniquePtr msg)
 {
+    const double diag_entry = timing_diag::enabled ? fastlio_timing::steady_seconds() : 0.0;
     mtx_buffer.lock();
+    if (timing_diag::enabled)
+    {
+        ++timing_diag::lidar_received;
+        timing_diag::last_lidar_entry = diag_entry;
+    }
     scan_count++;
     double cur_time = get_time_sec(msg->header.stamp);
     double preprocess_start_time = omp_get_wtime();
@@ -331,6 +421,12 @@ void livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::UniquePtr msg)
         (system_now_sec - scan_end_time_sec) * 1.0e3;
 
     mtx_buffer.lock();
+    if (timing_diag::enabled)
+    {
+        ++timing_diag::lidar_received;
+        timing_diag::last_lidar_entry =
+            std::chrono::duration<double>(callback_entry.time_since_epoch()).count();
+    }
     double cur_time = header_time_sec;
     double preprocess_start_time = omp_get_wtime();
     scan_count++;
@@ -364,6 +460,7 @@ void livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::UniquePtr msg)
     constexpr std::size_t kMaxBufferedLidarFrames = 2;
     while (lidar_buffer.size() >= kMaxBufferedLidarFrames)
     {
+        if (timing_diag::enabled) ++timing_diag::lidar_replaced;
         if (lidar_pushed)
         {
             lidar_buffer.erase(std::next(lidar_buffer.begin()));
@@ -380,7 +477,11 @@ void livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::UniquePtr msg)
 
     s_plot11[scan_count] = omp_get_wtime() - preprocess_start_time;
 
-    if (std::getenv("FASTLIO_DIAG_TIMING") != nullptr)
+    const auto buffered_lidar_count = lidar_buffer.size();
+    mtx_buffer.unlock();
+    sig_buffer.notify_all();
+
+    if (timing_diag::enabled)
     {
         static auto last_diag_time =
             std::chrono::steady_clock::now() - std::chrono::seconds(1);
@@ -394,18 +495,18 @@ void livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::UniquePtr msg)
                       << callback_start_age_ms << " ms callback_end_age="
                       << callback_end_age_ms << " ms callback_work="
                       << callback_work_ms << " ms lidar_buffer="
-                      << lidar_buffer.size() << " points=" << msg->point_num
+                      << buffered_lidar_count << " points=" << msg->point_num
                       << std::endl;
             last_diag_time = now;
         }
     }
 
-    mtx_buffer.unlock();
-    sig_buffer.notify_all();
 }
 
 void imu_cbk(const sensor_msgs::msg::Imu::UniquePtr msg_in)
 {
+    const double diag_entry = timing_diag::enabled ? fastlio_timing::steady_seconds() : 0.0;
+    const double diag_now = timing_diag::enabled ? timing_diag::clock->now().seconds() : 0.0;
     publish_count++;
     // cout<<"IMU got at: "<<msg_in->header.stamp.toSec()<<endl;
     sensor_msgs::msg::Imu::SharedPtr msg(new sensor_msgs::msg::Imu(*msg_in));
@@ -419,7 +520,11 @@ void imu_cbk(const sensor_msgs::msg::Imu::UniquePtr msg_in)
 
     double timestamp = get_time_sec(msg->header.stamp);
 
+    const double diag_lock_start = timing_diag::enabled ? fastlio_timing::steady_seconds() : 0.0;
     mtx_buffer.lock();
+    if (timing_diag::enabled)
+        timing_diag::imu.record(diag_entry, diag_now, get_time_sec(msg_in->header.stamp),
+            timestamp, (fastlio_timing::steady_seconds() - diag_lock_start) * 1000.0);
 
     if (timestamp < last_timestamp_imu)
     {
@@ -439,10 +544,19 @@ bool sync_packages(MeasureGroup &meas)
     // Sensor callbacks run concurrently with the processing timer. Keep the
     // queue snapshot/pop operation atomic, but release the lock before the
     // expensive IMU/ICP processing begins.
+    fastlio_timing::ScopedDuration diag_work(timing_diag::enabled ? &timing_diag::sync_work : nullptr);
+    const double diag_lock_start = timing_diag::enabled ? fastlio_timing::steady_seconds() : 0.0;
     std::lock_guard<std::mutex> lock(mtx_buffer);
+    if (timing_diag::enabled)
+        timing_diag::sync_lock.add((fastlio_timing::steady_seconds() - diag_lock_start) * 1000.0);
 
     if (lidar_buffer.empty() || imu_buffer.empty())
     {
+        if (timing_diag::enabled)
+        {
+            if (lidar_buffer.empty()) ++timing_diag::empty_lidar;
+            else ++timing_diag::empty_imu;
+        }
         return false;
     }
 
@@ -452,6 +566,7 @@ bool sync_packages(MeasureGroup &meas)
         meas.lidar = lidar_buffer.front();
         if (meas.lidar->points.size() <= 1)
         {
+            if (timing_diag::enabled) ++timing_diag::short_scan;
             lidar_buffer.pop_front();
             return false;
         }
@@ -462,6 +577,11 @@ bool sync_packages(MeasureGroup &meas)
 
     if (last_timestamp_imu < lidar_end_time)
     {
+        if (timing_diag::enabled)
+        {
+            ++timing_diag::imu_behind;
+            timing_diag::imu_shortfall.add((lidar_end_time - last_timestamp_imu) * 1000.0);
+        }
         return false;
     }
 
@@ -480,6 +600,11 @@ bool sync_packages(MeasureGroup &meas)
     lidar_buffer.pop_front();
     time_buffer.pop_front();
     lidar_pushed = false;
+    if (timing_diag::enabled)
+    {
+        ++timing_diag::sync_ok;
+        timing_diag::ready_age.add((timing_diag::clock->now().seconds() - lidar_end_time) * 1000.0);
+    }
     return true;
 }
 
@@ -810,6 +935,7 @@ class LaserMappingNode : public rclcpp::Node
 public:
     LaserMappingNode(const rclcpp::NodeOptions &options = rclcpp::NodeOptions()) : Node("laser_mapping", options)
     {
+        timing_diag::clock = this->get_clock();
         this->declare_parameter<bool>("publish.path_en", false);
         this->declare_parameter<bool>("publish.effect_map_en", false);
         this->declare_parameter<bool>("publish.map_en", false);
@@ -967,6 +1093,8 @@ public:
             processing_callback_group_);
 
         RCLCPP_INFO(this->get_logger(), "Node init finished.");
+        if (timing_diag::enabled)
+            RCLCPP_INFO(this->get_logger(), "FAST-LIO pipeline diagnostics v1 enabled (1 s windows; ages=ROS clock, durations=steady clock)");
     }
 
     ~LaserMappingNode()
@@ -979,7 +1107,17 @@ public:
 private:
     void timer_callback()
     {
-        if (sync_packages(Measures))
+        fastlio_timing::ScopedDuration diag_work(timing_diag::enabled ? &timing_diag::timer_work : nullptr);
+        const double diag_entry = timing_diag::enabled ? fastlio_timing::steady_seconds() : 0.0;
+        if (timing_diag::enabled)
+        {
+            ++timing_diag::timer_calls;
+            timing_diag::timer_gap.add((diag_entry - timing_diag::last_timer_entry) * 1000.0);
+            timing_diag::last_timer_entry = diag_entry;
+        }
+        const bool package_ready = sync_packages(Measures);
+        if (timing_diag::enabled) timing_diag::report(this->get_logger(), diag_entry);
+        if (package_ready)
         {
             if (flg_reset)
             {

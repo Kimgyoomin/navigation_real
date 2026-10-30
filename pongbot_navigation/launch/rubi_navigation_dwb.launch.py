@@ -6,14 +6,18 @@ localization_nav_rubi.launch.py separately before this launch file.
 """
 
 import os
+import math
+import yaml
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.descriptions import ParameterFile
 from nav2_common.launch import RewrittenYaml
+from navigation_dds.profiles import dds_argument, dds_group
 
 
 def generate_launch_description():
@@ -34,8 +38,16 @@ def generate_launch_description():
     params_file = LaunchConfiguration("params_file")
     use_sim_time = LaunchConfiguration("use_sim_time")
     autostart = LaunchConfiguration("autostart")
+    use_fastlio_velocity = LaunchConfiguration("use_fastlio_velocity")
 
     declared_arguments = [
+        dds_argument(),
+        DeclareLaunchArgument(
+            "use_fastlio_velocity",
+            default_value="false",
+            choices=["true", "false"],
+            description="Opt-in FAST-LIO base velocity + DWB LimitedAccelGenerator (offline validated; requires live stopped verification)",
+        ),
         DeclareLaunchArgument(
             "map_yaml",
             default_value="/home/rclab/ros2_ws/src/navigation_real/FAST_LIO_LOCALIZATION2/maps/RUBI_1F_occupancy_map.yaml",
@@ -98,12 +110,37 @@ def generate_launch_description():
         parameters=[configured_params],
     )
 
-    controller_server = Node(
-        package="nav2_controller",
-        executable="controller_server",
-        name="controller_server",
-        output="screen",
-        parameters=[configured_params],
+    # Keep the baseline params_file intact when the experiment is disabled.
+    # The controller reads twist directly; it does not transform its child frame.
+    def nav2_consumers(context):
+        controller_overrides = {}
+        bt_overrides = {}
+        if use_fastlio_velocity.perform(context) == "true":
+            with open(params_file.perform(context), encoding="utf-8") as stream:
+                params = yaml.safe_load(stream)
+            hz = float(params["controller_server"]["ros__parameters"]["controller_frequency"])
+            if not math.isfinite(hz) or hz <= 0:
+                raise ValueError("Velocity feedback requires a positive controller_frequency")
+            controller_overrides = {
+                "odom_topic": "/fastlio/odometry_base",
+                "FollowPath.trajectory_generator_name": "dwb_plugins::LimitedAccelGenerator",
+                "FollowPath.sim_period": 1.0 / hz,
+            }
+            bt_overrides = {"odom_topic": "/fastlio/odometry_base"}
+        return [
+            Node(package="nav2_controller", executable="controller_server",
+                 name="controller_server", output="screen",
+                 parameters=[configured_params, controller_overrides]),
+            Node(package="nav2_bt_navigator", executable="bt_navigator",
+                 name="bt_navigator", output="screen",
+                 parameters=[configured_params, bt_overrides]),
+        ]
+
+    velocity_feedback = Node(
+        package="pongbot_navigation", executable="fastlio_velocity_feedback",
+        name="fastlio_velocity_feedback", output="screen",
+        condition=IfCondition(use_fastlio_velocity),
+        parameters=[{"use_sim_time": use_sim_time}],
     )
 
     smoother_server = Node(
@@ -118,14 +155,6 @@ def generate_launch_description():
         package="nav2_behaviors",
         executable="behavior_server",
         name="behavior_server",
-        output="screen",
-        parameters=[configured_params],
-    )
-
-    bt_navigator = Node(
-        package="nav2_bt_navigator",
-        executable="bt_navigator",
-        name="bt_navigator",
         output="screen",
         parameters=[configured_params],
     )
@@ -162,15 +191,15 @@ def generate_launch_description():
 
     return LaunchDescription(
         declared_arguments
-        + [
+        + [dds_group([
             costmap_sector_filter,
             map_server,
             planner_server,
-            controller_server,
+            velocity_feedback,
+            OpaqueFunction(function=nav2_consumers),
             smoother_server,
             behavior_server,
-            bt_navigator,
             map_lifecycle_manager,
             navigation_lifecycle_manager,
-        ]
+        ], 'RUBI navigation')]
     )

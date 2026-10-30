@@ -9,6 +9,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
+from navigation_dds.profiles import dds_argument, dds_group
 
 
 PI = "3.141592653589793"
@@ -63,6 +64,7 @@ def generate_launch_description():
     # base_to_livox_z = LaunchConfiguration("base_to_livox_z")
 
     declared_arguments = [
+        dds_argument(),
         DeclareLaunchArgument(
             "pcd_map",
             default_value="/home/rclab/ros2_ws/src/navigation_real/FAST_LIO_LOCALIZATION2/PCD/1f_fast_lio_260731_segmented.pcd",
@@ -192,11 +194,11 @@ def generate_launch_description():
 
     return LaunchDescription(
         declared_arguments
-        + [
+        + [dds_group([
             localization,
             body_to_livox_frame,
             body_to_robot_body,
             robot_body_to_base_link,
             rviz,
-        ]
+        ], 'RUBI localization')]
     )

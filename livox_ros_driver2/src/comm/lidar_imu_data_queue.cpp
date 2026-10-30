@@ -27,7 +27,7 @@
 namespace livox_ros {
 
 void LidarImuDataQueue::Push(ImuData* imu_data) {
-  ImuData data;
+  ImuData data{};
   data.lidar_type = imu_data->lidar_type;
   data.handle = imu_data->handle;
   data.time_stamp = imu_data->time_stamp;
@@ -41,7 +41,15 @@ void LidarImuDataQueue::Push(ImuData* imu_data) {
   data.acc_z = imu_data->acc_z;
 
   std::lock_guard<std::mutex> lock(mutex_);
-  imu_data_queue_.push_back(std::move(data));
+  Entry entry;
+  entry.data = data;
+  entry.enqueued = diagnostics_ ? imu_timing::SteadyNow() : 0.0;
+  imu_data_queue_.push_back(entry);
+  if (diagnostics_) {
+    timing_.Receive(entry.enqueued, imu_timing::SystemNow(),
+                    static_cast<double>(data.time_stamp) * 1.0e-9,
+                    imu_data_queue_.size());
+  }
 }
 
 bool LidarImuDataQueue::Pop(ImuData& imu_data) {
@@ -49,7 +57,10 @@ bool LidarImuDataQueue::Pop(ImuData& imu_data) {
   if (imu_data_queue_.empty()) {
     return false;
   }
-  imu_data = imu_data_queue_.front();
+  imu_data = imu_data_queue_.front().data;
+  if (diagnostics_) {
+    timing_.Pop(imu_timing::SteadyNow(), imu_data_queue_.front().enqueued);
+  }
   imu_data_queue_.pop_front();
   return true;
 }
@@ -60,11 +71,37 @@ bool LidarImuDataQueue::Empty() {
 }
 
 void LidarImuDataQueue::Clear() {
-  std::list<ImuData> tmp_imu_data_queue;
+  std::list<Entry> tmp_imu_data_queue;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     imu_data_queue_.swap(tmp_imu_data_queue);
   }
+}
+
+void LidarImuDataQueue::BeginPublish(std::uint64_t stamp) {
+  if (!diagnostics_) return;
+  std::lock_guard<std::mutex> lock(mutex_);
+  timing_.BeginPublish(imu_timing::SteadyNow(), imu_timing::SystemNow(),
+                       static_cast<double>(stamp) * 1.0e-9);
+}
+
+void LidarImuDataQueue::EndPublish() {
+  if (!diagnostics_) return;
+  std::lock_guard<std::mutex> lock(mutex_);
+  timing_.EndPublish(imu_timing::SteadyNow());
+}
+
+bool LidarImuDataQueue::TakeTimingSnapshot(imu_timing::Snapshot& snapshot) {
+  if (!diagnostics_) return false;
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!std::isfinite(timing_.last_ingress)) {
+    // Do not include the driver's startup wait in the first input-rate window.
+    timing_.window_start = imu_timing::SteadyNow();
+    return false;
+  }
+  snapshot = timing_.Take(imu_timing::SteadyNow(), imu_data_queue_.size(),
+      imu_data_queue_.empty() ? imu_timing::Missing() : imu_data_queue_.front().enqueued);
+  return true;
 }
 
 } // namespace livox_ros

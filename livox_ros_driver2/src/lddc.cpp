@@ -577,6 +577,34 @@ void Lddc::PublishPclData(const uint8_t index, const uint64_t timestamp, const P
   return;
 }
 
+#ifdef BUILDING_ROS2
+void Lddc::ReportImuTiming() {
+  if (!lds_ || !cur_node_) return;
+  for (uint32_t i = 0; i < kMaxSourceLidar; ++i) {
+    imu_timing::Snapshot s;
+    if (!lds_->lidars_[i].imu_data.TakeTimingSnapshot(s)) continue;
+    const auto& w = s.window;
+    // Logging happens on the ROS timer, with the queue mutex already released.
+    // It remains observable when the dedicated IMU publish thread is blocked.
+    RCLCPP_INFO(cur_node_->get_logger(),
+        "Livox IMU diag index=%u window_s=%.3f received=%" PRIu64
+        " popped=%" PRIu64 " published=%" PRIu64
+        " ingress_gap_max_ms=%.3f stamp_step_max_ms=%.3f"
+        " ingress_age_mean_ms=%.3f ingress_age_max_ms=%.3f"
+        " queue_depth=%zu queue_peak=%zu queue_wait_max_ms=%.3f"
+        " oldest_wait_ms=%.3f publish_age_max_ms=%.3f"
+        " publish_work_max_ms=%.3f publish_inflight_ms=%.3f"
+        " since_ingress_ms=%.3f since_publish_ms=%.3f",
+        i, s.seconds, w.received, w.popped, w.published,
+        w.ingress_gap_ms.Max(), w.stamp_step_ms.Max(),
+        w.ingress_age_ms.Mean(), w.ingress_age_ms.Max(),
+        s.queue_depth, w.queue_peak, w.queue_wait_ms.Max(),
+        s.oldest_wait_ms, w.publish_age_ms.Max(), w.publish_work_ms.Max(),
+        s.publish_inflight_ms, s.since_ingress_ms, s.since_publish_ms);
+  }
+}
+#endif
+
 void Lddc::InitImuMsg(const ImuData& imu_data, ImuMsg& imu_msg, uint64_t& timestamp) {
   imu_msg.header.frame_id = "livox_frame";
 
@@ -613,7 +641,9 @@ void Lddc::PublishImuData(LidarImuDataQueue& imu_data_queue, const uint8_t index
 #endif
 
   if (kOutputToRos == output_type_) {
+    imu_data_queue.BeginPublish(timestamp);
     publisher_ptr->publish(imu_msg);
+    imu_data_queue.EndPublish();
   } else {
 #ifdef BUILDING_ROS1
     if (bag_ && enable_imu_bag_) {

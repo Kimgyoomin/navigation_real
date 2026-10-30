@@ -28,6 +28,7 @@
 #include <list>
 #include <mutex>
 #include <cstdint>
+#include "imu_timing.h"
 
 namespace livox_ros {
 
@@ -61,14 +62,25 @@ typedef struct {
 
 class LidarImuDataQueue {
  public:
+  explicit LidarImuDataQueue(bool diagnostics = imu_timing::Enabled())
+      : diagnostics_(diagnostics) {}
   void Push(ImuData* imu_data);
   bool Pop(ImuData& imu_data);
   bool Empty();
   void Clear();
+  void BeginPublish(std::uint64_t stamp);
+  void EndPublish();
+  bool TakeTimingSnapshot(imu_timing::Snapshot& snapshot);
 
  private:
+  struct Entry {
+    ImuData data;
+    double enqueued = 0.0;
+  };
   std::mutex mutex_;
-  std::list<ImuData> imu_data_queue_;
+  std::list<Entry> imu_data_queue_;
+  const bool diagnostics_;
+  imu_timing::State timing_;
 };
 
 } // namespace

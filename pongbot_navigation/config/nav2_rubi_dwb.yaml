@@ -31,7 +31,7 @@ controller_server:
     min_x_velocity_threshold: 0.01
     min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.05
-    failure_tolerance: 10.0
+    failure_tolerance: 1000.0
 
     controller_plugins: ["FollowPath"]
 
@@ -51,59 +51,52 @@ controller_server:
       stateful: true
 
     FollowPath:
-      # plugin: "dwb_core::DWBLocalPlanner"
-      # RotationShimController를 위해 아래 블록 추가
-      # controller_server가 직접 로드하는 외부 controller
-      plugin: "nav2_rotation_shim_controller::RotationShimController"
+      # 2026-10-28: Rotation Shim의 경로점 TF 조회 지연을 분리하는 비교 실험.
+      # DWB를 직접 로드한다. 설정 적용에는 Navigation 재시작이 필요하다.
+      plugin: "dwb_core::DWBLocalPlanner"
 
-      # Rotation Shim이 내부에서 로드할 실제 path tracker
-      # Humble에서는 반드시 문자열이다.
-      primary_controller: "dwb_core::DWBLocalPlanner"
+      # Shim 복원 시 위 plugin을 주석 처리하고 아래 블록을 다시 활성화한다.
+      # plugin: "nav2_rotation_shim_controller::RotationShimController"
+      # primary_controller: "dwb_core::DWBLocalPlanner"
+      # angular_dist_threshold: 0.50
+      # angular_disengage_threshold: 0.20
+      # forward_sampling_distance: 0.40
+      # rotate_to_heading_angular_vel: 0.50
+      # max_angular_accel: 1.00
+      # simulate_ahead_time: 1.00
+      # rotate_to_goal_heading: false
+      # closed_loop: true  # Shim 전용. Nav2 odom_topic 연결과는 별개다.
 
-      # RUBI의 제한적인 제자리 회전을 고려한 초기 실험값
-      angular_dist_threshold: 0.50
-      angular_disengage_threshold: 0.20
-
-      forward_sampling_distance: 0.40
-
-      rotate_to_heading_angular_vel: 0.50
-      max_angular_accel: 1.00
-
-      simulate_ahead_time: 1.00
-
-      rotate_to_goal_heading: false
-      closed_loop: true
-
-      # 여기부터는 기존 DWB 설정을 같은 위치에 그대로 둔다.
+      # DWB의 속도/가속도 제한과 critic 설정. 회전 명령도 DWB가 결정한다.
       trajectory_generator_name: "dwb_plugins::StandardTrajectoryGenerator"
 
       debug_trajectory_details: false
 
       # RUBI를 non-holonomic으로 사용
-      min_vel_x: 0.0       # -0.1 -> 0.0
-      max_vel_x: 0.7
+      min_vel_x: 0.0        # -0.1 -> 0.0
+      max_vel_x: 0.8        # 0.5 -> 1.0 -> 0.7 
       min_vel_y: 0.0
       max_vel_y: 0.0
-      max_vel_theta: 1.5        # 0.8 -> 1.2 -> 3.0 -> 5.0 -> 1.5
+      max_vel_theta: 1.0        # 0.8 -> 1.2 -> 3.0 -> 5.0 -> 1.5 -> 1.0
 
       min_speed_xy: 0.0
-      max_speed_xy: 0.7
+      max_speed_xy: 0.8         # root (max_vel_x^2 + max_vel_y^2)
       min_speed_theta: 0.0
 
       # RUBI 시뮬레이션 초기 보수값
-      acc_lim_x: 7.0           # 0.5 -> 1.5 -> 5.0 -> 1.5 -> 5.0 -> 7.0
+      acc_lim_x: 1.0           # 7.0 -> 0.5 -> 1.0 -> 0.5 -> 0.3
       acc_lim_y: 0.0
-      acc_lim_theta: 7.0      # 1.5 ->  7.0
+      acc_lim_theta: 3.0      # 1.5 ->  7.0 -> 1.0 -> 0.5 -> 0.3
 
-      decel_lim_x: -7.0        # -1.0 -> -1.2 - > -5.0 -> -7.0 
+      decel_lim_x: -0.3         #  -7.0 -> -0.3 
       decel_lim_y: 0.0
-      decel_lim_theta: -7.0  # -1.5 -> -7.0  
+      decel_lim_theta: -0.3     # -1.5 -> -7.0 -> -0.3 
 
-      vx_samples: 12          # 20 -> 12
+      vx_samples: 12           # 20 -> 12
       vy_samples: 0
       vtheta_samples: 21      # 41 -> 21
 
-      sim_time: 1.5                 # 2.5 -> 4.0 -> 1.5 -> 2.0 -> 1.5
+      sim_time: 1.5                 # 1.5 -> 2.0 -> 1.5
       linear_granularity: 0.05
       angular_granularity: 0.025
 
@@ -165,9 +158,9 @@ local_costmap:
 
       track_unknown_space: false
 
-      # 0.55 m x 0.55 m centered on base_link. Padding makes the checked box 0.57 m.
+      # 0.55 m x 0.55 m centered on base_link. Padding makes the checked box 0.59 m.
       footprint: "[[0.275, 0.275], [-0.275, 0.275], [-0.275, -0.275], [0.275, -0.275]]"
-      footprint_padding: 0.01
+      footprint_padding: 0.02
 
       plugins:
         - "obstacle_layer"
@@ -184,8 +177,8 @@ local_costmap:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
 
-        # layer-level 필터도 지정
-        min_obstacle_height: -0.2     # -0.2
+        # Marking threshold in camera_init Z, not height above the floor.
+        min_obstacle_height: -0.05     # -0.2 -> -0.05
         max_obstacle_height: 2.0
 
 
@@ -209,11 +202,12 @@ local_costmap:
           raytrace_min_range: 0.0          
           raytrace_max_range: 4.0
 
-          # 아래 값은 예시다.
-          # camera_init 기준 실제 지면 높이에 맞춰 반드시 수정할 것.
-          min_obstacle_height: -0.15     # -2.0 -> -0.3
+          # Source height filtering affects BOTH marking and clearing rays.
+          # camera_init Z, not height above the floor.
+          min_obstacle_height: -0.05     # -2.0 -> -0.3 -> -0.2 -> -0.05
           max_obstacle_height: 1.0
 
+          # Zero keeps the latest observation; it does not expire obstacle cells.
           observation_persistence: 0.0    # 5.0 -> 0.0
           expected_update_rate: 0.0
 
@@ -264,8 +258,8 @@ global_costmap:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
 
-        # layer-level 필터도 지정
-        min_obstacle_height: -0.2
+        # Marking threshold in map Z, not height above the floor.
+        min_obstacle_height: -0.05 # -0.2 -> -0.05
         max_obstacle_height: 2.0
 
         footprint_clearing_enabled: true
@@ -287,16 +281,17 @@ global_costmap:
           raytrace_min_range: 0.0
           raytrace_max_range: 5.0
 
-          # 아래 값은 예시다.
-          # camera_init 기준 실제 지면 높이에 맞춰 반드시 수정할 것.
-          min_obstacle_height: -0.2              # 0.1 -> -0.3
+          # Source height filtering affects BOTH marking and clearing rays.
+          # map Z, not height above the floor.
+          min_obstacle_height: -0.05              # 0.1 -> -0.3 -> -0.2 -> -0.05
           max_obstacle_height: 2.5
+          # Zero keeps the latest observation; it does not expire obstacle cells.
           observation_persistence: 0.0    # 5.0 -> 0.0            # 0.0 -> 0.5 -> 2.0 -> 0.0
           expected_update_rate: 0.0
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        enabled: true
+        enabled: true 
         inflation_radius: 0.70                # 0.55 -> 0.70
         cost_scaling_factor: 1.0              # 3.0 -> 2.0 -> 1.0
 

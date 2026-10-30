@@ -156,6 +156,8 @@ if(BUILD_TESTING)
   ament_target_dependencies(test_velocity_output nav_msgs)
   target_include_directories(test_velocity_output PRIVATE include)
   target_link_libraries(test_velocity_output Eigen3::Eigen)
+  ament_add_gtest(test_pipeline_timing test/test_pipeline_timing.cpp)
+  target_include_directories(test_pipeline_timing PRIVATE include)
 endif()
 
 ament_package()

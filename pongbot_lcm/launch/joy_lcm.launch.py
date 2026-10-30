@@ -1,9 +1,12 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
+from navigation_dds.profiles import dds_argument, dds_group
 
 
 def generate_launch_description():
     return LaunchDescription([
+        dds_argument(),
+        dds_group([
         Node(
             package="pongbot_lcm",
             executable="joy_lcm_node",   # CMake target name과 반드시 일치해야 함
@@ -46,4 +49,5 @@ def generate_launch_description():
                 "debug_raw_joy": True,
             }]
         )
+        ], 'LCM ROS bridge'),
     ])

@@ -339,6 +339,11 @@ else(ROS_EDITION STREQUAL "ROS2")
   )
 
   if(BUILD_TESTING)
+    find_package(ament_cmake_gtest REQUIRED)
+    ament_add_gtest(test_imu_timing
+      test/test_imu_timing.cpp src/comm/lidar_imu_data_queue.cpp)
+    target_include_directories(test_imu_timing PRIVATE src)
+    target_link_libraries(test_imu_timing pthread)
     find_package(ament_lint_auto REQUIRED)
     # the following line skips the linter which checks for copyrights
     # uncomment the line when a copyright and license is not present in all source files

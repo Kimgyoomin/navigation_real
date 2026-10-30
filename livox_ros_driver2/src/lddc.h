@@ -83,6 +83,9 @@ class Lddc final {
   int RegisterLds(Lds *lds);
   void DistributePointCloudData(void);
   void DistributeImuData(void);
+#ifdef BUILDING_ROS2
+  void ReportImuTiming();
+#endif
   void CreateBagFile(const std::string &file_name);
   void PrepareExit(void);
 

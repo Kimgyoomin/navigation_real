@@ -11,6 +11,7 @@
   <depend>rclcpp</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
+  <exec_depend>navigation_dds</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

@@ -7,6 +7,7 @@ Panels:
         - /Global Options1
         - /Status1
         - /Odometry1
+        - /Odometry1/Shape1
         - /Localisation1/localization1
         - /Localisation1/localization1/Shape1
         - /Localisation1/map1
@@ -116,7 +117,7 @@ Visualization Manager:
       Name: Odometry
       Position Tolerance: 0.10000000149011612
       Shape:
-        Alpha: 1
+        Alpha: 0.20000000298023224
         Axes Length: 1
         Axes Radius: 0.10000000149011612
         Color: 255; 25; 0
@@ -362,7 +363,7 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /plan
       Value: true
-    - Alpha: 0.699999988079071
+    - Alpha: 0.30000001192092896
       Class: rviz_default_plugins/Map
       Color Scheme: costmap
       Draw Behind: false
@@ -383,7 +384,7 @@ Visualization Manager:
         Value: /local_costmap/costmap_updates
       Use Timestamp: false
       Value: true
-    - Alpha: 0.699999988079071
+    - Alpha: 0.30000001192092896
       Class: rviz_default_plugins/Map
       Color Scheme: costmap
       Draw Behind: false
@@ -511,25 +512,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 14.720771789550781
+      Distance: 8.56635570526123
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 5.63373327255249
-        Y: 2.3225886821746826
-        Z: -0.05214295536279678
+        X: -0.06245903670787811
+        Y: -1.3024287223815918
+        Z: -0.523695707321167
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.1997957229614258
+      Pitch: 1.5697963237762451
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz_default_plugins)
-      Yaw: 3.128549575805664
+      Yaw: 3.1235547065734863
     Saved: ~
 Window Geometry:
   Displays:

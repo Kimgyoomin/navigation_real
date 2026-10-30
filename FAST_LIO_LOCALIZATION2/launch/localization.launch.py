@@ -4,6 +4,7 @@ from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
+from navigation_dds.profiles import dds_argument, dds_group
 
 import os
 
@@ -166,7 +167,7 @@ def generate_launch_description():
 
     ld = LaunchDescription()
     # 
-    ld.add_action(world_to_map_tf)
+    ld.add_action(dds_argument())
     ld.add_action(declare_use_sim_time_cmd)
     ld.add_action(declare_config_path_cmd)
     ld.add_action(declare_config_file_cmd)
@@ -179,16 +180,15 @@ def generate_launch_description():
     ld.add_action(declare_map_yaml)
     ld.add_action(declare_publish_2d_map)
 
-    # nodes
-    ld.add_action(fast_lio_node)
-    ld.add_action(global_localization_node)
-    ld.add_action(transform_fusion_node)
-    ld.add_action(pcd_publisher_node)
-
-    # ✅ 2D map publisher
-    ld.add_action(map_server_node)
-    ld.add_action(lifecycle_manager_node)
-
-    ld.add_action(rviz_node)
+    ld.add_action(dds_group([
+        world_to_map_tf,
+        fast_lio_node,
+        global_localization_node,
+        transform_fusion_node,
+        dds_group([pcd_publisher_node], 'PCD map publisher', profile='large'),
+        map_server_node,
+        lifecycle_manager_node,
+        rviz_node,
+    ], 'FAST-LIO localization'))
 
     return ld

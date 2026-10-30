@@ -183,6 +183,12 @@ DriverNode::DriverNode(const rclcpp::NodeOptions & node_options)
 
   pointclouddata_poll_thread_ = std::make_shared<std::thread>(&DriverNode::PointCloudDataPollThread, this);
   imudata_poll_thread_ = std::make_shared<std::thread>(&DriverNode::ImuDataPollThread, this);
+  if (imu_timing::Enabled()) {
+    imu_diagnostic_timer_ = this->create_wall_timer(
+        std::chrono::seconds(1), [this]() { lddc_ptr_->ReportImuTiming(); });
+    RCLCPP_INFO(this->get_logger(),
+        "Livox IMU diagnostics v1 enabled (1 s; age=system clock, durations=steady clock)");
+  }
 }
 
 }  // namespace livox_ros

@@ -20,7 +20,8 @@ def test_costmap_geometry_and_filtered_source(name, rate):
     assert len(footprint) == 4
     assert {tuple(p) for p in footprint} == {
         (.275, .275), (-.275, .275), (-.275, -.275), (.275, -.275)}
-    assert params['footprint_padding'] == .01
+    # Local padding was deliberately increased to 2cm; global remains 1cm.
+    assert params['footprint_padding'] == (.02 if name == 'local_costmap' else .01)
     source = params['obstacle_layer']['livox_cloud']
     assert source['topic'] == '/livox/lidar_costmap'
     assert source['obstacle_min_range'] == .3
@@ -46,11 +47,11 @@ def test_controller_keeps_baseline_velocity_and_checks_corners():
     controller = CONFIG['controller_server']['ros__parameters']
     assert controller['odom_topic'] == '/Odometry'
     assert controller['controller_frequency'] == 5.
-    assert controller['FollowPath']['closed_loop'] is True
+    assert controller['FollowPath']['plugin'] == 'dwb_core::DWBLocalPlanner'
     assert 'BaseObstacle' in controller['FollowPath']['critics']
     assert 'ObstacleFootprint' in controller['FollowPath']['critics']
     assert controller['FollowPath']['ObstacleFootprint.scale'] > 0.
-    assert controller['FollowPath']['primary_controller'] == 'dwb_core::DWBLocalPlanner'
+    assert 'primary_controller' not in controller['FollowPath']
 
 
 def test_bt_replan_rate_and_warning_budget():
