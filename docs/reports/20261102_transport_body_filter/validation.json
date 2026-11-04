@@ -1,0 +1,36 @@
+{
+  "python_syntax": "passed",
+  "broken_local_links": [],
+  "evidence_hash_mismatches": [],
+  "html": {
+    "REPORT.html": {
+      "embedded_images": 8,
+      "toc_links_valid": true
+    },
+    "PRESENTATION.html": {
+      "embedded_images": 5,
+      "toc_links_valid": true
+    }
+  },
+  "generated_artifact_sha256": {
+    "PRESENTATION.html": "2056a21f66c11da163ffbcf2a088c1468a6e4363f3ec87791e899827cd7f3647",
+    "PRESENTATION.md": "d21bc44dcbcef81dde1f6eaccdd7ed9d4d070a6e81624277c75f9515db807f31",
+    "REPORT.html": "fc0778c9b57a0911fc67e83a0651956dfdec39297e5d952fdc3d76be91495dc0",
+    "REPORT.md": "74529ed060d248cfc495f5d5985f663f3b9518a9779b0aa4326dcce9a67e81e2",
+    "figures/01_recurrence.png": "205f14cc049b903e72b7575e250fac44313f458a383c72ecec1353cd1e919f0b",
+    "figures/01_recurrence.svg": "be112833674f0b4b8128592e2109962aced40e1f700f3d284f11d2a6919313eb",
+    "figures/02_shm_capacity.png": "9e38b6e5800686e479303c01dfe1d1285c4976ddc140395bd53223a1519ef0c0",
+    "figures/02_shm_capacity.svg": "8a1c6b701deef983fd9a90d5b624d9c942c0bbfb84c1011ea679d49a1cb3dac3",
+    "figures/03_udp_errors.png": "030490b9ad80f7703b12cd2d9a6a3eea409fc5cafa9bde45abcec72d1ad38005",
+    "figures/03_udp_errors.svg": "3be077f6b5b511044eb2c1720657d029c91981a9de1203768241cae205629989",
+    "figures/04_height_points.png": "9083f956e2401b80e861342bc1558f94322b4ca101bbb0138b99df98efbe6b14",
+    "figures/04_height_points.svg": "74b8fa0a33f9ba5e8e677a8a5c38cdd663aee75118712f58bc3e4edcd6da692d",
+    "figures/05_costmap_cells.png": "0629f291ccc63b5c97d6eb663f2445b5bfe29d5cdb9296267059466f96d184e4",
+    "figures/05_costmap_cells.svg": "b8202c4b52f80febe0485a11e9b3190e98b1c156479dce45f2e1bfafb0f4d4e8",
+    "figures/nav2_global_comparison.png": "cfea0c9d5406c06f57bc8c995da0dfadeb3333e27a0dfb1b51fa12f56acae3bf",
+    "figures/nav2_local_comparison.png": "87e5b856598e12da4ce79992ac204f859bec02a7f8c9a710479a55612f0a8424",
+    "figures/pcd_floor_check.png": "e075c6024695740c0d52b707b8c285df39ca27c60c59fe150d7036431a8871b1",
+    "regenerate_figures.py": "2510040392165e7d68652cfeb97f2642a6f4b1596696e9a48467495b84c36bd7",
+    "render_report.py": "1ecd7878afac474e0dbcb3e1e0bac7b4e521a1e7b45b1bbfdcec4e6ee5ba67be"
+  }
+}

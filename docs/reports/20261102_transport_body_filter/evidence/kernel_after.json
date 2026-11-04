@@ -1,0 +1,13 @@
+{
+  "sysctl": {
+    "net.core.rmem_max": 16777216,
+    "net.core.wmem_max": 16777216,
+    "net.core.rmem_default": 212992,
+    "net.core.wmem_default": 212992
+  },
+  "unbound_socket_probe": {
+    "rcvbuf": 33554432,
+    "sndbuf": 33554432
+  },
+  "scope": "runtime only; no process restarts; existing sockets not resized"
+}

@@ -9,6 +9,16 @@ costmap_sector_filter:
     front_half_angle_deg: 60.0
     front_min_range: 0.3
     other_min_range: 1.0
+    # Vertical height relative to robot BODY, along estimated gravity-up.
+    # /fastlio/up_body is emitted by the updated fast_lio_localization node.
+    up_topic: /fastlio/up_body
+    up_frame: body  # FAST-LIO IMU frame (lowercase)
+    height_origin_frame: BODY  # robot center (uppercase), currently equals base_link
+    min_body_height: -0.20
+    max_body_height: 1.0
+    max_up_gap_s: 0.25
+    max_wait_s: 0.25
+    max_cloud_age_s: 0.5
 
 planner_server:
   ros__parameters:
@@ -88,9 +98,9 @@ controller_server:
       acc_lim_y: 0.0
       acc_lim_theta: 3.0      # 1.5 ->  7.0 -> 1.0 -> 0.5 -> 0.3
 
-      decel_lim_x: -0.3         #  -7.0 -> -0.3 
+      decel_lim_x: -1.0         #  -7.0 -> -0.3 
       decel_lim_y: 0.0
-      decel_lim_theta: -0.3     # -1.5 -> -7.0 -> -0.3 
+      decel_lim_theta: -3.0     # -1.5 -> -7.0 -> -0.3 
 
       vx_samples: 12           # 20 -> 12
       vy_samples: 0
@@ -177,9 +187,10 @@ local_costmap:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
 
-        # Marking threshold in camera_init Z, not height above the floor.
-        min_obstacle_height: -0.05     # -0.2 -> -0.05
-        max_obstacle_height: 2.0
+        # Height was already filtered relative to BODY upstream. These broad
+        # bounds prevent a second, conflicting camera_init/map absolute-Z gate.
+        min_obstacle_height: -10000.0
+        max_obstacle_height: 10000.0
 
 
         footprint_clearing_enabled: true
@@ -202,14 +213,15 @@ local_costmap:
           raytrace_min_range: 0.0          
           raytrace_max_range: 4.0
 
-          # Source height filtering affects BOTH marking and clearing rays.
-          # camera_init Z, not height above the floor.
-          min_obstacle_height: -0.05     # -2.0 -> -0.3 -> -0.2 -> -0.05
-          max_obstacle_height: 1.0
+          # Both marking/clearing use BODY-filtered real endpoints. Do not
+          # reconnect raw points here: these are deliberately broad Z bounds.
+          min_obstacle_height: -10000.0
+          max_obstacle_height: 10000.0
 
           # Zero keeps the latest observation; it does not expire obstacle cells.
           observation_persistence: 0.0    # 5.0 -> 0.0
-          expected_update_rate: 0.0
+          # Seconds, not Hz: mark this observation source stale if gravity/input stops.
+          expected_update_rate: 0.5
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
@@ -258,9 +270,9 @@ global_costmap:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
 
-        # Marking threshold in map Z, not height above the floor.
-        min_obstacle_height: -0.05 # -0.2 -> -0.05
-        max_obstacle_height: 2.0
+        # Same BODY-relative band as local; avoid a second map absolute-Z gate.
+        min_obstacle_height: -10000.0
+        max_obstacle_height: 10000.0
 
         footprint_clearing_enabled: true
         combination_method: 1
@@ -281,13 +293,13 @@ global_costmap:
           raytrace_min_range: 0.0
           raytrace_max_range: 5.0
 
-          # Source height filtering affects BOTH marking and clearing rays.
-          # map Z, not height above the floor.
-          min_obstacle_height: -0.05              # 0.1 -> -0.3 -> -0.2 -> -0.05
-          max_obstacle_height: 2.5
+          # Real endpoints retained by the upstream BODY-relative height gate.
+          min_obstacle_height: -10000.0
+          max_obstacle_height: 10000.0
           # Zero keeps the latest observation; it does not expire obstacle cells.
           observation_persistence: 0.0    # 5.0 -> 0.0            # 0.0 -> 0.5 -> 2.0 -> 0.0
-          expected_update_rate: 0.0
+          # Seconds, not Hz; same freshness requirement as local costmap.
+          expected_update_rate: 0.5
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"

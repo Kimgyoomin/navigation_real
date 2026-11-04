@@ -1,0 +1,78 @@
+{
+  "bad": {
+    "epoch_start": 1793204940,
+    "epoch_end": 1793205190,
+    "driver_hz": 200.00239998080013,
+    "imu_hz": 25.094822263385403,
+    "sync_hz": 0.7497574314192476,
+    "lidar_replaced": 2286.0,
+    "imu_mean_age_ms": {
+      "n": 247,
+      "min": 765.257,
+      "median": 1273.909,
+      "max": 1284.504
+    },
+    "fusion_interval_ms": {
+      "n": 93,
+      "min": 1033.7,
+      "median": 1298.3,
+      "max": 1751.1
+    },
+    "fusion_age_ms": {
+      "n": 93,
+      "min": 1066.9,
+      "median": 1368.8,
+      "max": 1793.0
+    },
+    "driver_publish_age_max_ms": {
+      "n": 250,
+      "min": 0.241,
+      "median": 3.0755,
+      "max": 24.47
+    },
+    "driver_queue_peak": {
+      "n": 250,
+      "min": 1.0,
+      "median": 1.0,
+      "max": 7.0
+    }
+  },
+  "restarted_goal": {
+    "epoch_start": 1793205655,
+    "epoch_end": 1793205856,
+    "driver_hz": 200.00497512437812,
+    "imu_hz": 200.00198449120126,
+    "sync_hz": 9.996874426358012,
+    "lidar_replaced": 0.0,
+    "imu_mean_age_ms": {
+      "n": 201,
+      "min": 0.282,
+      "median": 0.437,
+      "max": 0.853
+    },
+    "fusion_interval_ms": {
+      "n": 97,
+      "min": 89.0,
+      "median": 100.7,
+      "max": 115.6
+    },
+    "fusion_age_ms": {
+      "n": 97,
+      "min": 7.5,
+      "median": 15.9,
+      "max": 36.4
+    },
+    "driver_publish_age_max_ms": {
+      "n": 201,
+      "min": 0.094,
+      "median": 1.751,
+      "max": 7.819
+    },
+    "driver_queue_peak": {
+      "n": 201,
+      "min": 1.0,
+      "median": 1.0,
+      "max": 4.0
+    }
+  }
+}

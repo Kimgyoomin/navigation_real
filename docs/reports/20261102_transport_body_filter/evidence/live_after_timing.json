@@ -1,0 +1,336 @@
+{
+  "finished_at": "2026-10-29T21:42:31.487014+09:00",
+  "measurement_seconds": 60,
+  "method": "BEST_EFFORT observer receive time minus message stamp; includes observer scheduling, not pure DDS latency.",
+  "topics": {
+    "/livox/imu": {
+      "count": 12001,
+      "hz": 199.99712382136326,
+      "receipt_gap_ms": {
+        "min": 0.42439800017746165,
+        "p50": 4.899979999891002,
+        "p95": 6.763551000130972,
+        "p99": 8.556796489888258,
+        "max": 37.66900700020415
+      },
+      "header_age_ms": {
+        "min": 0.220672,
+        "p50": 0.58752,
+        "p95": 2.050048,
+        "p99": 5.396224,
+        "max": 36.575488
+      },
+      "nonincreasing_stamps": 0
+    },
+    "/livox/lidar": {
+      "count": 600,
+      "hz": 9.999978389028357,
+      "receipt_gap_ms": {
+        "min": 79.10418300025412,
+        "p50": 100.02168099981645,
+        "p95": 102.85742860000937,
+        "p99": 106.88742842004102,
+        "max": 125.55036499998096
+      },
+      "header_age_ms": {
+        "min": 97.348096,
+        "p50": 101.93024,
+        "p95": 104.9441024,
+        "p99": 109.5171584,
+        "max": 127.697664
+      },
+      "nonincreasing_stamps": 0,
+      "scan_end_age_ms": {
+        "min": 1.30816,
+        "p50": 2.4860160000000002,
+        "p95": 5.276211199999998,
+        "p99": 9.859415039999998,
+        "max": 28.13696
+      }
+    },
+    "/livox/lidar_pointcloud": {
+      "count": 300,
+      "hz": 4.999962292926522,
+      "receipt_gap_ms": {
+        "min": 179.58018099989204,
+        "p50": 200.04172900007688,
+        "p95": 203.04678219999914,
+        "p99": 208.63624318008075,
+        "max": 217.526478000309
+      },
+      "header_age_ms": {
+        "min": 98.621952,
+        "p50": 104.125696,
+        "p95": 107.7953792,
+        "p99": 113.07062528,
+        "max": 123.307776
+      },
+      "nonincreasing_stamps": 0
+    },
+    "/livox/lidar_costmap": {
+      "count": 300,
+      "hz": 5.000006665978808,
+      "receipt_gap_ms": {
+        "min": 180.64930399987134,
+        "p50": 200.16090099989015,
+        "p95": 203.2411687000149,
+        "p99": 207.54360306013038,
+        "max": 217.4013849999028
+      },
+      "header_age_ms": {
+        "min": 99.174912,
+        "p50": 105.12998400000001,
+        "p95": 108.7559424,
+        "p99": 113.38926336,
+        "max": 123.57888
+      },
+      "nonincreasing_stamps": 0
+    },
+    "/Odometry": {
+      "count": 600,
+      "hz": 10.000580228656244,
+      "receipt_gap_ms": {
+        "min": 69.64173699998355,
+        "p50": 100.00145599997268,
+        "p95": 105.1140797998869,
+        "p99": 114.42147289993045,
+        "max": 128.17841700007193
+      },
+      "header_age_ms": {
+        "min": 9.782528,
+        "p50": 13.534848,
+        "p95": 20.145638399999992,
+        "p99": 26.607234559999995,
+        "max": 42.915328
+      },
+      "nonincreasing_stamps": 0
+    },
+    "/localization": {
+      "count": 600,
+      "hz": 10.000565989628642,
+      "receipt_gap_ms": {
+        "min": 69.68007500017848,
+        "p50": 100.0282730001345,
+        "p95": 104.61838969972632,
+        "p99": 112.80613151972825,
+        "max": 125.29406900011963
+      },
+      "header_age_ms": {
+        "min": 9.308672,
+        "p50": 14.276608,
+        "p95": 20.4577024,
+        "p99": 27.55205631999999,
+        "max": 43.145984
+      },
+      "nonincreasing_stamps": 0
+    },
+    "/fastlio/odometry_velocity": {
+      "count": 600,
+      "hz": 10.000711802415601,
+      "receipt_gap_ms": {
+        "min": 69.71028299994941,
+        "p50": 99.974511000255,
+        "p95": 105.08683069974722,
+        "p99": 113.93176861993196,
+        "max": 128.3603110000513
+      },
+      "header_age_ms": {
+        "min": 9.98528,
+        "p50": 14.049792,
+        "p95": 20.79024639999999,
+        "p99": 27.044098560000002,
+        "max": 43.293184
+      },
+      "nonincreasing_stamps": 0
+    },
+    "/map_to_odom": {
+      "count": 30,
+      "hz": 0.5000959351794471,
+      "receipt_gap_ms": {
+        "min": 1948.1519790001585,
+        "p50": 1995.137698000235,
+        "p95": 2036.1401558002399,
+        "p99": 2040.7222234001893,
+        "max": 2042.4437810002019
+      },
+      "header_age_ms": {
+        "min": 0.495616,
+        "p50": 0.76736,
+        "p95": 3.0884095999999985,
+        "p99": 6.666583040000004,
+        "max": 8.029184
+      },
+      "nonincreasing_stamps": 0
+    },
+    "/local_costmap/costmap": {
+      "count": 197,
+      "hz": 3.2995467845008126,
+      "receipt_gap_ms": {
+        "min": 198.03113799980565,
+        "p50": 396.84642699990036,
+        "p95": 400.7135180002024,
+        "p99": 402.43561989977934,
+        "max": 404.9815660000604
+      },
+      "header_age_ms": {
+        "min": 0.360704,
+        "p50": 1.161216,
+        "p95": 2.8689919999999995,
+        "p99": 4.196372479999991,
+        "max": 6.591744
+      },
+      "nonincreasing_stamps": 0
+    },
+    "/local_costmap/published_footprint": {
+      "count": 300,
+      "hz": 5.000052760255728,
+      "receipt_gap_ms": {
+        "min": 193.40673300030176,
+        "p50": 199.96559899982458,
+        "p95": 202.7732080000078,
+        "p99": 204.4977772999573,
+        "max": 206.1799409998457
+      },
+      "header_age_ms": {
+        "min": 76.251136,
+        "p50": 78.64320000000001,
+        "p95": 81.9438208,
+        "p99": 84.22720256,
+        "max": 85.389312
+      },
+      "nonincreasing_stamps": 0
+    },
+    "/global_costmap/published_footprint": {
+      "count": 60,
+      "hz": 1.0000097486204527,
+      "receipt_gap_ms": {
+        "min": 996.123138999792,
+        "p50": 1000.0437439998677,
+        "p95": 1002.3275154003386,
+        "p99": 1004.2284925000149,
+        "max": 1006.2894790003156
+      },
+      "header_age_ms": {
+        "min": 58.5984,
+        "p50": 60.534527999999995,
+        "p95": 64.0615936,
+        "p99": 66.86978303999999,
+        "max": 68.0704
+      },
+      "nonincreasing_stamps": 0
+    }
+  },
+  "tf": {
+    "map->camera_init": {
+      "count": 600,
+      "hz": 10.000165584210821,
+      "receipt_gap_ms": {
+        "min": 67.76923000006718,
+        "p50": 100.02312100004929,
+        "p95": 104.98975540012907,
+        "p99": 114.34312846005919,
+        "max": 128.4149999996771
+      },
+      "header_age_ms": {
+        "min": 9.797888,
+        "p50": 15.474816,
+        "p95": 21.14287359999999,
+        "p99": 30.769305599999996,
+        "max": 46.829824
+      },
+      "nonincreasing_stamps": 0
+    },
+    "camera_init->body": {
+      "count": 600,
+      "hz": 10.000636875783883,
+      "receipt_gap_ms": {
+        "min": 69.46758799995223,
+        "p50": 100.03956899981858,
+        "p95": 105.76233079987105,
+        "p99": 114.0873245597049,
+        "max": 127.74483500015776
+      },
+      "header_age_ms": {
+        "min": 10.882304,
+        "p50": 15.257216,
+        "p95": 22.012159999999994,
+        "p99": 27.789294079999987,
+        "max": 44.024832
+      },
+      "nonincreasing_stamps": 0
+    }
+  },
+  "cmd_vel_received": 0,
+  "cmd_vel_samples": [],
+  "states": {
+    "/controller_server": "active",
+    "/planner_server": "active",
+    "/local_costmap/local_costmap": "active",
+    "/global_costmap/global_costmap": "active"
+  },
+  "controller_parameters": {
+    "odom_topic": "/Odometry",
+    "controller_frequency": 5.0,
+    "FollowPath.max_vel_x": 1.0,
+    "FollowPath.max_vel_theta": 1.5,
+    "FollowPath.acc_lim_x": 1.0,
+    "FollowPath.acc_lim_theta": 1.0,
+    "FollowPath.decel_lim_x": -7.0,
+    "FollowPath.decel_lim_theta": -7.0
+  },
+  "publishers": {
+    "/livox/imu": [
+      "livox_lidar_publisher"
+    ],
+    "/livox/lidar": [
+      "livox_lidar_publisher"
+    ],
+    "/livox/lidar_pointcloud": [
+      "livox_lidar_publisher"
+    ],
+    "/livox/lidar_costmap": [
+      "costmap_sector_filter"
+    ],
+    "/Odometry": [
+      "laser_mapping"
+    ],
+    "/localization": [
+      "transform_fusion"
+    ],
+    "/fastlio/odometry_velocity": [
+      "laser_mapping"
+    ],
+    "/map_to_odom": [
+      "global_localization"
+    ],
+    "/local_costmap/costmap": [
+      "local_costmap"
+    ],
+    "/local_costmap/published_footprint": [
+      "local_costmap"
+    ],
+    "/global_costmap/published_footprint": [
+      "global_costmap"
+    ],
+    "/cmd_vel": [
+      "controller_server",
+      "behavior_server",
+      "behavior_server",
+      "behavior_server",
+      "behavior_server"
+    ]
+  },
+  "udp_delta": {
+    "InDatagrams": 700218,
+    "NoPorts": 67828,
+    "InErrors": 0,
+    "OutDatagrams": 448526,
+    "RcvbufErrors": 0,
+    "SndbufErrors": 392,
+    "InCsumErrors": 0,
+    "IgnoredMulti": 6523,
+    "MemErrors": 0
+  },
+  "errors": [],
+  "custom_parser_validated": true
+}

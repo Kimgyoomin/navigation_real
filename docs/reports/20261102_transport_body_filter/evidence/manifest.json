@@ -1,0 +1,247 @@
+{
+  "created_at": "2026-11-02T18:44:08.617792+09:00",
+  "purpose": "Historical evidence snapshot; no new robot experiments run while writing this report.",
+  "repository_head": "ccd5fec77a304349215bdf31d2ff5015c297024d",
+  "branch": "jetson/261027-stamp-velocity",
+  "preexisting_status": " M ERROR.md\n M FAST_LIO_LOCALIZATION2/launch/localization.launch.py\n M FAST_LIO_LOCALIZATION2/src/laserMapping.cpp\n M genz-icp/ros/README.md\n M genz-icp/ros/launch/localization.launch.py\n M genz-icp/ros/launch/localization_rosbag.launch.py\n M genz-icp/ros/package.xml\n M pongbot_navigation/CMakeLists.txt\n M pongbot_navigation/config/nav2_rubi_dwb.yaml\n M pongbot_navigation/include/pongbot_navigation/sector_filter.hpp\n M pongbot_navigation/package.xml\n M pongbot_navigation/src/costmap_sector_filter.cpp\n M pongbot_navigation/src/sector_filter.cpp\n M pongbot_navigation/test/test_navigation_config.py\n M pongbot_navigation/test/test_sector_filter.cpp\n?? pongbot_navigation/include/pongbot_navigation/height_filter.hpp\n?? pongbot_navigation/test/test_height_filter.cpp\n?? tools/review_body_costmap.py\n?? tools/review_body_costmap.sh\n",
+  "files": [
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/imu_recurrence_20261029_d2lwcuym/summary.json",
+      "copy": "evidence/recurrence.json",
+      "bytes": 1551,
+      "sha256": "1e2000a46f8bc705c28947225e5417846da5cb8c4e657d5b87422e3c30ca304f"
+    },
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/dds_baseline_20261029/timing.json",
+      "copy": "evidence/baseline_bag_timing.json",
+      "bytes": 19539,
+      "sha256": "dd4fec32d77d26129dc58456ef189212542b091a53bbfe67fdaafc7137bab582"
+    },
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/dds_profile_validation_20261029/send.json",
+      "copy": "evidence/shm_send.json",
+      "bytes": 260,
+      "sha256": "18d2c4970fa3397b856ff491c0f78935eda743a7ce9dab33a4a60ad5a072ee31"
+    },
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/dds_profile_validation_20261029/receive.json",
+      "copy": "evidence/shm_receive.json",
+      "bytes": 279,
+      "sha256": "8f5530ffe83368fed9320d14c3f0a0386097a3971932adbcd738e64b48be5f7b"
+    },
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/socket_buffer_reapply_30ev17da/before.json",
+      "copy": "evidence/kernel_before.json",
+      "bytes": 267,
+      "sha256": "9f308f241bb678ae252dce8d5d8ece4676ca7916463424a4df53d27daf949e9b"
+    },
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/socket_buffer_reapply_30ev17da/after.json",
+      "copy": "evidence/kernel_after.json",
+      "bytes": 323,
+      "sha256": "e6823a4a0508609eaac153ded32f4d7e0a6161f554d17869b2db3f401dff1887"
+    },
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/live_buffer_validation_20261029_2118/udp_passive_followup.json",
+      "copy": "evidence/udp_before_passive.json",
+      "bytes": 1409,
+      "sha256": "cd2aa0923c61ba10321a757e1b6703a3008a9457df6c0f9670b599ad0b80fee9"
+    },
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/dds_udp4_live_20261029_214113/udp_passive_followup.json",
+      "copy": "evidence/udp_after_passive.json",
+      "bytes": 314,
+      "sha256": "0bcd54dfd424c66e0a5fae4e7f051bb371709b9d3a0fa3db8c92571bbdb94c9b"
+    },
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/dds_udp_buffers_20261029_5qaat324/RESULTS.json",
+      "copy": "evidence/udp_socket_validation.json",
+      "bytes": 413,
+      "sha256": "0f288b427bbbeefb49c933d201447f3a94d9eb99d1ccf802d8ecb8316c9fb433"
+    },
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/live_buffer_validation_20261029_2118/timing_after_warmup.json",
+      "copy": "evidence/live_before_timing.json",
+      "bytes": 2796,
+      "sha256": "ba3442352bd3f55d7e56c4e379c1f15f65f8bdc00210dfe6b6e15e8fefe43e7d"
+    },
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/dds_udp4_live_20261029_214113/timing.json",
+      "copy": "evidence/live_after_timing.json",
+      "bytes": 8627,
+      "sha256": "20a889a5e5856d4c51093720e06fbe8c268bf5d88e8a3217a1ea1b16a742364e"
+    },
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/live_buffer_validation_20261029_2118/REPORT.md",
+      "copy": "evidence/live_before_report.md",
+      "bytes": 5384,
+      "sha256": "4633dddfa7d4077a345c69b3a60bee28b600a723caa098d0b0ab30a6008e8ef4"
+    },
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/dds_udp4_live_20261029_214113/REPORT.md",
+      "copy": "evidence/live_after_report.md",
+      "bytes": 5074,
+      "sha256": "61de905408cbbea5cd09faeeb239389c3320fd28cef4562e095c5a9f76d10b17"
+    },
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/body_height_20261102/pcd_summary.json",
+      "copy": "evidence/pcd_floor_summary.json",
+      "bytes": 3142,
+      "sha256": "d55fd82cd073fd54534a2a98203fadd5c296b33f7ea5fce78c4de18456fc98b2"
+    },
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/body_height_validation_20261102/summary.json",
+      "copy": "evidence/height_geometry_summary.json",
+      "bytes": 17845,
+      "sha256": "97d647933a780152530544c8537ab8cfceef56c843ac59cec77ff1f42919672a"
+    },
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/body_height_validation_20261102/actual_node_summary.json",
+      "copy": "evidence/height_actual_node_summary.json",
+      "bytes": 642,
+      "sha256": "fa6302446c2f8ee9e062ef569164b2ccfe55e3660936a7a61c3a70aee2497caa"
+    },
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/body_height_validation_20261102/costmap_run/summary.json",
+      "copy": "evidence/height_costmap_summary.json",
+      "bytes": 2868,
+      "sha256": "f5438fba9841ec7a989c1fec0e0cb42bd2a17c5ece0526c0d10a36976097d4a6"
+    },
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/body_height_20261102/fastlio_smoke_retry/fastlio_smoke_summary.json",
+      "copy": "evidence/height_smoke_summary.json",
+      "bytes": 367,
+      "sha256": "0161f2dea8570452dd1e058fb562ea86f0110a25eb63950bdf5f010955372459"
+    },
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/body_height_validation_20261102/actual_node.log",
+      "copy": "evidence/height_actual_node.log",
+      "bytes": 9289,
+      "sha256": "8eb8e44a62037a3547f7ee20d8b66bcabb3d1502524e177795df5cb84de20f87"
+    },
+    {
+      "kind": "historical measurement",
+      "source": "/home/rclab/ros2_ws/log/body_height_validation_20261102/code_manifest.json",
+      "copy": "evidence/height_code_manifest.json",
+      "bytes": 914,
+      "sha256": "deaf4e7b5388e74b14a2359f8981f62ac48450bd0bfd0438cfe12abc1ca0ff5c"
+    },
+    {
+      "kind": "historical figure",
+      "source": "/home/rclab/ros2_ws/log/body_height_20261102/pcd_floor_check.png",
+      "copy": "figures/pcd_floor_check.png",
+      "bytes": 437123,
+      "sha256": "e075c6024695740c0d52b707b8c285df39ca27c60c59fe150d7036431a8871b1"
+    },
+    {
+      "kind": "historical figure",
+      "source": "/home/rclab/ros2_ws/log/body_height_validation_20261102/nav2_local_comparison.png",
+      "copy": "figures/nav2_local_comparison.png",
+      "bytes": 207553,
+      "sha256": "87e5b856598e12da4ce79992ac204f859bec02a7f8c9a710479a55612f0a8424"
+    },
+    {
+      "kind": "historical figure",
+      "source": "/home/rclab/ros2_ws/log/body_height_validation_20261102/nav2_global_comparison.png",
+      "copy": "figures/nav2_global_comparison.png",
+      "bytes": 103844,
+      "sha256": "cfea0c9d5406c06f57bc8c995da0dfadeb3333e27a0dfb1b51fa12f56acae3bf"
+    },
+    {
+      "kind": "source at report creation (includes working tree changes)",
+      "source": "/home/rclab/ros2_ws/src/navigation_real/navigation_dds/config/fastdds_common.xml",
+      "copy": "evidence/current_source/navigation_dds/config/fastdds_common.xml",
+      "bytes": 1042,
+      "sha256": "01e7a19858b1f4f155201dc9bd66d415f125524c04981504bf0744d0ad9098ec"
+    },
+    {
+      "kind": "source at report creation (includes working tree changes)",
+      "source": "/home/rclab/ros2_ws/src/navigation_real/navigation_dds/config/fastdds_large.xml",
+      "copy": "evidence/current_source/navigation_dds/config/fastdds_large.xml",
+      "bytes": 957,
+      "sha256": "ee26434f1dd370e7531e4ddda7155c364ff74b6f48f583843190ec13b24bc553"
+    },
+    {
+      "kind": "source at report creation (includes working tree changes)",
+      "source": "/home/rclab/ros2_ws/src/navigation_real/navigation_dds/navigation_dds/profiles.py",
+      "copy": "evidence/current_source/navigation_dds/navigation_dds/profiles.py",
+      "bytes": 2942,
+      "sha256": "e6a796456bdcf25924b793e0425b0614679cef97c6b85b46113e997dff662e51"
+    },
+    {
+      "kind": "source at report creation (includes working tree changes)",
+      "source": "/home/rclab/ros2_ws/src/navigation_real/navigation_dds/scripts/with_profile",
+      "copy": "evidence/current_source/navigation_dds/scripts/with_profile",
+      "bytes": 1198,
+      "sha256": "49000c37c4371cf21847dc08a9e0519640ae810303668476edc119a3a8bb8f07"
+    },
+    {
+      "kind": "source at report creation (includes working tree changes)",
+      "source": "/home/rclab/ros2_ws/src/navigation_real/livox_ros_driver2/config/fastdds_livox_shm.xml",
+      "copy": "evidence/current_source/livox_ros_driver2/config/fastdds_livox_shm.xml",
+      "bytes": 1355,
+      "sha256": "ce59a7113e88efa1a9333f0ca51c893e08571aa579c5755561369ffd4fc5ad36"
+    },
+    {
+      "kind": "source at report creation (includes working tree changes)",
+      "source": "/home/rclab/ros2_ws/src/navigation_real/pongbot_navigation/config/nav2_rubi_dwb.yaml",
+      "copy": "evidence/current_source/pongbot_navigation/config/nav2_rubi_dwb.yaml",
+      "bytes": 10459,
+      "sha256": "c34f60e95e1f9ff924b6fdbff3ef32b21a2d64b7cb027dcb5370e858e2e6e754"
+    },
+    {
+      "kind": "source at report creation (includes working tree changes)",
+      "source": "/home/rclab/ros2_ws/src/navigation_real/pongbot_navigation/include/pongbot_navigation/height_filter.hpp",
+      "copy": "evidence/current_source/pongbot_navigation/include/pongbot_navigation/height_filter.hpp",
+      "bytes": 2777,
+      "sha256": "fde25071c775e4cc682372de291580d5b47b8684d81fbc80ad7e3d8d40f1a24c"
+    },
+    {
+      "kind": "source at report creation (includes working tree changes)",
+      "source": "/home/rclab/ros2_ws/src/navigation_real/pongbot_navigation/src/costmap_sector_filter.cpp",
+      "copy": "evidence/current_source/pongbot_navigation/src/costmap_sector_filter.cpp",
+      "bytes": 10749,
+      "sha256": "6e598a5ec4a84568bd9529701bb65a006d602b32834c3c27e8e2979fb8d3c8d0"
+    },
+    {
+      "kind": "source at report creation (includes working tree changes)",
+      "source": "/home/rclab/ros2_ws/src/navigation_real/pongbot_navigation/src/sector_filter.cpp",
+      "copy": "evidence/current_source/pongbot_navigation/src/sector_filter.cpp",
+      "bytes": 5529,
+      "sha256": "d23c26f9715291976073049ade38cad07e30d9ce5cd6076b83c11f54234c073c"
+    },
+    {
+      "kind": "source at report creation (includes working tree changes)",
+      "source": "/home/rclab/ros2_ws/src/navigation_real/FAST_LIO_LOCALIZATION2/src/laserMapping.cpp",
+      "copy": "evidence/current_source/FAST_LIO_LOCALIZATION2/src/laserMapping.cpp",
+      "bytes": 63479,
+      "sha256": "1756097aa1b9fbffcc20bcd659bcb04757b16b62a2af32dcf9e401b1ab873126"
+    },
+    {
+      "kind": "source at report creation (includes working tree changes)",
+      "source": "/home/rclab/ros2_ws/src/navigation_real/FAST_LIO_LOCALIZATION2/launch/localization.launch.py",
+      "copy": "evidence/current_source/FAST_LIO_LOCALIZATION2/launch/localization.launch.py",
+      "bytes": 6688,
+      "sha256": "557aa955b6ad599d20c355a1fd0c5b062cb137d941b5d410f58ed5ca6fd6144a"
+    }
+  ]
+}

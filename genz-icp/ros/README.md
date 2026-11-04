@@ -1,5 +1,107 @@
 # GenZ-ICP ROS wrappers
 
+## RUBI PCD localization (ROS 2 Humble)
+
+This workspace adds fixed-PCD localization alongside GenZ odometry. These
+launches run both estimators and RViz; they do not start Nav2 or the LCM bridge.
+The registration algorithm is unchanged by the launch setup below.
+
+Defaults shared by live and bag operation:
+
+- PointCloud2 input: `/livox/lidar_pointcloud`. `/livox/lidar` is Livox
+  `CustomMsg` in this workspace and cannot be passed directly to these nodes.
+- PCD: `FAST_LIO_LOCALIZATION2/PCD/1f_fast_lio_260731_segmented.pcd` under
+  `/home/rclab/ros2_ws/src/navigation_real`. Override with `map_path:=...` on
+  another machine.
+- TF: `map -> camera_init -> base_link -> livox_frame`.
+- `base_link -> livox_frame`: translation `[0.0995, 0, -0.1375]` metres,
+  identity rotation. The RUBI Livox driver already rotates the inverted sensor
+  data around X; do not apply that rotation a second time in TF.
+- Sensor timestamps are preserved; `transform_publish_tolerance=0.0` adds no
+  future offset to `map -> camera_init`.
+- `localization_corridor.yaml` currently disables deskew. These GenZ nodes do
+  not subscribe to IMU. This is different from FAST-LIO's CustomMsg + IMU path.
+- `dds_profile:=navigation`: common processes use 32 MiB SHM, and the PCD
+  localization process uses 128 MiB. Both retain UDP transport. These are the
+  existing `navigation_dds` profiles, scoped to child processes, not system
+  settings. `dds_profile:=default` keeps the inherited DDS environment.
+
+### Bag comparison
+
+Use a separate ROS domain for replay so existing live TF and commands do not
+mix with the comparison. Run this setup in **each replay terminal**:
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/local_setup.bash
+export ROS_DOMAIN_ID=73
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export ROS_LOCALHOST_ONLY=0
+```
+
+Terminal 1:
+
+```bash
+taskset -c 2,3,4,5 ros2 launch genz_icp localization_rosbag.launch.py \
+  bagfile:=/home/rclab/rosbag_record/rosbag2_2026_10_30-20_50_26
+```
+
+This launches exactly one player, paused initially, with `/clock` and only the
+selected PointCloud2 topic. Recorded `/tf`, `/tf_static`, `/Odometry`,
+`/localization`, `/initialpose` and `/cmd_vel` are not replayed. All estimator,
+static-TF and RViz nodes use simulation time. The player's `--clock 40` is the
+clock publication frequency; playback speed is `rate:=1.0` independently.
+
+Once the PCD is visible, use **2D Pose Estimate** to set the robot's approximate
+starting position and heading in the bag. Then in terminal 2:
+
+```bash
+ros2 service call /rosbag2_player/resume rosbag2_interfaces/srv/Resume '{}'
+```
+
+`start_paused:=false` enables immediate playback. `rate:=0.5` can be used to
+separate replay compute limits from registration behavior. Restart the launch
+for a fresh replay; the estimators are not automatically reset by seeking back.
+
+If the bag is already being played separately, omit `bagfile`. The wrapper
+starts no player in that mode. The separate player must supply the same input
+and clock, for example:
+
+```bash
+ros2 bag play /home/rclab/rosbag_record/rosbag2_2026_10_30-20_50_26 \
+  --clock 40 --topics /livox/lidar_pointcloud
+```
+
+The `20_50_26` recording contains 2,085 PointCloud2 messages versus 4,400
+CustomMsg messages. This launch uses the recorded PointCloud2 stream as-is;
+it neither recovers missing scans nor converts CustomMsg. Thus this is a
+pipeline/visual comparison, not an equal-input accuracy benchmark against
+FAST-LIO. Such a benchmark needs a separate, timestamp-preserving conversion
+of the better-recorded CustomMsg stream.
+
+### Live sensor check
+
+In a live terminal, source the same workspace, use the driver's ROS domain
+(normally `ROS_DOMAIN_ID=13`) and Fast DDS. Stop any bag player or FAST-LIO TF
+broadcasters in that domain before switching estimators. Keep the existing
+Livox driver publishing PointCloud2, then run:
+
+```bash
+taskset -c 2,3,4,5 ros2 launch genz_icp localization.launch.py
+```
+
+Live operation defaults to `use_sim_time:=false`, RViz enabled, and waits for
+**2D Pose Estimate**. It contains no bag player. Override mount values with
+`base_to_livox_x/y/z/roll/pitch/yaw`, and set `publish_livox_tf:=false` if a
+robot description already owns this static transform. When testing at the
+sensor origin with `base_frame:=livox_frame`, the mount broadcaster is omitted.
+
+Inspect `/genz/odometry` (local frame) and `/genz/localization_odom` (PCD map
+frame), including header time, pose Z and orientation. Neither current GenZ
+output populates `twist`; do not switch the Nav2 velocity-feedback topic to
+these messages and assume measured velocity is available. Nav2 integration,
+timing under load and height-filter behavior require separate verification.
+
 ## :gear: How to build & Run
 
 ### ROS1

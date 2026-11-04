@@ -1045,3 +1045,140 @@ __pycache__/
 - DWB controller를 5 Hz로 낮춰 deadline misss를 없앴다.
 
 따라서 저속·안전요원·물리적 비상정지 조건의 단계적 실차 검증으로 넘어갈 수 있는 상태이다. 다만 zero-stamp obstacle cloud, 1000회 BT retry, 0.7 m/s 최대 속도, global layer 순서는 임시 실험 정책의 성격이 있으므로 최종 운영 설정으로 확정하기 전에 위 체크리스트를 반드시 검증해야 한다.
+
+## 16. 2026-11-02: PCD 바닥 확인 및 BODY 원점·중력 방향 높이 필터
+
+이 절은 위의 과거 실험 기록과 구분되는 후속 변경이다. 현재 costmap 점군은
+zero stamp를 쓰지 않으며, 관측 시각과 원래 XYZ를 유지한다.
+
+### 16.1 고정 PCD에 문제 복도의 40cm 높이 변형이 있는가
+
+직접 읽은 파일은 `FAST_LIO_LOCALIZATION2/PCD/1f_fast_lio_260731_segmented.pcd`
+(565,765점)이다. PCD에 저장된 XYZ를 사용했으며 VIEWPOINT를 추가 변환으로 적용하지 않았다.
+두 bag의 기록된 `/localization`은 조사할 지도 XY 위치를 정하는 데만 사용했다.
+각 위치 반경 0.65m의 PCD 점에서 Z −1.2~+0.8m를 2cm 간격으로 조사하고,
+가장 밀집한 높이의 ±4cm 점들을 바닥 후보로 골랐다. 1초 간격 패치는 서로 중첩된다.
+
+| bag (2026-10-30) | 조사 구간 | PCD 바닥 패치 중앙값 범위 | 변화폭 |
+|---|---|---|---|
+| 20_09_54 | 시작 후 180~235초 | −0.45349~−0.43155m | 2.19cm |
+| 20_50_26 | 시작 후 180~235초 | −0.44929~−0.44594m | 0.33cm |
+
+평상 구간(60~140초)의 PCD 바닥 중앙값도 약 −0.443m였다. **조사한 복도에서
+40cm 규모의 PCD 바닥 상승은 관찰되지 않았다.** 반면 기존 bag 점군을 기록된
+`camera_init` 좌표로 옮겼을 때 바닥 높이가 상승하는 현상은 남는다.
+이는 PCD 변형보다 실행 중 자세/위치 추정과 절대 Z 판정의 영향을 먼저 조사해야 한다는
+근거이며, 외부 실측 없이 지도 전체가 정확하거나 drift가 전혀 없다고 증명한 것은 아니다.
+
+재현 자료: `/home/rclab/ros2_ws/log/body_height_20261102/`
+(`check_pcd.py`, `pcd_summary.json`, `pcd_floor_*.csv`, `pcd_floor_check.png`).
+
+### 16.2 변경한 관측 경로
+
+```text
+FAST-LIO updated state (R, gravity)
+    └─ /fastlio/up_body : Vector3Stamped, frame=body, scan-end timestamp
+
+/livox/lidar_pointcloud
+    └─ costmap_sector_filter
+         ├─ 기존 전방 ±60° / 0.3m, 나머지 1.0m의 sensor-XY 범위 판정
+         ├─ 관측 시각의 gravity-up 보간 + body→livox_frame/BODY TF
+         └─ BODY 원점 기준 −0.05 ≤ 수직 높이 ≤ +1.0m
+              └─ /livox/lidar_costmap → local/global obstacle_layer
+```
+
+소문자 `body`는 FAST-LIO IMU 원점, 대문자 `BODY`는 로봇 몸체 원점이다.
+현재 `BODY→base_link`는 identity다. 기존 장착 TF를 이용하며 드라이버가 이미
+처리한 센서 뒤집기 회전을 다시 적용하지 않는다.
+
+계산식은 다음과 같다. `R`은 IMU body→camera_init 회전이고 `g`는 그 좌표계에서의
+추정 중력 벡터다. 정지 여부와 무관하게 순간 가속도계를 직접 수직 방향으로 사용하지 않는다.
+
+```text
+u_body = Rᵀ (−g / |g|)
+h = u_body · (R_body_lidar p_lidar + t_body_lidar − t_body_BODY)
+```
+
+이 식에는 전역 위치 `position.z`가 없다. 점군과 BODY에 공통으로 더해지는 Z 이동은
+상쇄된다. **잘못된 roll/pitch·중력 방향, XY drift, 지도 정합 오류 자체를 고치는 기능은 아니다.**
+관측 시각의 방향을 사용하되 raw scan 내부 각 점의 운동 보정(deskew)을 새로 수행하지는 않는다.
+
+FAST-LIO 추정 업데이트와 입력 CustomMsg/IMU 처리는 이번 높이 필터에서 바꾸지 않았다.
+작은 단위벡터 토픽만 추가했다. 기존 `extrinsic_est_en` 수정은 별도 선행 작업이다.
+PointCloud2의 header, 필드, 통과한 점의 전체 바이트를 유지하고 점 삭제만 수행한다.
+
+### 16.3 시각 일치와 clearing
+
+- `min_body_height=-0.05`, `max_body_height=1.0`: **지면 높이가 아닌 BODY 원점 기준**이다.
+- 방향 샘플 사이 간격이 0.25초 이하일 때만 시각 보간한다. 최신 방향 대입이나 시간 외삽은 하지 않는다.
+- TF 조회는 비차단이다. 최대 4개 점군을 최대 0.25초 기다리고, 최대 관측 나이 0.5초를 초과하면 버린다.
+  방향 이력은 최대 64개다. `/clock` 역행 시 대기 점군과 방향 이력을 비운다.
+- TF/방향이 없거나 오래되면 raw 점군으로 우회하지 않으며 진단 로그를 남긴다.
+- 두 costmap source의 `expected_update_rate`는 0.5초로 설정했다(Hz가 아니다).
+  출력 중단을 Nav2가 오래된 관측으로 판정하도록 하며 기존 0은 이 검사를 끈 값이었다.
+  이 설정도 메인제어기/LCM의 오래된 명령 중단을 대신하지는 않는다.
+- local/global source 및 layer의 절대 높이 범위는 ±10000m로 넓혔다.
+  높이 판정은 upstream에서 완료하므로 `camera_init.z`/`map.z`로 다시 잘리는 것을 방지한다.
+  **이 설정에서 source를 raw 점군으로 연결하면 안 된다.**
+- clearing은 기존 Nav2 raytracing이며, 같은 높이 필터를 통과한 **실제 관측 endpoint**만 사용한다.
+  제거한 바닥점을 먼 가상 점으로 바꾸거나 raw 바닥 clearing 스트림을 추가하지 않았다.
+  local 최대 raytrace 4m, global 5m는 유지한다.
+- 따라서 몸체 높이에서 유효한 후방 관측이 없는 셀은 즉시 지워지지 않을 수 있다.
+  `observation_persistence: 0`도 장애물 셀 자동 삭제 시간은 아니다.
+  필터 입력 중단이 로봇의 정지를 보장하지는 않는다(명령 전달/LCM 동작은 별도).
+- global static layer에 이미 들어 있는 장애물은 이번 동적 점군 필터로 제거되지 않는다.
+
+낮은 물체를 이 관측 경로에서 제외하는 것은 사용자 요구다. 다만 현재
+`rubi_navigation_dwb.launch.py` 자체는 2D OccupancyGrid 기반이며, 이 변경으로 height-map
+기반 지형 판단이 자동 연결되는 것은 아니다. GenZ 또는 별도 `fast_lio` mapping 실행 파일에는
+이번 `/fastlio/up_body` 출력이 없으므로 이 필터를 그대로 연결하면 방향 대기/점군 폐기가 발생한다.
+
+### 16.4 검증 및 적용
+
+- `fast_lio_localization`, `pongbot_navigation` Release 빌드 및 C++/Python 테스트 통과.
+- 실제 C++ 필터에 20_50_26의 추출 점군 294개, 총 2,971,351점을 주입했다.
+  남은 점의 바이트와 header가 기대 결과와 모두 일치했다.
+- 중력 방향은 별도 저장된 estimator 로그와 기록된 자세를 정렬해 재구성했다.
+  이 시험은 완전한 Nav2/FAST-LIO 정확도 재생 시험이 아니다.
+- 추정 바닥 후보 553,905점 중 새 필터 통과는 0점이었다.
+  **같은 가까운 바닥 표본은 기존 절대 −0.05m 기준으로도 0점이므로, 이 수치만으로
+  기존 −0.05m보다 모든 실제 장애물 판정이 개선됐다고 주장하지 않는다.**
+- 새 필터 로그 50개 표본의 TF 조회+필터 실행 시간: 중앙값 0.181ms,
+  95백분위 0.256ms, 최대 0.322ms. 테스트가 의도적으로 넣은 방향 대기는 약 16ms였다.
+  DDS 전달·Nav2 전체 연산 시간이나 모든 부하 상황의 상한은 아니다.
+- 단위 테스트로 pitch 회전과 공통 Z ±이동 불변성, 센서/BODY 원점 차이,
+  범위 경계, 비정상 입력, 방향 누락/간격 초과, 시각 역행 후 복구를 확인했다.
+- 별도 ROS domain에서 수정된 FAST-LIO와 실제 필터를 함께 실행한 짧은 raw bag 시험에서도
+  `/fastlio/up_body` 71개와 같은 시각의 `/Odometry` 71개를 확인했다. 단위벡터와 `body` frame이
+  정상이며 필터 출력 32개의 시각은 원본 bag의 PointCloud2 header와 일치했다.
+  이후 약 1.3초 오래된 방향이 도착하는 구간에서는 필터가 점군을 폐기했다.
+  과거 bag의 듬성한 IMU/전달 지연 때문에 **연속적인 실시간 갱신까지 통과한 시험은 아니다.**
+  진단 구독자의 best-effort 원본 cloud 수신 누락도 있어 stamp 검증은 원본 DB header와 직접 비교했다.
+  시험이 생성하는 FAST-LIO Log 파일은 별도로 보관하고 기존 파일은 원래 내용으로 복원했다.
+
+빌드된 파일을 쓰려면 Localization과 Navigation을 재시작한다. Livox 프로토콜/SDK 변경은 없다.
+기존 공통 ROS 환경을 source한 터미널에서 기존 실행 명령을 그대로 사용한다.
+시작 로그의 `Gravity direction: /fastlio/up_body` 및 `Height: origin=BODY`를 확인한다.
+관측 검증 명령:
+
+```bash
+ros2 topic echo /fastlio/up_body --once --qos-reliability best_effort
+ros2 topic hz /livox/lidar_costmap --window 30
+```
+
+새 녹화에서 topic을 명시해서 기록한다면 `/fastlio/up_body`와 `/tf_static`도 포함한다.
+과거 bag에는 이 방향 토픽이 없으므로, raw `/livox/lidar`와 `/livox/imu`로 수정된
+FAST-LIO를 실행해야 한다. 기존 bag의 TF·Odometry·localization·명령까지 중복 발행하지 말고,
+bag `--clock`과 각 노드 `use_sim_time:=true`를 함께 설정한다.
+
+## 17. SHM·UDP 소켓 버퍼·BODY 높이 필터 통합 보고서 (2026-11-02)
+
+문제 증상 → 원인 가설 → 코드/설정 변경 → before/after 검증을 묶은
+[상세 보고서](docs/reports/20261102_transport_body_filter/REPORT.md)와
+[발표용 7장 요약](docs/reports/20261102_transport_body_filter/PRESENTATION.md)을 작성했다.
+[브라우저/인쇄용 HTML](docs/reports/20261102_transport_body_filter/REPORT.html)에는 그림을 내장했다.
+
+이 보고서는 기존 측정의 증거 사본·코드 스냅샷·SHA-256 목록을 함께 보존한다.
+SHM 단독 원인 확정 여부, 커널 상한과 실제 DDS 요청의 차이, BODY 필터의
+기록 기하 기반 검증과 실차 검증의 차이를 명시했다. 보고서 작성 중 실행 설정이나
+로봇 프로세스는 변경하지 않았다.

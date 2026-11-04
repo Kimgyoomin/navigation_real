@@ -1,0 +1,113 @@
+{
+  "200954": {
+    "windows": [
+      {
+        "start_s": 60,
+        "end_s": 140,
+        "patches": 80,
+        "z_median": -0.4427997022867203,
+        "patch_median_min": -0.45403945446014404,
+        "patch_median_max": -0.43664397299289703
+      },
+      {
+        "start_s": 180,
+        "end_s": 200,
+        "patches": 20,
+        "z_median": -0.43240879476070404,
+        "patch_median_min": -0.4420943558216095,
+        "patch_median_max": -0.43155330419540405
+      },
+      {
+        "start_s": 200,
+        "end_s": 220,
+        "patches": 20,
+        "z_median": -0.44212571531534195,
+        "patch_median_min": -0.4423888474702835,
+        "patch_median_max": -0.43842965364456177
+      },
+      {
+        "start_s": 220,
+        "end_s": 235,
+        "patches": 15,
+        "z_median": -0.44331416487693787,
+        "patch_median_min": -0.4534910321235657,
+        "patch_median_max": -0.43155330419540405
+      },
+      {
+        "start_s": 240,
+        "end_s": 280,
+        "patches": 40,
+        "z_median": -0.4435169994831085,
+        "patch_median_min": -0.4557257890701294,
+        "patch_median_max": -0.4356033056974411
+      }
+    ],
+    "problem_z_span_m": 0.02193772792816162,
+    "problem_plane_slope_deg": 1.3312364839890194,
+    "problem_plane_residual_p95_m": 0.005256677997725765
+  },
+  "205026": {
+    "windows": [
+      {
+        "start_s": 60,
+        "end_s": 140,
+        "patches": 80,
+        "z_median": -0.4424143582582474,
+        "patch_median_min": -0.4534910321235657,
+        "patch_median_max": -0.4315073788166046
+      },
+      {
+        "start_s": 180,
+        "end_s": 200,
+        "patches": 20,
+        "z_median": -0.4467626065015793,
+        "patch_median_min": -0.44698941707611084,
+        "patch_median_max": -0.44594281911849976
+      },
+      {
+        "start_s": 200,
+        "end_s": 220,
+        "patches": 20,
+        "z_median": -0.44888848811388016,
+        "patch_median_min": -0.4491559714078903,
+        "patch_median_max": -0.44675183296203613
+      },
+      {
+        "start_s": 220,
+        "end_s": 235,
+        "patches": 15,
+        "z_median": -0.44896531105041504,
+        "patch_median_min": -0.44928741455078125,
+        "patch_median_max": -0.44698941707611084
+      },
+      {
+        "start_s": 240,
+        "end_s": 280,
+        "patches": 40,
+        "z_median": -0.4407598301768303,
+        "patch_median_min": -0.44184306263923645,
+        "patch_median_max": -0.43274298310279846
+      }
+    ],
+    "problem_z_span_m": 0.003344595432281494,
+    "problem_plane_slope_deg": 0.12085663924298931,
+    "problem_plane_residual_p95_m": 0.0006974831844811289
+  },
+  "method": {
+    "radius_m": 0.65,
+    "z_search_m": [
+      -1.2,
+      0.8
+    ],
+    "hist_bin_m": 0.02,
+    "floor_mode_band_m": 0.04,
+    "min_support": 30,
+    "sample_step_s": 1,
+    "limitations": [
+      "Overlapping patches are not independent samples.",
+      "Recorded map localization is used only to select XY regions.",
+      "Floor mode labels are geometric estimates, not surveyed ground truth.",
+      "No claim that the entire PCD has zero global deformation."
+    ]
+  }
+}

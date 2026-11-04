@@ -1,0 +1,16 @@
+{
+  "seconds": 10,
+  "new_ros_probe_running": false,
+  "udp_delta": {
+    "InDatagrams": 124753,
+    "NoPorts": 14296,
+    "InErrors": 0,
+    "OutDatagrams": 94665,
+    "RcvbufErrors": 0,
+    "SndbufErrors": 59,
+    "InCsumErrors": 0,
+    "IgnoredMulti": 1026,
+    "MemErrors": 0
+  },
+  "socket_drop_deltas": []
+}

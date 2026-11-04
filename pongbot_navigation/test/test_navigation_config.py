@@ -27,6 +27,11 @@ def test_costmap_geometry_and_filtered_source(name, rate):
     assert source['obstacle_min_range'] == .3
     assert source['data_type'] == 'PointCloud2'
     assert source['marking'] and source['clearing']
+    assert source['expected_update_rate'] == .5
+    assert params['obstacle_layer']['observation_sources'] == 'livox_cloud'
+    for gate in [source, params['obstacle_layer']]:
+        assert gate['min_obstacle_height'] == -10000.
+        assert gate['max_obstacle_height'] == 10000.
     assert params['plugins'][-1] == 'inflation_layer'
 
 
@@ -38,6 +43,11 @@ def test_filter_contract_and_raw_input_is_untouched():
     assert params['front_half_angle_deg'] == 60.
     assert params['front_min_range'] == .3
     assert params['other_min_range'] == 1.
+    assert params['up_topic'] == '/fastlio/up_body'
+    assert params['up_frame'] == 'body'
+    assert params['height_origin_frame'] == 'BODY'
+    assert params['min_body_height'] == -.05
+    assert params['max_body_height'] == 1.
     for package in ('FAST_LIO_ROS2', 'FAST_LIO_LOCALIZATION2'):
         config = yaml.safe_load((PACKAGE.parent / package / 'config/mid360.yaml').read_text())
         assert config['/**']['ros__parameters']['common']['lid_topic'] == '/livox/lidar'

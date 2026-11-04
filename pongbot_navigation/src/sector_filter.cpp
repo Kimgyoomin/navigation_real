@@ -59,8 +59,10 @@ bool SectorFilter::keep_xy(double x, double y) const
   return range_squared >= (in_front ? front_range_squared_ : other_range_squared_);
 }
 
-FilterResult SectorFilter::filter(const sensor_msgs::msg::PointCloud2 & input) const
+FilterResult SectorFilter::filter(const sensor_msgs::msg::PointCloud2 & input,
+  const HeightPlane * height) const
 {
+  if (height) {height->validate();}
   if (input.header.frame_id != config_.expected_frame_id) {
     throw std::invalid_argument("Unexpected cloud frame; refusing to guess robot forward direction");
   }
@@ -121,6 +123,8 @@ FilterResult SectorFilter::filter(const sensor_msgs::msg::PointCloud2 & input) c
         ++result.nonfinite_drops;
       } else if (!keep_xy(x, y)) {
         ++result.range_drops;
+      } else if (height && !height->keep(x, y, z)) {
+        ++result.height_drops;
       } else {
         std::memcpy(output.data.data() + result.kept_points * input.point_step,
           record, input.point_step);

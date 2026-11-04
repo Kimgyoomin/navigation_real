@@ -1,10 +1,11 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
+from navigation_dds.profiles import dds_argument, dds_group
 
 
 def bool_param(name):
@@ -15,12 +16,45 @@ def float_param(name):
     return ParameterValue(LaunchConfiguration(name), value_type=float)
 
 
+def mount_transform(context):
+    # Sensor-origin tests must not give livox_frame a second parent (or itself).
+    base_frame = LaunchConfiguration("base_frame").perform(context)
+    lidar_frame = LaunchConfiguration("lidar_frame").perform(context)
+    if not base_frame or not lidar_frame:
+        raise RuntimeError("base_frame and lidar_frame must be nonempty")
+    if base_frame == lidar_frame:
+        return []
+    if not bool_param("publish_livox_tf").evaluate(context):
+        return []
+    return [Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="base_link_to_livox_frame",
+        output="screen",
+        arguments=[
+            "--x", LaunchConfiguration("base_to_livox_x"),
+            "--y", LaunchConfiguration("base_to_livox_y"),
+            "--z", LaunchConfiguration("base_to_livox_z"),
+            "--roll", LaunchConfiguration("base_to_livox_roll"),
+            "--pitch", LaunchConfiguration("base_to_livox_pitch"),
+            "--yaw", LaunchConfiguration("base_to_livox_yaw"),
+            "--frame-id", base_frame,
+            "--child-frame-id", lidar_frame,
+        ],
+        parameters=[{"use_sim_time": bool_param("use_sim_time")}],
+    )]
+
+
 def generate_launch_description():
     current_pkg = FindPackageShare("genz_icp")
 
     declared_arguments = [
+        dds_argument(),
         # Input
-        DeclareLaunchArgument("topic", default_value="/livox/lidar"),
+        DeclareLaunchArgument(
+            "topic", default_value="/livox/lidar_pointcloud",
+            description="sensor_msgs/PointCloud2 input; /livox/lidar is CustomMsg.",
+        ),
         
         # Time policy
         DeclareLaunchArgument(
@@ -38,23 +72,32 @@ def generate_launch_description():
         ),
 
         # GenZ-ICP config
-        DeclareLaunchArgument("bagfile", default_value=""),
+        # Only localization_rosbag.launch.py owns bag playback.
         DeclareLaunchArgument("config_file", default_value="localization_corridor.yaml"),
         DeclareLaunchArgument("map_path", default_value="/home/rclab/ros2_ws/src/navigation_real/FAST_LIO_LOCALIZATION2/PCD/1f_fast_lio_260731_segmented.pcd"),
 
         # Frame policy
         DeclareLaunchArgument("map_frame", default_value="map"),
         DeclareLaunchArgument("odom_frame", default_value="camera_init"),
-        # DeclareLaunchArgument("base_frame", default_value="livox_frame"),
         DeclareLaunchArgument("base_frame", default_value="base_link"),
+        DeclareLaunchArgument("lidar_frame", default_value="livox_frame"),
+        DeclareLaunchArgument("publish_livox_tf", default_value="true"),
+        DeclareLaunchArgument("base_to_livox_x", default_value="0.0995"),
+        DeclareLaunchArgument("base_to_livox_y", default_value="0.0"),
+        DeclareLaunchArgument("base_to_livox_z", default_value="-0.1375"),
+        # RUBI's driver already rotates the inverted sensor data about X.
+        # These angles describe the published livox_frame, not the raw sensor.
+        DeclareLaunchArgument("base_to_livox_roll", default_value="0.0"),
+        DeclareLaunchArgument("base_to_livox_pitch", default_value="0.0"),
+        DeclareLaunchArgument("base_to_livox_yaw", default_value="0.0"),
 
         # Localization TF policy
         DeclareLaunchArgument("publish_map_to_odom_tf", default_value="true"),
         DeclareLaunchArgument("publish_map_to_base_tf", default_value="false"),
         DeclareLaunchArgument(
             "transform_publish_tolerance",
-            default_value="1.0",
-            description="Post-date map->odom TF by this duration in seconds.",
+            default_value="0.0",
+            description="map->odom TF time offset in seconds; 0 preserves observation time.",
         ),
         
         # Debug / Rviz
@@ -106,23 +149,6 @@ def generate_launch_description():
         ],
     )
 
-    base_link_to_livox_frame = Node(
-        package="tf2_ros",
-        executable="static_transform_publisher",
-        name="base_link_to_livox_frame",
-        output="screen",
-        arguments=[
-            "--x", "0.101",
-            "--y", "0.0",
-            "--z", "-0.1169",
-            "--roll", "0.0",
-            "--pitch", "0.0",
-            "--yaw", "0.0",
-            "--frame-id", "base_link",
-            "--child-frame-id", "livox_frame",
-        ],
-    )
-
     rviz_node = Node(
         package="rviz2",
         executable="rviz2",
@@ -151,12 +177,11 @@ def generate_launch_description():
         ],
     )
 
-    bag_play = ExecuteProcess(
-        cmd=["ros2", "bag", "play", LaunchConfiguration("bagfile")],
-        output="screen",
-        condition=IfCondition(
-            PythonExpression(["'", LaunchConfiguration("bagfile"), "' != ''"])
-        ),
-    )
-
-    return LaunchDescription(declared_arguments + [base_link_to_livox_frame,odometry_node, localization_node, rviz_node, bag_play])
+    return LaunchDescription(declared_arguments + [
+        dds_group([
+            OpaqueFunction(function=mount_transform),
+            odometry_node,
+            rviz_node,
+            dds_group([localization_node], "GenZ PCD localization", profile="large"),
+        ], "GenZ localization"),
+    ])

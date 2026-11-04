@@ -223,16 +223,35 @@ TEST(SectorFilter, RepresentativeTwentyThousandPointPass)
   }
   const auto input = cloud(points);
   SectorFilter filter(SectorConfig{});
+  pongbot_navigation::HeightPlane height;
   std::vector<double> durations;
   for (int i = 0; i < 100; ++i) {
     const auto start = std::chrono::steady_clock::now();
-    const auto result = filter.filter(input);
+    const auto result = filter.filter(input, &height);
     durations.push_back(std::chrono::duration<double, std::milli>(
       std::chrono::steady_clock::now() - start).count());
-    EXPECT_EQ(result.input_points, result.kept_points + result.range_drops + result.nonfinite_drops);
+    EXPECT_EQ(result.input_points, result.kept_points + result.range_drops + result.nonfinite_drops + result.height_drops);
   }
   std::sort(durations.begin(), durations.end());
   RecordProperty("filter_only_20k_points_median_ms", std::to_string(durations[50]));
   RecordProperty("filter_only_20k_points_p95_ms", std::to_string(durations[95]));
   // Deliberately no timing pass/fail limit: this excludes DDS and Nav2 work.
+}
+
+TEST(SectorFilter, HeightAndSectorGatesPreserveRealEndpointBytes)
+{
+  const auto input = cloud({{2, 0, -.4}, {2, 0, .2}, {0, .5, .2}, {2, 0, 1.3}});
+  const auto before = input;
+  pongbot_navigation::HeightPlane plane;
+  plane.offset = -.1375;
+  const auto result = SectorFilter(SectorConfig{}).filter(input, &plane);
+  EXPECT_EQ(input, before);
+  EXPECT_EQ(result.cloud.header, input.header);
+  EXPECT_EQ(result.cloud.fields, input.fields);
+  EXPECT_EQ(result.height_drops, 2u);
+  EXPECT_EQ(result.range_drops, 1u);
+  ASSERT_EQ(result.kept_points, 1u);
+  EXPECT_TRUE(std::equal(input.data.begin()+26, input.data.begin()+52, result.cloud.data.begin()));
+  const auto removed = SectorFilter(SectorConfig{}).filter(cloud({{2, 0, -.4}}), &plane);
+  EXPECT_TRUE(removed.cloud.data.empty());  // no fake far-away clearing endpoint
 }

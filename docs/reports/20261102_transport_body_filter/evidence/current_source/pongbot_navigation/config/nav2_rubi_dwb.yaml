@@ -1,0 +1,336 @@
+costmap_sector_filter:
+  ros__parameters:
+    use_sim_time: false
+    input_topic: /livox/lidar_pointcloud
+    output_topic: /livox/lidar_costmap
+    # Current static TF aligns livox_frame +X with base_link +X.
+    # Distances/bearings are relative to the SENSOR origin, not the body center.
+    expected_frame_id: livox_frame
+    front_half_angle_deg: 60.0
+    front_min_range: 0.3
+    other_min_range: 1.0
+    # Vertical height relative to robot BODY, along estimated gravity-up.
+    # /fastlio/up_body is emitted by the updated fast_lio_localization node.
+    up_topic: /fastlio/up_body
+    up_frame: body  # FAST-LIO IMU frame (lowercase)
+    height_origin_frame: BODY  # robot center (uppercase), currently equals base_link
+    min_body_height: -0.05
+    max_body_height: 1.0
+    max_up_gap_s: 0.25
+    max_wait_s: 0.25
+    max_cloud_age_s: 0.5
+
+planner_server:
+  ros__parameters:
+    use_sim_time: false
+    expected_planner_frequency: 1.0  # duration warning budget; BT RateController drives replanning
+    planner_plugins: ["GridBased"]
+
+    GridBased:
+      plugin: "pongbot_global_planner/AstarPlanner"
+
+controller_server:
+  ros__parameters:
+    # launch의 RewrittenYaml이 true/false로 덮어쓴다.
+    use_sim_time: false
+
+    controller_frequency: 5.0           # 10 -> 5
+    odom_topic: /Odometry
+    # odom_topic: /genz/odometry
+
+    min_x_velocity_threshold: 0.01
+    min_y_velocity_threshold: 0.001
+    min_theta_velocity_threshold: 0.05
+    failure_tolerance: 1000.0
+
+    controller_plugins: ["FollowPath"]
+
+    # ROS2 Humble 형식
+    progress_checker_plugin: "progress_checker"
+    goal_checker_plugins: ["goal_checker"]
+
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.20
+      movement_time_allowance: 1000.0
+
+    goal_checker:
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.25
+      yaw_goal_tolerance: 0.25
+      stateful: true
+
+    FollowPath:
+      # 2026-10-28: Rotation Shim의 경로점 TF 조회 지연을 분리하는 비교 실험.
+      # DWB를 직접 로드한다. 설정 적용에는 Navigation 재시작이 필요하다.
+      plugin: "dwb_core::DWBLocalPlanner"
+
+      # Shim 복원 시 위 plugin을 주석 처리하고 아래 블록을 다시 활성화한다.
+      # plugin: "nav2_rotation_shim_controller::RotationShimController"
+      # primary_controller: "dwb_core::DWBLocalPlanner"
+      # angular_dist_threshold: 0.50
+      # angular_disengage_threshold: 0.20
+      # forward_sampling_distance: 0.40
+      # rotate_to_heading_angular_vel: 0.50
+      # max_angular_accel: 1.00
+      # simulate_ahead_time: 1.00
+      # rotate_to_goal_heading: false
+      # closed_loop: true  # Shim 전용. Nav2 odom_topic 연결과는 별개다.
+
+      # DWB의 속도/가속도 제한과 critic 설정. 회전 명령도 DWB가 결정한다.
+      trajectory_generator_name: "dwb_plugins::StandardTrajectoryGenerator"
+
+      debug_trajectory_details: false
+
+      # RUBI를 non-holonomic으로 사용
+      min_vel_x: 0.0        # -0.1 -> 0.0
+      max_vel_x: 0.8        # 0.5 -> 1.0 -> 0.7 
+      min_vel_y: 0.0
+      max_vel_y: 0.0
+      max_vel_theta: 1.0        # 0.8 -> 1.2 -> 3.0 -> 5.0 -> 1.5 -> 1.0
+
+      min_speed_xy: 0.0
+      max_speed_xy: 0.8         # root (max_vel_x^2 + max_vel_y^2)
+      min_speed_theta: 0.0
+
+      # RUBI 시뮬레이션 초기 보수값
+      acc_lim_x: 1.0           # 7.0 -> 0.5 -> 1.0 -> 0.5 -> 0.3
+      acc_lim_y: 0.0
+      acc_lim_theta: 3.0      # 1.5 ->  7.0 -> 1.0 -> 0.5 -> 0.3
+
+      decel_lim_x: -0.3         #  -7.0 -> -0.3 
+      decel_lim_y: 0.0
+      decel_lim_theta: -0.3     # -1.5 -> -7.0 -> -0.3 
+
+      vx_samples: 12           # 20 -> 12
+      vy_samples: 0
+      vtheta_samples: 21      # 41 -> 21
+
+      sim_time: 1.5                 # 1.5 -> 2.0 -> 1.5
+      linear_granularity: 0.05
+      angular_granularity: 0.025
+
+      transform_tolerance: 0.50     # 0.3 -> 0.5
+      xy_goal_tolerance: 0.15       # 0.25 -> 0.15
+      trans_stopped_velocity: 0.25  # 0.05 -> 0.25
+
+      # short_circuit_trajectory_evaluation: true
+      stateful: true
+
+      critics:
+        - "RotateToGoal"
+        - "Oscillation"
+        - "BaseObstacle"
+        - "ObstacleFootprint"  # also check square footprint corners, not just the center cell
+        - "GoalAlign"
+        - "PathAlign"
+        - "PathDist"
+        - "GoalDist"
+
+      BaseObstacle.scale: 0.02
+      ObstacleFootprint.scale: 0.02
+
+      PathAlign.scale: 32.0                    # basic 32.0 8.0 -> 1.0 -> 32.0
+      PathAlign.forward_point_distance: 0.1   # 0.15 -> 0.1
+
+      GoalAlign.scale: 24.0
+      GoalAlign.forward_point_distance: 0.1   # 0.15 -> 0.1
+
+      PathDist.scale: 32.0                     # basic 24.0 -> 1.0 -> 32.0
+      GoalDist.scale: 24.0
+
+      RotateToGoal.scale: 32.0
+      RotateToGoal.slowing_factor: 5.0
+      RotateToGoal.lookahead_time: -1.0
+
+      # 튜닝 중 모든 critic 값을 확인
+      short_circuit_trajectory_evaluation: true
+      publish_evaluation: false
+      publish_trajectories: false
+
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      use_sim_time: false
+
+      global_frame: camera_init
+      robot_base_frame: base_link
+
+      rolling_window: true
+      width: 6                        # 8 -> 6 -> 4
+      height: 6                       # 8 -> 6 -> 4
+      resolution: 0.05
+
+      update_frequency: 5.0           # 10.0 ->
+      publish_frequency: 5.0
+      transform_tolerance: 0.30
+
+      track_unknown_space: false
+
+      # 0.55 m x 0.55 m centered on base_link. Padding makes the checked box 0.59 m.
+      footprint: "[[0.275, 0.275], [-0.275, 0.275], [-0.275, -0.275], [0.275, -0.275]]"
+      footprint_padding: 0.02
+
+      plugins:
+        - "obstacle_layer"
+        - "inflation_layer"
+
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        enabled: true
+        map_topic: /map
+        map_subscribe_transient_local: true
+        subscribe_to_updates: true
+
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+
+        # Height was already filtered relative to BODY upstream. These broad
+        # bounds prevent a second, conflicting camera_init/map absolute-Z gate.
+        min_obstacle_height: -10000.0
+        max_obstacle_height: 10000.0
+
+
+        footprint_clearing_enabled: true
+        combination_method: 1
+        tf_filter_tolerance: 0.30
+
+        observation_sources: "livox_cloud"
+
+        livox_cloud:
+          topic: /livox/lidar_costmap
+          data_type: "PointCloud2"
+
+          marking: true
+          clearing: true
+
+          # The upstream sensor-XY sector mask already applies 0.3 m / 1.0 m.
+          obstacle_min_range: 0.3
+          obstacle_max_range: 4.0
+
+          raytrace_min_range: 0.0          
+          raytrace_max_range: 4.0
+
+          # Both marking/clearing use BODY-filtered real endpoints. Do not
+          # reconnect raw points here: these are deliberately broad Z bounds.
+          min_obstacle_height: -10000.0
+          max_obstacle_height: 10000.0
+
+          # Zero keeps the latest observation; it does not expire obstacle cells.
+          observation_persistence: 0.0    # 5.0 -> 0.0
+          # Seconds, not Hz: mark this observation source stale if gravity/input stops.
+          expected_update_rate: 0.5
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: true
+        inflation_radius: 0.50
+        cost_scaling_factor: 3.0        # 5.0 -> 2.0 -> 3.0
+
+      # 초기 RViz 디버깅용. 검증 후 false로 바꿔도 됨.
+      always_send_full_costmap: true
+
+
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: false
+
+      global_frame: map
+      robot_base_frame: base_link
+
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      transform_tolerance: 1.0
+
+      resolution: 0.05
+      track_unknown_space: true
+      rolling_window: false
+
+      footprint: "[[0.275, 0.275], [-0.275, 0.275], [-0.275, -0.275], [0.275, -0.275]]"
+      footprint_padding: 0.01
+
+      # Apply the static map before live obstacles, then inflate the result.
+      plugins:
+        - "static_layer"
+        - "obstacle_layer"
+        - "inflation_layer"
+
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        enabled: true
+        map_topic: /map
+        map_subscribe_transient_local: true
+        subscribe_to_updates: true
+
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+
+        # Same BODY-relative band as local; avoid a second map absolute-Z gate.
+        min_obstacle_height: -10000.0
+        max_obstacle_height: 10000.0
+
+        footprint_clearing_enabled: true
+        combination_method: 1
+        tf_filter_tolerance: 0.30
+
+        observation_sources: "livox_cloud"
+
+        livox_cloud:
+          topic: /livox/lidar_costmap
+          data_type: "PointCloud2"
+
+          marking: true
+          clearing: true
+
+          obstacle_min_range: 0.3  # upstream sector filter excludes side/rear points within 1 m
+          obstacle_max_range: 4.0
+
+          raytrace_min_range: 0.0
+          raytrace_max_range: 5.0
+
+          # Real endpoints retained by the upstream BODY-relative height gate.
+          min_obstacle_height: -10000.0
+          max_obstacle_height: 10000.0
+          # Zero keeps the latest observation; it does not expire obstacle cells.
+          observation_persistence: 0.0    # 5.0 -> 0.0            # 0.0 -> 0.5 -> 2.0 -> 0.0
+          # Seconds, not Hz; same freshness requirement as local costmap.
+          expected_update_rate: 0.5
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: true 
+        inflation_radius: 0.70                # 0.55 -> 0.70
+        cost_scaling_factor: 1.0              # 3.0 -> 2.0 -> 1.0
+
+      always_send_full_costmap: true
+
+
+smoother_server:
+  ros__parameters:
+    use_sim_time: false
+
+behavior_server:
+  ros__parameters:
+    use_sim_time: false
+    local_frame: camera_init
+    global_frame: map
+    robot_base_frame: base_link
+    transform_tolerance: 0.3
+
+bt_navigator:
+  ros__parameters:
+    use_sim_time: false
+    global_frame: map
+    robot_base_frame: base_link
+    odom_topic: /Odometry
+    # odom_topic: /genz/odometry
+
+    bt_loop_duration: 50
+    default_server_timeout: 1000
+
+    default_nav_to_pose_bt_xml: "$(find-pkg-share pongbot_navigation)/behavior_trees/navigate_to_pose_rubi.xml"

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Per-participant sender segment. Does not change QoS, history or timestamps. -->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>rubi_shm</transport_id>
+      <type>SHM</type>
+      <segment_size>33554432</segment_size>
+    </transport_descriptor>
+    <transport_descriptor>
+      <transport_id>rubi_udp</transport_id>
+      <type>UDPv4</type>
+      <!-- Explicit socket requests; rmem_max/wmem_max alone only raise the caps. -->
+      <sendBufferSize>4194304</sendBufferSize>
+      <receiveBufferSize>4194304</receiveBufferSize>
+    </transport_descriptor>
+  </transport_descriptors>
+  <participant profile_name="rubi_common" is_default_profile="true">
+    <rtps>
+      <userTransports>
+        <transport_id>rubi_shm</transport_id>
+        <transport_id>rubi_udp</transport_id>
+      </userTransports>
+      <useBuiltinTransports>false</useBuiltinTransports>
+    </rtps>
+  </participant>
+</profiles>

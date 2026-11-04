@@ -1,0 +1,18 @@
+{
+  "role": "receive",
+  "received": [
+    1,
+    2,
+    3
+  ],
+  "mappings": [
+    {
+      "mapping_bytes": 134246400,
+      "path": "/dev/shm/fastrtps_4f9c55efa5b8ff40"
+    },
+    {
+      "mapping_bytes": 33583104,
+      "path": "/dev/shm/fastrtps_d54496c2c7d14eaf"
+    }
+  ]
+}

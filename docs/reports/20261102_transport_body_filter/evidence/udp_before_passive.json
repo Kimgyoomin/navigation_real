@@ -1,0 +1,87 @@
+{
+  "seconds": 10,
+  "new_ros_probe_running": false,
+  "udp_delta": {
+    "InDatagrams": 114947,
+    "NoPorts": 15238,
+    "InErrors": 7589,
+    "OutDatagrams": 95684,
+    "RcvbufErrors": 7589,
+    "SndbufErrors": 27,
+    "InCsumErrors": 0,
+    "IgnoredMulti": 961,
+    "MemErrors": 0
+  },
+  "socket_drop_deltas": [
+    {
+      "inode": "268505",
+      "port": 10664,
+      "drops": 214
+    },
+    {
+      "inode": "263125",
+      "port": 10674,
+      "drops": 39
+    },
+    {
+      "inode": "267941",
+      "port": 10678,
+      "drops": 23
+    },
+    {
+      "inode": "266806",
+      "port": 10680,
+      "drops": 25
+    },
+    {
+      "inode": "269413",
+      "port": 10682,
+      "drops": 15
+    },
+    {
+      "inode": "273662",
+      "port": 10684,
+      "drops": 28
+    },
+    {
+      "inode": "266238",
+      "port": 10686,
+      "drops": 239
+    },
+    {
+      "inode": "275641",
+      "port": 10688,
+      "drops": 1346
+    },
+    {
+      "inode": "275818",
+      "port": 10690,
+      "drops": 800
+    },
+    {
+      "inode": "273894",
+      "port": 10692,
+      "drops": 425
+    },
+    {
+      "inode": "274131",
+      "port": 10694,
+      "drops": 316
+    },
+    {
+      "inode": "274197",
+      "port": 10696,
+      "drops": 25
+    },
+    {
+      "inode": "276500",
+      "port": 10698,
+      "drops": 3975
+    },
+    {
+      "inode": "276687",
+      "port": 10700,
+      "drops": 119
+    }
+  ]
+}

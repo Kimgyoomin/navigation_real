@@ -1,0 +1,16 @@
+{
+  "build": "2 packages passed",
+  "existing_pytest": "9 passed",
+  "runtime_domain": 215,
+  "profiles": [
+    "common",
+    "large",
+    "livox"
+  ],
+  "udp_request_bytes": 4194304,
+  "observed_receive_socket_rcvbuf_bytes": 8388608,
+  "observed_send_socket_sndbuf_bytes": 8388608,
+  "user_nodes_restarted": false,
+  "motion_commands_sent": false,
+  "whole_stack_performance_after_restart": "not yet measured"
+}

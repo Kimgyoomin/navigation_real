@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Driver-local profile. PointCloud2 payloads approach the default 512 KiB
+     segment size (20064 points * 26 bytes = 521664 bytes, before serialization).
+     Leave room for both point-cloud streams and IMU traffic in the same process.
+     Preserve UDP transport and all ROS endpoint QoS/history/timestamps.
+     See Fast DDS 2.6.x Shared Memory Transport, segment_size warning. -->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>livox_shm</transport_id>
+      <type>SHM</type>
+      <segment_size>33554432</segment_size>
+    </transport_descriptor>
+    <transport_descriptor>
+      <transport_id>livox_udp</transport_id>
+      <type>UDPv4</type>
+      <!-- ROS DDS sockets only; Livox SDK sensor sockets are configured separately. -->
+      <sendBufferSize>4194304</sendBufferSize>
+      <receiveBufferSize>4194304</receiveBufferSize>
+    </transport_descriptor>
+  </transport_descriptors>
+  <participant profile_name="livox_shm_udp" is_default_profile="true">
+    <rtps>
+      <userTransports>
+        <transport_id>livox_shm</transport_id>
+        <transport_id>livox_udp</transport_id>
+      </userTransports>
+      <useBuiltinTransports>false</useBuiltinTransports>
+    </rtps>
+  </participant>
+</profiles>

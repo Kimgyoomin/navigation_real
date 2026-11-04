@@ -64,6 +64,7 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
+#include <geometry_msgs/msg/vector3_stamped.hpp>
 #include <livox_ros_driver2/msg/custom_msg.hpp>
 #include "preprocess.h"
 #include <ikd-Tree/ikd_Tree.h>
@@ -79,6 +80,7 @@ double T1[MAXN], s_plot[MAXN], s_plot2[MAXN], s_plot3[MAXN], s_plot4[MAXN], s_pl
 double match_time = 0, solve_time = 0, solve_const_H_time = 0;
 int kdtree_size_st = 0, kdtree_size_end = 0, add_point_size = 0, kdtree_delete_counter = 0;
 bool runtime_pos_log = false, pcd_save_en = false, time_sync_en = false;
+bool extrinsic_est_en = true;
 /**************************/
 
 float res_last[100000] = {0.0};
@@ -763,6 +765,7 @@ void set_posestamp(T &out)
 
 void publish_odometry(const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubOdomAftMapped,
                       const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubVelocity,
+                      const rclcpp::Publisher<geometry_msgs::msg::Vector3Stamped>::SharedPtr pubUp,
                       std::unique_ptr<tf2_ros::TransformBroadcaster> &tf_br)
 {
     odomAftMapped.header.frame_id = "camera_init";
@@ -770,6 +773,25 @@ void publish_odometry(const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPt
     odomAftMapped.header.stamp = get_ros_time(lidar_end_time);
     set_posestamp(odomAftMapped.pose);
     pubOdomAftMapped->publish(odomAftMapped);
+    // Export the updated estimator's gravity direction, not instantaneous IMU
+    // acceleration. camera_init +Z need not coincide with gravity at startup.
+    const Eigen::Vector3d gravity_world(
+        state_point.grav[0], state_point.grav[1], state_point.grav[2]);
+    if (gravity_world.allFinite() && gravity_world.norm() > 1e-6)
+    {
+        const Eigen::Vector3d up_body = state_point.rot.toRotationMatrix().transpose() *
+            (-gravity_world.normalized());
+        if (up_body.allFinite())
+        {
+            geometry_msgs::msg::Vector3Stamped up;
+            up.header.stamp = odomAftMapped.header.stamp;
+            up.header.frame_id = "body";  // FAST-LIO IMU frame, not robot BODY
+            up.vector.x = up_body.x();
+            up.vector.y = up_body.y();
+            up.vector.z = up_body.z();
+            pubUp->publish(up);
+        }
+    }
     auto P = kf.get_P();
     // Diagnostic output only: preserve /Odometry and its scan-end timestamp.
     // Velocity is at the IMU/body origin, not at an assumed robot base_link.
@@ -921,8 +943,19 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
         /*** calculate the Measuremnt Jacobian matrix H ***/
         V3D C(s.rot.conjugate() * norm_vec);
         V3D A(point_crossmat * C);
-        V3D B(point_be_crossmat * s.offset_R_L_I.conjugate() * C); // s.rot.conjugate()*norm_vec);
-        ekfom_data.h_x.block<1, 12>(i, 0) << norm_p.x, norm_p.y, norm_p.z, VEC_FROM_ARRAY(A), VEC_FROM_ARRAY(B), VEC_FROM_ARRAY(C);
+        if (extrinsic_est_en)
+        {
+            V3D B(point_be_crossmat * s.offset_R_L_I.conjugate() * C);
+            ekfom_data.h_x.block<1, 12>(i, 0) << norm_p.x, norm_p.y, norm_p.z,
+                VEC_FROM_ARRAY(A), VEC_FROM_ARRAY(B), VEC_FROM_ARRAY(C);
+        }
+        else
+        {
+            // Match FAST-LIO: retain pose sensitivity, but do not estimate the
+            // fixed LiDAR-in-IMU calibration from point-to-plane residuals.
+            ekfom_data.h_x.block<1, 12>(i, 0) << norm_p.x, norm_p.y, norm_p.z,
+                VEC_FROM_ARRAY(A), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+        }
 
         /*** Measuremnt: distance to the closest surface/corner ***/
         ekfom_data.h(i) = -norm_p.intensity;
@@ -966,6 +999,7 @@ public:
         this->declare_parameter<int>("point_filter_num", 2);
         this->declare_parameter<bool>("feature_extract_enable", false);
         this->declare_parameter<bool>("runtime_pos_log_enable", false);
+        this->declare_parameter<bool>("mapping.extrinsic_est_en", true);
         this->declare_parameter<bool>("pcd_save.pcd_save_en", false);
         this->declare_parameter<vector<double>>("mapping.extrinsic_T", vector<double>());
         this->declare_parameter<vector<double>>("mapping.extrinsic_R", vector<double>());
@@ -1000,6 +1034,7 @@ public:
         this->get_parameter_or<int>("point_filter_num", p_pre->point_filter_num, 2);
         this->get_parameter_or<bool>("feature_extract_enable", p_pre->feature_enabled, false);
         this->get_parameter_or<bool>("runtime_pos_log_enable", runtime_pos_log, 0);
+        this->get_parameter_or<bool>("mapping.extrinsic_est_en", extrinsic_est_en, true);
         this->get_parameter_or<bool>("pcd_save.pcd_save_en", pcd_save_en, false);
         this->get_parameter_or<vector<double>>("mapping.extrinsic_T", extrinT, vector<double>());
         this->get_parameter_or<vector<double>>("mapping.extrinsic_R", extrinR, vector<double>());
@@ -1029,6 +1064,12 @@ public:
         Lidar_T_wrt_IMU << VEC_FROM_ARRAY(extrinT);
         Lidar_R_wrt_IMU << MAT_FROM_ARRAY(extrinR);
         p_imu->set_extrinsic(Lidar_T_wrt_IMU, Lidar_R_wrt_IMU);
+        RCLCPP_INFO(this->get_logger(),
+            "LiDAR-IMU extrinsic estimation: %s (mapping.extrinsic_est_en=%s), "
+            "initial T=[%.6f, %.6f, %.6f] m",
+            extrinsic_est_en ? "enabled" : "disabled; using fixed calibration",
+            extrinsic_est_en ? "true" : "false",
+            Lidar_T_wrt_IMU.x(), Lidar_T_wrt_IMU.y(), Lidar_T_wrt_IMU.z());
         p_imu->set_gyr_cov(V3D(gyr_cov, gyr_cov, gyr_cov));
         p_imu->set_acc_cov(V3D(acc_cov, acc_cov, acc_cov));
         p_imu->set_gyr_bias_cov(V3D(b_gyr_cov, b_gyr_cov, b_gyr_cov));
@@ -1080,6 +1121,9 @@ public:
         pubOdomAftMapped_ = this->create_publisher<nav_msgs::msg::Odometry>("/Odometry", 20);
         pubVelocity_ = this->create_publisher<nav_msgs::msg::Odometry>(
             "/fastlio/odometry_velocity", rclcpp::SensorDataQoS().keep_last(1));
+        pubUp_ = this->create_publisher<geometry_msgs::msg::Vector3Stamped>(
+            "/fastlio/up_body", rclcpp::SensorDataQoS().keep_last(5));
+        RCLCPP_INFO(this->get_logger(), "Gravity direction: /fastlio/up_body (unit up in body, scan-end stamp)");
         RCLCPP_INFO(this->get_logger(), "Native body velocity: /fastlio/odometry_velocity (diagnostic only; Nav2 input unchanged)");
         pubPath_ = this->create_publisher<nav_msgs::msg::Path>("/path", 20);
         tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
@@ -1225,7 +1269,7 @@ private:
 
             /******* Publish odometry *******/
             const double odometry_publish_start = omp_get_wtime();
-            publish_odometry(pubOdomAftMapped_, pubVelocity_, tf_broadcaster_);
+            publish_odometry(pubOdomAftMapped_, pubVelocity_, pubUp_, tf_broadcaster_);
             const double odometry_publish_end = omp_get_wtime();
 
             /*** add the feature points to map kdtree ***/
@@ -1310,6 +1354,7 @@ private:
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLaserCloudMap_;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubOdomAftMapped_;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubVelocity_;
+    rclcpp::Publisher<geometry_msgs::msg::Vector3Stamped>::SharedPtr pubUp_;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pubPath_;
     rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_pcl_pc_;

@@ -79,6 +79,7 @@ def generate_launch_description():
         name="global_localization",
         output="screen",
         parameters=[{
+            "use_sim_time": use_sim_time,
             "map_voxel_size": 0.2,
             "scan_voxel_size": 0.08,
             "freq_localization": 0.5,
@@ -97,6 +98,7 @@ def generate_launch_description():
         package="fast_lio_localization",
         executable="transform_fusion_cpp",
         name="transform_fusion",
+        parameters=[{"use_sim_time": use_sim_time}],
         output="screen",
     )
 
@@ -107,6 +109,7 @@ def generate_launch_description():
         name="map_publisher",
         output="screen",
         parameters=[{
+            "use_sim_time": use_sim_time,
             "file_name": pcd_map_path,
             "tf_frame": "map",
             "cloud_topic": pcd_map_topic,
@@ -121,6 +124,7 @@ def generate_launch_description():
         package="rviz2",
         executable="rviz2",
         arguments=["-d", rviz_cfg],
+        parameters=[{"use_sim_time": use_sim_time}],
         condition=IfCondition(rviz_use)
     )
 
@@ -160,6 +164,7 @@ def generate_launch_description():
         executable="static_transform_publisher",
         name="world_to_map",
         arguments=["0", "0", "0", "0", "0", "0", "world", "map"],
+        parameters=[{"use_sim_time": use_sim_time}],
         output="screen",
     )
 

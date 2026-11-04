@@ -1,0 +1,10 @@
+{
+  "recorded_at": "2026-10-29T21:12:42.840155+09:00",
+  "sysctl": {
+    "net.core.rmem_max": 212992,
+    "net.core.wmem_max": 212992,
+    "net.core.rmem_default": 212992,
+    "net.core.wmem_default": 212992
+  },
+  "boot_id": "231a1e06-74b5-42ad-b854-56dbecf3e3e6"
+}

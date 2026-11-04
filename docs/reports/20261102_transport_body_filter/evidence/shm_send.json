@@ -1,0 +1,15 @@
+{
+  "role": "send",
+  "payload_bytes": 36209289,
+  "publish_ms": [
+    29.62199800003873,
+    22.815651999735564,
+    24.810687999888614
+  ],
+  "mappings": [
+    {
+      "mapping_bytes": 134246400,
+      "path": "/dev/shm/fastrtps_4f9c55efa5b8ff40"
+    }
+  ]
+}

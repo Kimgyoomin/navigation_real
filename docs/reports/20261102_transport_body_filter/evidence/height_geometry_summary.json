@@ -1,0 +1,526 @@
+{
+  "bags": {
+    "200954": {
+      "old_local_band": [
+        -0.15,
+        1.0
+      ],
+      "old_global_band": [
+        -0.2,
+        2.0
+      ],
+      "windows": [
+        {
+          "window": "all",
+          "frames": 344,
+          "point_totals": {
+            "input_n": 2947111,
+            "eligible_n": 2627957,
+            "floor_n": 1348821,
+            "body_band_candidate_n": 81810,
+            "low_nonfloor_n": 846154,
+            "old_local_n": 1168124,
+            "old_local_floor_n": 210671,
+            "old_local_body_n": 81743,
+            "old_local_low_n": 524550,
+            "old_local_cells": 256073,
+            "old_global_n": 892778,
+            "old_global_floor_n": 0,
+            "old_global_body_n": 81810,
+            "old_global_low_n": 459797,
+            "old_global_cells": 164895,
+            "abs005_local_n": 785984,
+            "abs005_local_floor_n": 10,
+            "abs005_local_body_n": 81743,
+            "abs005_local_low_n": 353077,
+            "abs005_local_cells": 139120,
+            "abs005_global_n": 602343,
+            "abs005_global_floor_n": 0,
+            "abs005_global_body_n": 81809,
+            "abs005_global_low_n": 172756,
+            "abs005_global_cells": 125688,
+            "new_n": 195633,
+            "new_floor_n": 0,
+            "new_body_n": 81785,
+            "new_low_n": 22,
+            "new_cells": 67078
+          },
+          "old_local": {
+            "floor_retained_pct": 15.618899765054072,
+            "body_band_candidate_retained_pct": 99.91810292140325
+          },
+          "old_global": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 100.0
+          },
+          "abs005_local": {
+            "floor_retained_pct": 0.0007413882197860205,
+            "body_band_candidate_retained_pct": 99.91810292140325
+          },
+          "abs005_global": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 99.99877765554334
+          },
+          "new": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 99.9694413885833
+          },
+          "up_vs_floor_angle_deg_p50_p95_max": [
+            0.8625895400781167,
+            1.6538984838092823,
+            2.2153512015575934
+          ],
+          "ray_bins_old_new_median": [
+            55.0,
+            33.0
+          ],
+          "perturbations": {
+            "3": {
+              "floor_retained_worst_frame_pct": 0,
+              "body_retained_worst_frame_pct": 26.31578947368421
+            },
+            "5": {
+              "floor_retained_worst_frame_pct": 0,
+              "body_retained_worst_frame_pct": 4.7272727272727275
+            },
+            "10": {
+              "floor_retained_worst_frame_pct": 3.949678174370977,
+              "body_retained_worst_frame_pct": 0.0
+            }
+          }
+        },
+        {
+          "window": "normal",
+          "frames": 82,
+          "point_totals": {
+            "input_n": 716001,
+            "eligible_n": 636739,
+            "floor_n": 366315,
+            "body_band_candidate_n": 11404,
+            "low_nonfloor_n": 188306,
+            "old_local_n": 182210,
+            "old_local_floor_n": 32,
+            "old_local_body_n": 11404,
+            "old_local_low_n": 100060,
+            "old_local_cells": 29472,
+            "old_global_n": 184179,
+            "old_global_floor_n": 0,
+            "old_global_body_n": 11404,
+            "old_global_low_n": 102061,
+            "old_global_cells": 29853,
+            "abs005_local_n": 141346,
+            "abs005_local_floor_n": 0,
+            "abs005_local_body_n": 11404,
+            "abs005_local_low_n": 59230,
+            "abs005_local_cells": 25793,
+            "abs005_global_n": 122057,
+            "abs005_global_floor_n": 0,
+            "abs005_global_body_n": 11404,
+            "abs005_global_low_n": 39962,
+            "abs005_global_cells": 24331,
+            "new_n": 31653,
+            "new_floor_n": 0,
+            "new_body_n": 11404,
+            "new_low_n": 3,
+            "new_cells": 13075
+          },
+          "old_local": {
+            "floor_retained_pct": 0.008735651010742121,
+            "body_band_candidate_retained_pct": 100.0
+          },
+          "old_global": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 100.0
+          },
+          "abs005_local": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 100.0
+          },
+          "abs005_global": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 100.0
+          },
+          "new": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 100.0
+          },
+          "up_vs_floor_angle_deg_p50_p95_max": [
+            0.6733684178877413,
+            1.6296378190839655,
+            1.8572646240894564
+          ],
+          "ray_bins_old_new_median": [
+            47.0,
+            31.0
+          ],
+          "perturbations": {
+            "3": {
+              "floor_retained_worst_frame_pct": 0,
+              "body_retained_worst_frame_pct": 35.41666666666667
+            },
+            "5": {
+              "floor_retained_worst_frame_pct": 0,
+              "body_retained_worst_frame_pct": 15.686274509803921
+            },
+            "10": {
+              "floor_retained_worst_frame_pct": 3.551269990592662,
+              "body_retained_worst_frame_pct": 0.0
+            }
+          }
+        },
+        {
+          "window": "problem",
+          "frames": 66,
+          "point_totals": {
+            "input_n": 673309,
+            "eligible_n": 585495,
+            "floor_n": 333556,
+            "body_band_candidate_n": 20606,
+            "low_nonfloor_n": 159503,
+            "old_local_n": 434822,
+            "old_local_floor_n": 196156,
+            "old_local_body_n": 20539,
+            "old_local_low_n": 146306,
+            "old_local_cells": 113460,
+            "old_global_n": 178469,
+            "old_global_floor_n": 0,
+            "old_global_body_n": 20606,
+            "old_global_low_n": 86033,
+            "old_global_cells": 24335,
+            "abs005_local_n": 216080,
+            "abs005_local_floor_n": 10,
+            "abs005_local_body_n": 20539,
+            "abs005_local_low_n": 123710,
+            "abs005_local_cells": 26457,
+            "abs005_global_n": 123444,
+            "abs005_global_floor_n": 0,
+            "abs005_global_body_n": 20605,
+            "abs005_global_low_n": 31518,
+            "abs005_global_cells": 20502,
+            "new_n": 49032,
+            "new_floor_n": 0,
+            "new_body_n": 20581,
+            "new_low_n": 16,
+            "new_cells": 13281
+          },
+          "old_local": {
+            "floor_retained_pct": 58.80751657892528,
+            "body_band_candidate_retained_pct": 99.67485198485878
+          },
+          "old_global": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 100.0
+          },
+          "abs005_local": {
+            "floor_retained_pct": 0.002997997337778364,
+            "body_band_candidate_retained_pct": 99.67485198485878
+          },
+          "abs005_global": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 99.99514704455014
+          },
+          "new": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 99.87867611375327
+          },
+          "up_vs_floor_angle_deg_p50_p95_max": [
+            1.3507273920638072,
+            1.8973506298161964,
+            2.2153512015575934
+          ],
+          "ray_bins_old_new_median": [
+            68.0,
+            34.0
+          ],
+          "perturbations": {
+            "3": {
+              "floor_retained_worst_frame_pct": 0,
+              "body_retained_worst_frame_pct": 26.31578947368421
+            },
+            "5": {
+              "floor_retained_worst_frame_pct": 0,
+              "body_retained_worst_frame_pct": 18.30985915492958
+            },
+            "10": {
+              "floor_retained_worst_frame_pct": 2.8748341441839895,
+              "body_retained_worst_frame_pct": 2.4070021881838075
+            }
+          }
+        }
+      ]
+    },
+    "205026": {
+      "old_local_band": [
+        -0.2,
+        1.0
+      ],
+      "old_global_band": [
+        -0.2,
+        2.0
+      ],
+      "windows": [
+        {
+          "window": "all",
+          "frames": 455,
+          "point_totals": {
+            "input_n": 4152654,
+            "eligible_n": 3535064,
+            "floor_n": 2004381,
+            "body_band_candidate_n": 97020,
+            "low_nonfloor_n": 984998,
+            "old_local_n": 1294692,
+            "old_local_floor_n": 116175,
+            "old_local_body_n": 96977,
+            "old_local_low_n": 632879,
+            "old_local_cells": 265961,
+            "old_global_n": 1086667,
+            "old_global_floor_n": 0,
+            "old_global_body_n": 97020,
+            "old_global_low_n": 540988,
+            "old_global_cells": 197902,
+            "abs005_local_n": 858157,
+            "abs005_local_floor_n": 0,
+            "abs005_local_body_n": 96977,
+            "abs005_local_low_n": 312522,
+            "abs005_local_cells": 160676,
+            "abs005_global_n": 744742,
+            "abs005_global_floor_n": 0,
+            "abs005_global_body_n": 97019,
+            "abs005_global_low_n": 199832,
+            "abs005_global_cells": 153629,
+            "new_n": 240140,
+            "new_floor_n": 0,
+            "new_body_n": 96980,
+            "new_low_n": 14,
+            "new_cells": 83074
+          },
+          "old_local": {
+            "floor_retained_pct": 5.79605374427317,
+            "body_band_candidate_retained_pct": 99.95567924139353
+          },
+          "old_global": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 100.0
+          },
+          "abs005_local": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 99.95567924139353
+          },
+          "abs005_global": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 99.99896928468357
+          },
+          "new": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 99.95877138734282
+          },
+          "up_vs_floor_angle_deg_p50_p95_max": [
+            0.9236893159181031,
+            1.6475675778844958,
+            2.858372349608313
+          ],
+          "ray_bins_old_new_median": [
+            52.0,
+            34.0
+          ],
+          "perturbations": {
+            "3": {
+              "floor_retained_worst_frame_pct": 0,
+              "body_retained_worst_frame_pct": 12.5
+            },
+            "5": {
+              "floor_retained_worst_frame_pct": 0,
+              "body_retained_worst_frame_pct": 0.0
+            },
+            "10": {
+              "floor_retained_worst_frame_pct": 5.3402646502835545,
+              "body_retained_worst_frame_pct": 0.0
+            }
+          }
+        },
+        {
+          "window": "normal",
+          "frames": 84,
+          "point_totals": {
+            "input_n": 796843,
+            "eligible_n": 714100,
+            "floor_n": 399948,
+            "body_band_candidate_n": 27096,
+            "low_nonfloor_n": 206862,
+            "old_local_n": 226084,
+            "old_local_floor_n": 0,
+            "old_local_body_n": 27096,
+            "old_local_low_n": 118794,
+            "old_local_cells": 39657,
+            "old_global_n": 222008,
+            "old_global_floor_n": 0,
+            "old_global_body_n": 27096,
+            "old_global_low_n": 114718,
+            "old_global_cells": 39296,
+            "abs005_local_n": 156931,
+            "abs005_local_floor_n": 0,
+            "abs005_local_body_n": 27096,
+            "abs005_local_low_n": 49644,
+            "abs005_local_cells": 33200,
+            "abs005_global_n": 151757,
+            "abs005_global_floor_n": 0,
+            "abs005_global_body_n": 27096,
+            "abs005_global_low_n": 44499,
+            "abs005_global_cells": 32890,
+            "new_n": 52037,
+            "new_floor_n": 0,
+            "new_body_n": 27096,
+            "new_low_n": 0,
+            "new_cells": 19062
+          },
+          "old_local": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 100.0
+          },
+          "old_global": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 100.0
+          },
+          "abs005_local": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 100.0
+          },
+          "abs005_global": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 100.0
+          },
+          "new": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 100.0
+          },
+          "up_vs_floor_angle_deg_p50_p95_max": [
+            0.7637055033113175,
+            2.0449173542002357,
+            2.858372349608313
+          ],
+          "ray_bins_old_new_median": [
+            53.0,
+            37.0
+          ],
+          "perturbations": {
+            "3": {
+              "floor_retained_worst_frame_pct": 0,
+              "body_retained_worst_frame_pct": 61.142857142857146
+            },
+            "5": {
+              "floor_retained_worst_frame_pct": 0,
+              "body_retained_worst_frame_pct": 28.955223880597014
+            },
+            "10": {
+              "floor_retained_worst_frame_pct": 3.7433155080213902,
+              "body_retained_worst_frame_pct": 0.0
+            }
+          }
+        },
+        {
+          "window": "problem",
+          "frames": 64,
+          "point_totals": {
+            "input_n": 716303,
+            "eligible_n": 534740,
+            "floor_n": 372000,
+            "body_band_candidate_n": 10687,
+            "low_nonfloor_n": 94672,
+            "old_local_n": 263496,
+            "old_local_floor_n": 107794,
+            "old_local_body_n": 10644,
+            "old_local_low_n": 87681,
+            "old_local_cells": 70537,
+            "old_global_n": 115145,
+            "old_global_floor_n": 0,
+            "old_global_body_n": 10687,
+            "old_global_low_n": 47077,
+            "old_global_cells": 13988,
+            "abs005_local_n": 131697,
+            "abs005_local_floor_n": 0,
+            "abs005_local_body_n": 10644,
+            "abs005_local_low_n": 63676,
+            "abs005_local_cells": 14416,
+            "abs005_global_n": 81488,
+            "abs005_global_floor_n": 0,
+            "abs005_global_body_n": 10687,
+            "abs005_global_low_n": 13481,
+            "abs005_global_cells": 12306,
+            "new_n": 35485,
+            "new_floor_n": 0,
+            "new_body_n": 10687,
+            "new_low_n": 3,
+            "new_cells": 8893
+          },
+          "old_local": {
+            "floor_retained_pct": 28.976881720430107,
+            "body_band_candidate_retained_pct": 99.59764199494712
+          },
+          "old_global": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 100.0
+          },
+          "abs005_local": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 99.59764199494712
+          },
+          "abs005_global": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 100.0
+          },
+          "new": {
+            "floor_retained_pct": 0.0,
+            "body_band_candidate_retained_pct": 100.0
+          },
+          "up_vs_floor_angle_deg_p50_p95_max": [
+            1.356991754722433,
+            1.6212476567434957,
+            1.7696853815372382
+          ],
+          "ray_bins_old_new_median": [
+            52.0,
+            28.0
+          ],
+          "perturbations": {
+            "3": {
+              "floor_retained_worst_frame_pct": 0,
+              "body_retained_worst_frame_pct": 43.69747899159664
+            },
+            "5": {
+              "floor_retained_worst_frame_pct": 0,
+              "body_retained_worst_frame_pct": 20.13888888888889
+            },
+            "10": {
+              "floor_retained_worst_frame_pct": 3.4385469934755775,
+              "body_retained_worst_frame_pct": 1.5444015444015444
+            }
+          }
+        }
+      ]
+    }
+  },
+  "skipped": {
+    "200954": {
+      "pose_gap_or_boundary": 22,
+      "no_ground_plane": 0
+    },
+    "205026": {
+      "pose_gap_or_boundary": 31,
+      "no_ground_plane": 0
+    }
+  },
+  "method": {
+    "inputs": "Archived sensor-frame XYZ from recorded /livox/lidar_costmap, sampled ~1 Hz; old sector filtering already applied.",
+    "up_200954": "Approximate constant world-up from 979 low-angular-rate, norm-stable recorded IMU samples at 1-7s, rotated by recorded Odometry; not original estimator gravity state.",
+    "up_205026": "Archived pre-update gravity log time-aligned by odometry, plus recorded Odometry orientation; not exact new up_body output.",
+    "labels": "Floor RANSAC from sensor XYZ independently of tested gravity. Body-height geometric candidates use fitted floor normal, relative height 0.05 to 0.8 m. No semantic obstacle ground truth.",
+    "comparison": "Height/range marking endpoint candidates only, not a full Nav2 master costmap or controller replay.",
+    "pose_interpolation": "Recorded pose brackets <=0.25s; no extrapolation.",
+    "limits": [
+      "Flat-corridor floor assumption; stairs/slopes not validated.",
+      "Voxel endpoint counts pooled per frame, not unique physical obstacles.",
+      "Clearing endpoint/angular coverage reduction does not alone measure stale-cell clearing.",
+      "No claim of live run command safety or full-load throughput."
+    ]
+  }
+}

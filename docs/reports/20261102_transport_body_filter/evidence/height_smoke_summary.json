@@ -1,0 +1,13 @@
+{
+  "counts": {
+    "up": 71,
+    "odom": 71,
+    "input": 63,
+    "filtered": 32
+  },
+  "up_matches_odometry_stamp": true,
+  "up_unit_vector_in_body": true,
+  "filtered_stamps_match_raw_bag_headers": true,
+  "input_probe_missed_filtered_stamps": 9,
+  "limitations": "Short recorded-input interface test, not trajectory accuracy validation; recorded IMU is sparse."
+}

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <string>
 #include <sensor_msgs/msg/point_cloud2.hpp>
+#include "pongbot_navigation/height_filter.hpp"
 
 namespace pongbot_navigation
 {
@@ -21,6 +22,7 @@ struct FilterResult
   std::size_t kept_points = 0;
   std::size_t nonfinite_drops = 0;
   std::size_t range_drops = 0;
+  std::size_t height_drops = 0;
 };
 
 // XY range and bearing are measured at the cloud's sensor origin. The current
@@ -31,7 +33,8 @@ class SectorFilter
 public:
   explicit SectorFilter(const SectorConfig & config);
   bool keep_xy(double x, double y) const;
-  FilterResult filter(const sensor_msgs::msg::PointCloud2 & input) const;
+  FilterResult filter(const sensor_msgs::msg::PointCloud2 & input,
+    const HeightPlane * height = nullptr) const;
 
 private:
   SectorConfig config_;

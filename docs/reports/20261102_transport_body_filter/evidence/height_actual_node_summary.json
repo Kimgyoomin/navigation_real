@@ -1,0 +1,20 @@
+{
+  "original_clouds_checked": 91,
+  "original_points_checked": 1818432,
+  "all_retained_records_byte_exact": true,
+  "original_header_and_fields_preserved": true,
+  "stale_direction_rejected": true,
+  "fresh_direction_recovers": true,
+  "missing_original_cloud_matches": 1,
+  "runtime_s": 6.424453892999736,
+  "limitations": [
+    "Reconstructed up supplied at exact original cloud time to isolate geometry/serialization.",
+    "Not a reproduction of live transport ordering, FAST-LIO estimation, Nav2 clearing, or controller behavior."
+  ],
+  "filter_ms_sample_count": 39,
+  "filter_ms_p50_p95_max": [
+    0.493,
+    0.5892,
+    0.615
+  ]
+}

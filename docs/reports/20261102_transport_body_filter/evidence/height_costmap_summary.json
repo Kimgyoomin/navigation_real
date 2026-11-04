@@ -1,0 +1,100 @@
+{
+  "bag": "20_09_54",
+  "window_s": [
+    170.0,
+    240.0
+  ],
+  "input_clouds": 344,
+  "filtered_clouds": 344,
+  "costmaps": {
+    "old_local": {
+      "grids": 225,
+      "lethal_p50_p95": [
+        2268.0,
+        3028.7999999999997
+      ],
+      "published_stamp_gap_p50_p95_max": [
+        0.3999092009999998,
+        0.40003796980000317,
+        0.40008538300000396
+      ]
+    },
+    "abs005_local": {
+      "grids": 225,
+      "lethal_p50_p95": [
+        713.5,
+        925.8499999999999
+      ],
+      "published_stamp_gap_p50_p95_max": [
+        0.3999092009999998,
+        0.40003796980000317,
+        0.40008538300000396
+      ]
+    },
+    "new_local": {
+      "grids": 214,
+      "lethal_p50_p95": [
+        519.0,
+        623.0999999999999
+      ],
+      "published_stamp_gap_p50_p95_max": [
+        0.3999388500000123,
+        0.4000439932000006,
+        0.4003790239999887
+      ]
+    },
+    "old_global": {
+      "grids": 47,
+      "lethal_p50_p95": [
+        4212.0,
+        5181.099999999999
+      ],
+      "published_stamp_gap_p50_p95_max": [
+        1.8970487939999998,
+        2.0000878789999987,
+        2.0171734810000146
+      ]
+    },
+    "new_global": {
+      "grids": 44,
+      "lethal_p50_p95": [
+        4151.0,
+        4744.599999999999
+      ],
+      "published_stamp_gap_p50_p95_max": [
+        1.9999554100000125,
+        2.0000296538999804,
+        2.00740356
+      ]
+    }
+  },
+  "controlled_replay": "Original PointCloud2 bytes and recorded pose geometry; fresh up/TF at 10Hz, clouds at header+120ms, 1x wall rate.",
+  "limits": [
+    "Original recorder transport delay intentionally not replayed.",
+    "No planner, controller, LCM, motor command or live estimator.",
+    "Global statistics cover an 8m square moving crop, local 6m window.",
+    "Geometric comparison alone does not certify physical clearance."
+  ],
+  "global_additional_lethal": {
+    "old_global": {
+      "additional_lethal_on_static_free_p50_p95": [
+        419.0,
+        511.39999999999986
+      ]
+    },
+    "new_global": {
+      "additional_lethal_on_static_free_p50_p95": [
+        328.0,
+        416.8
+      ]
+    }
+  },
+  "filtered_received_rate_hz": 4.913509137163283,
+  "filtered_receive_gap_p50_p95_max_s": [
+    0.1999787370004924,
+    0.22577051390144334,
+    0.4248073470007512
+  ],
+  "publication_caveat": "Observed local grid output ~3Hz (0.2/0.4s gaps), global ~0.62Hz (1/2s gaps) for both old/new. Configured update and publish rates were equal (5/5,1/1); Humble publish due check is strict > and simulated clock is discrete. This test does not establish full 5Hz/1Hz visualization publication or internal update rates.",
+  "filter_duplicate_up_samples": "233 duplicates rejected during stationary pre-roll, one after replay. During moving replay cloud_drops=0; duplicates were test-fixture startup repeats, not bad live estimator data."
+}
