@@ -1,9 +1,11 @@
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
 #include <gtest/gtest.h>
 #include "rubi_heightmap_step_wavefront_planner/step_evaluator.hpp"
+#include "rubi_heightmap_step_wavefront_planner/planning/grid_path_evaluator.hpp"
 namespace planner = rubi_heightmap_step_wavefront_planner;
 
 std::vector<planner::HeightPoint> hybridHeights(double right_z = 0.0, bool gap = false)
@@ -601,4 +603,129 @@ TEST(HybridStepEvaluator, GridCotRejectsInvalidCalibration)
   parameters = hybridParameters(); parameters.max_crossable_height_jump_m = 0.10;
   enableGridCot(parameters); parameters.grid_cot_step_heights_m.back() = 0.09;
   invalid(parameters);
+}
+
+TEST(HybridStepEvaluator, PolynomialUnitsAndGridRefinementUseSameModel)
+{
+  const auto heights = planner::HeightmapSnapshot::fromPoints(
+    hybridHeights(0.05), 0.1, 0.001, 100U);
+  const auto costs = planner::CostmapSnapshot::fromData(
+    9U, 5U, 0.1, 0.0, 0.0, std::vector<std::uint8_t>(45U, 0U));
+  auto p = hybridParameters();
+  p.max_crossable_height_jump_m = .10;
+  p.grid_cot_height_cost_enabled = true;
+  p.grid_cot_flat_baseline = .2397005087210085;
+  p.grid_cot_polynomial_coefficients_cm = {
+    -.00027219790684918907, .004037674812204141, .008922036892203038, 0.0};
+  const planner::StepEvaluator e(heights, costs, p);
+  const auto edge = e.evaluateGridTransition({3,2}, {4,2},
+    e.evaluateNode({.35,.25}), e.evaluateNode({.45,.25}));
+  const double excess = -.00027219790684918907*125 + .004037674812204141*25 + .008922036892203038*5;
+  ASSERT_TRUE(edge.valid);
+  EXPECT_NEAR(edge.height_jump_score_m, excess/p.grid_cot_flat_baseline, 1e-12);
+  const planner::GridPathEvaluator grid(e, nullptr);
+  const auto offgrid = grid.evaluateSegment({.345,.25}, {.455,.25});
+  ASSERT_TRUE(offgrid.valid);
+  EXPECT_NEAR(offgrid.height_jump_score_m, edge.height_jump_score_m, 1e-12);
+  p.grid_cot_height_cost_enabled = false;
+  const planner::StepEvaluator vanilla(heights, costs, p);
+  const auto descent = e.evaluateGridTransition({4,2}, {3,2},
+    e.evaluateNode({.45,.25}), e.evaluateNode({.35,.25}));
+  const auto old_descent = vanilla.evaluateGridTransition({4,2}, {3,2},
+    vanilla.evaluateNode({.45,.25}), vanilla.evaluateNode({.35,.25}));
+  EXPECT_DOUBLE_EQ(descent.height_jump_score_m, old_descent.height_jump_score_m);
+  EXPECT_DOUBLE_EQ(e.evaluateEdge({.35,.25},{.45,.25}).cost,
+    vanilla.evaluateEdge({.35,.25},{.45,.25}).cost);
+}
+
+TEST(HybridStepEvaluator, PolynomialRejectsInvalidDomainAndNegativeCosts)
+{
+  const auto heights = planner::HeightmapSnapshot::fromPoints(hybridHeights(), .1, .001, 100U);
+  auto p = hybridParameters();
+  p.grid_cot_height_cost_enabled = true;
+  p.grid_cot_flat_baseline = .24;
+  p.grid_cot_polynomial_coefficients_cm = {-.01, 0.0};
+  EXPECT_THROW(planner::StepEvaluator(heights, p), std::invalid_argument);
+  p.grid_cot_polynomial_coefficients_cm = {.02, 0.0};
+  p.grid_cot_max_height_m = .04;
+  EXPECT_THROW(planner::StepEvaluator(heights, p), std::invalid_argument);
+  p.grid_cot_max_height_m = .11;
+  p.grid_cot_flat_baseline = 0;
+  EXPECT_THROW(planner::StepEvaluator(heights, p), std::invalid_argument);
+}
+
+TEST(HybridStepEvaluator, ComparisonDomainGateIsIdenticalForBothModes)
+{
+  std::vector<planner::HeightPoint> points;
+  for (int y = 0; y < 7; ++y) {
+    for (int x = 0; x < 13; ++x) {
+      points.push_back({.05+.1*x, .05+.1*y, x <= 4 ? 0. : (x == 5 ? .06 : .12)});
+    }
+  }
+  const auto heights = planner::HeightmapSnapshot::fromPoints(points, .1, .001, 1000U);
+  const auto costs = planner::CostmapSnapshot::fromData(13U, 7U, .1, 0., 0.,
+    std::vector<std::uint8_t>(91U, 0U));
+  for (bool cot : {false, true}) {
+    auto p = hybridParameters();
+    p.max_crossable_height_jump_m = .10;
+    p.local_relief_first_window_radius_m = .31;
+    p.grid_comparison_max_event_height_m = .11;
+    p.grid_cot_height_cost_enabled = cot;
+    p.grid_cot_polynomial_coefficients_cm = {.02, 0.0};
+    p.grid_cot_flat_baseline = .24;
+    const planner::StepEvaluator e(heights, costs, p);
+    const auto edge = e.evaluateGridTransition({4,3}, {5,3},
+      e.evaluateNode({.45,.35}), e.evaluateNode({.55,.35}));
+    EXPECT_EQ(edge.reason, planner::StepInvalidReason::kOutsideCostModelDomain);
+    const planner::GridPathEvaluator grid(e, nullptr);
+    EXPECT_EQ(grid.evaluateSegment({.445,.35}, {.555,.35}).reason,
+      planner::StepInvalidReason::kOutsideCostModelDomain);
+  }
+}
+
+TEST(HybridStepEvaluator, LocalReliefRejectsSmeared11cmInBothComparisonModes)
+{
+  for (const int ramp_cells : {2, 3}) {
+    std::vector<planner::HeightPoint> points;
+    for (int y = 0; y < 21; ++y) {
+      for (int x = 0; x < 61; ++x) {
+        points.push_back({.025+.05*x, .025+.05*y,
+          .11*std::clamp(double(x-25)/ramp_cells, 0., 1.)});
+      }
+    }
+    const auto heights = planner::HeightmapSnapshot::fromPoints(points, .05, .001, 10000U);
+    const auto costs = planner::CostmapSnapshot::fromData(61U, 21U, .05, 0., 0.,
+      std::vector<std::uint8_t>(61U*21U, 0U));
+    for (bool cot : {false, true}) {
+      planner::StepEvaluatorParameters p;
+      p.max_crossable_height_jump_m = .10;
+      p.grid_comparison_max_event_height_m = .11;
+      p.grid_cot_height_cost_enabled = cot;
+      p.grid_cot_polynomial_coefficients_cm = {.02, 0.};
+      p.grid_cot_flat_baseline = .24;
+      const planner::Point2D from{1.275,.525}, to{1.325,.525};
+      auto transition = [&](const planner::StepEvaluator & e) {
+          return e.evaluateGridTransition({25,10}, {26,10}, e.evaluateNode(from), e.evaluateNode(to));
+        };
+      const planner::StepEvaluator disabled(heights, costs, p);
+      ASSERT_TRUE(transition(disabled).valid);
+      p.local_relief_hard_reject_enabled = true;
+      const planner::StepEvaluator enabled(heights, costs, p);
+      const auto edge = transition(enabled);
+      const planner::GridPathEvaluator path(enabled, nullptr);
+      const auto off_grid = path.evaluateSegment({1.274,.525}, {1.326,.525});
+      EXPECT_LT(edge.max_height_jump_m, .10);
+      if (ramp_cells == 2) {
+        EXPECT_NEAR(edge.max_supported_local_relief_m, .11, 1e-12);
+        EXPECT_EQ(edge.reason, planner::StepInvalidReason::kStepLimit);
+        EXPECT_EQ(off_grid.reason, planner::StepInvalidReason::kStepLimit);
+      } else {
+        // A finite 10-cm-radius quantile window does not reconstruct every
+        // physical step height. Preserve this limit explicitly in the test.
+        EXPECT_NEAR(edge.max_local_relief_m, .11*2./3., 1e-12);
+        EXPECT_TRUE(edge.valid);
+        EXPECT_TRUE(off_grid.valid);
+      }
+    }
+  }
 }

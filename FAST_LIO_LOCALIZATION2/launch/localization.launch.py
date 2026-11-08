@@ -71,13 +71,22 @@ def generate_launch_description():
         output="screen",
     )
 
+    # Avoid BLAS/OpenMP worker oversubscription beside Gazebo and FAST-LIO.
+    # These Python nodes process small transforms and modest ICP clouds.
+    localization_env = {
+        "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1", "NUMEXPR_NUM_THREADS": "1",
+    }
+
     # Global localization node
     global_localization_node = Node(
         package="fast_lio_localization",
         executable="global_localization.py",
         name="global_localization",
         output="screen",
+        additional_env=localization_env,
         parameters=[{
+            "use_sim_time": use_sim_time,
             "map_voxel_size": 0.2,
             "scan_voxel_size": 0.08,
             # "freq_localization": 0.5,
@@ -97,6 +106,8 @@ def generate_launch_description():
         executable="transform_fusion.py",
         name="transform_fusion",
         output="screen",
+        additional_env=localization_env,
+        parameters=[{"use_sim_time": use_sim_time}],
     )
 
     # PCD to PointCloud2 publisher
@@ -106,6 +117,7 @@ def generate_launch_description():
         name="map_publisher",
         output="screen",
         parameters=[{
+            "use_sim_time": use_sim_time,
             "file_name": pcd_map_path,
             "tf_frame": "map",
             "cloud_topic": pcd_map_topic,

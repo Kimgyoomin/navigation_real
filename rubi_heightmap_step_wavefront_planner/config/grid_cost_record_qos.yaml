@@ -1,0 +1,12 @@
+# Retain latched data when recording begins after publisher startup.
+/tf_static: &latched
+  reliability: reliable
+  durability: transient_local
+  history: keep_last
+  depth: 100
+/map: *latched
+/rubi/experiment/frozen_heightmap: *latched
+/rubi/experiment/frozen_map_info: *latched
+/rubi/experiment/plan_metrics: *latched
+/rubi/experiment/events: *latched
+/rubi/experiment/run_metrics: *latched

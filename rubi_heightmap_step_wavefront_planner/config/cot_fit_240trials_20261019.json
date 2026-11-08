@@ -1,0 +1,178 @@
+{
+  "created": "2026-10-19T13:54:56.822082+09:00",
+  "input_sha256": "4ca1e60645e73730a91a34365855a145b162774b48590c81cd84f637aeb61d91",
+  "target": "mean CoT_abs(height) - mean CoT_abs(flat)",
+  "baseline_CoT": 0.2397005087210085,
+  "domain_cm": [
+    0,
+    11
+  ],
+  "measured_step_domain_cm": [
+    1,
+    11
+  ],
+  "constraint": "f(0)=0",
+  "weighting": "equal weight for each of eleven height means",
+  "models": [
+    {
+      "degree": 1,
+      "coefficients_descending_cm": [
+        0.022177515851830615,
+        0.0
+      ],
+      "coefficients_descending_m": [
+        2.2177515851830614,
+        0.0
+      ],
+      "coefficient_bootstrap95_low": [
+        0.019976417595820736,
+        0.0
+      ],
+      "coefficient_bootstrap95_high": [
+        0.024487136997590885,
+        0.0
+      ],
+      "train_height_mean": {
+        "RMSE": 0.01663170753538163,
+        "MAE": 0.013898619437313959,
+        "R2": 0.9534516135838289
+      },
+      "leave_one_height_out": {
+        "RMSE": 0.017619728715926635,
+        "MAE": 0.01488789613955478,
+        "R2": 0.947756846132243
+      },
+      "train_trial": {
+        "RMSE": 0.05372223847884824,
+        "MAE": 0.04376403881567852,
+        "R2": 0.6625244030361178
+      },
+      "minimum_prediction": 0.0,
+      "minimum_derivative_per_cm": 0.022177515851830615,
+      "domain_cm": [
+        0,
+        11
+      ],
+      "measured_step_domain_cm": [
+        1,
+        11
+      ],
+      "constraint": "f(0)=0"
+    },
+    {
+      "degree": 2,
+      "coefficients_descending_cm": [
+        -0.00011505305309311278,
+        0.023167972569762618,
+        0.0
+      ],
+      "coefficients_descending_m": [
+        -1.1505305309311278,
+        2.316797256976262,
+        0.0
+      ],
+      "coefficient_bootstrap95_low": [
+        -0.0007290501280489109,
+        0.016846887753387288,
+        0.0
+      ],
+      "coefficient_bootstrap95_high": [
+        0.0004479929320571526,
+        0.03001414316820886,
+        0.0
+      ],
+      "train_height_mean": {
+        "RMSE": 0.016541943656724952,
+        "MAE": 0.01315220831023688,
+        "R2": 0.9539527152375088
+      },
+      "leave_one_height_out": {
+        "RMSE": 0.019072160707665577,
+        "MAE": 0.015328324556875873,
+        "R2": 0.9387888206350069
+      },
+      "train_trial": {
+        "RMSE": 0.05369451658761848,
+        "MAE": 0.043705527719933586,
+        "R2": 0.6628726032690764
+      },
+      "minimum_prediction": 0.0,
+      "minimum_derivative_per_cm": 0.020636805401714135,
+      "domain_cm": [
+        0,
+        11
+      ],
+      "measured_step_domain_cm": [
+        1,
+        11
+      ],
+      "constraint": "f(0)=0"
+    },
+    {
+      "degree": 3,
+      "coefficients_descending_cm": [
+        -0.00027219790684918907,
+        0.004037674812204141,
+        0.008922036892203038,
+        0.0
+      ],
+      "coefficients_descending_m": [
+        -272.19790684918905,
+        40.37674812204141,
+        0.8922036892203038,
+        0.0
+      ],
+      "coefficient_bootstrap95_low": [
+        -0.0004663584341026301,
+        0.0009140162449895968,
+        -0.0037867322925279295,
+        0.0
+      ],
+      "coefficient_bootstrap95_high": [
+        -7.774031151005692e-05,
+        0.007091249514745268,
+        0.02244132345776438,
+        0.0
+      ],
+      "train_height_mean": {
+        "RMSE": 0.012861930378185853,
+        "MAE": 0.012196377371987976,
+        "R2": 0.9721616647340542
+      },
+      "leave_one_height_out": {
+        "RMSE": 0.025272012283185333,
+        "MAE": 0.019916361655897268,
+        "R2": 0.8925242213981714
+      },
+      "train_trial": {
+        "RMSE": 0.05267726705789769,
+        "MAE": 0.043165776175312344,
+        "R2": 0.6755254460806459
+      },
+      "minimum_prediction": 0.0,
+      "minimum_derivative_per_cm": -0.0010569574255614687,
+      "domain_cm": [
+        0,
+        11
+      ],
+      "measured_step_domain_cm": [
+        1,
+        11
+      ],
+      "constraint": "f(0)=0"
+    }
+  ],
+  "lowest_LOHO_RMSE_degree": 1,
+  "planner_deployed": false,
+  "notes": [
+    "Current records include replacements after prior QC passes; exploratory analysis, not independent confirmation.",
+    "Flat zero is a hard boundary condition f(0)=0, excluded from RMSE and CV.",
+    "Bootstrap uses shared resampled flat mean and within-height resampling; assumes independent trials.",
+    "LOHO holds out all trials at one height; the upper endpoint fold extrapolates, origin constraint remains fixed. Same flat baseline is shared across folds.",
+    "Measured at Flat and integer heights 1\u201311 cm; intermediate heights, descent and heights above 11 cm have no direct validation. Negative excess predictions are not automatically negative planner edge costs."
+  ],
+  "source_file_sha256": "09daa1d2085a210740e45f0d08ff36d0e2b9efd0c174145a45e71bbaf3f3ca33",
+  "calibration_distance_m": 1.0,
+  "mass_kg": 28.778101,
+  "gravity_m_s2": 9.8
+}

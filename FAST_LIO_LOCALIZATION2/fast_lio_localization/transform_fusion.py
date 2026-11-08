@@ -21,6 +21,8 @@ class TransformFusion(Node):
 
         self.cur_odom_to_baselink = None
         self.cur_map_to_odom = None
+        self.map_revision = 0
+        self.last_publish_key = None
 
         self.tf_broadcaster = tf2_ros.TransformBroadcaster(self)
         self.pub_localization = self.create_publisher(Odometry, "/localization", 1)
@@ -41,6 +43,11 @@ class TransformFusion(Node):
 
     def transform_fusion(self):
         if self.cur_odom_to_baselink is None:
+            return
+
+        stamp = self.cur_odom_to_baselink.header.stamp
+        key = (stamp.sec, stamp.nanosec, self.map_revision)
+        if key == self.last_publish_key:
             return
 
         if self.cur_map_to_odom is not None:
@@ -66,7 +73,7 @@ class TransformFusion(Node):
         
         # print(self.cur_odom_to_baselink.header)
         transform_stamped_msg = tf2_ros.TransformStamped(
-                header = self.cur_odom_to_baselink.header,
+                header = copy.deepcopy(self.cur_odom_to_baselink.header),
                 child_frame_id = "camera_init",
                 transform = transform_msg
             )
@@ -88,10 +95,11 @@ class TransformFusion(Node):
             )
             localization.twist = cur_odom.twist
 
-            localization.header.stamp = self.get_clock().now().to_msg()
+            localization.header.stamp = copy.deepcopy(cur_odom.header.stamp)
             localization.header.frame_id = "map"
             localization.child_frame_id = "body"
             self.pub_localization.publish(localization)
+            self.last_publish_key = key
 
 
     def cb_save_cur_odom(self, msg):
@@ -99,6 +107,7 @@ class TransformFusion(Node):
 
     def cb_save_map_to_odom(self, msg):
         self.cur_map_to_odom = msg
+        self.map_revision += 1
 
 
 def main(args=None):

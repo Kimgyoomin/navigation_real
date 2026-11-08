@@ -15,6 +15,9 @@ StepEvaluatorParameters GridPathEvaluator::continuousParameters(
   const StepEvaluator & evaluator)
 {
   auto parameters = evaluator.parameters();
+  parameters.grid_comparison_continuous_edges = parameters.grid_comparison_max_event_height_m > 0.0;
+  parameters.grid_cot_continuous_edges = parameters.grid_cot_height_cost_enabled &&
+    !parameters.grid_cot_polynomial_coefficients_cm.empty();
   // The legacy Sampling switch must never leak into Grid post-processing.
   // Grid's explicit hard switch controls the same Sobel evidence gate used by
   // direct Grid transitions, while the 5x5 scalar remains a soft line cost.

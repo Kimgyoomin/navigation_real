@@ -8,12 +8,14 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <nlohmann/json.hpp>
 
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav2_msgs/msg/costmap.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
+#include "std_msgs/msg/string.hpp"
 #include "tf2/time.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2_ros/buffer.h"
@@ -84,6 +86,12 @@ public:
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
     const auto output_qos = rclcpp::QoS(1).reliable().transient_local();
+    if (declare_parameter("experiment.publish_metrics", false)) {
+      plan_metrics_publisher_ = create_publisher<std_msgs::msg::String>(
+        "/rubi/experiment/plan_metrics", rclcpp::QoS(100).reliable().transient_local());
+    }
+    experiment_run_id_ = declare_parameter<std::string>("experiment.run_id", "unspecified");
+    experiment_model_sha_ = declare_parameter<std::string>("experiment.model_sha256", "");
     costmap_subscription_ = create_subscription<nav2_msgs::msg::Costmap>(
       input_costmap_topic_, rclcpp::QoS(1).reliable().transient_local(),
       std::bind(&HybridPlannerComparisonNode::onCostmap, this, std::placeholders::_1));
@@ -203,6 +211,9 @@ private:
     base_frame_ = declare_parameter("base_frame", "base_link");
     required_map_frame_ = declare_parameter("required_map_frame", "map");
     max_costmap_age_s_ = declare_parameter("max_costmap_age_s", 1.0);
+    // Frozen files retain their original acquisition stamp across simulator restarts.
+    // Only their temporal age/skew is exempt; live costmap and frame checks remain.
+    static_heightmap_ = declare_parameter("static_heightmap", false);
     max_heightmap_age_s_ = declare_parameter("max_heightmap_age_s", 2.5);
     max_input_stamp_skew_s_ = declare_parameter("max_input_stamp_skew_s", 2.0);
     transform_timeout_s_ = declare_parameter("transform_timeout_s", 0.20);
@@ -260,6 +271,17 @@ private:
     evaluator_parameters_.grid_cot_equivalent_penalties_m =
       declare_parameter<std::vector<double>>(
       "evaluation.grid_cot_equivalent_penalties_m", std::vector<double>{});
+    evaluator_parameters_.grid_cot_polynomial_coefficients_cm =
+      declare_parameter<std::vector<double>>(
+      "evaluation.grid_cot_polynomial_coefficients_cm", std::vector<double>{});
+    evaluator_parameters_.grid_cot_flat_baseline = declare_parameter(
+      "evaluation.grid_cot_flat_baseline", 0.0);
+    evaluator_parameters_.grid_cot_calibration_distance_m = declare_parameter(
+      "evaluation.grid_cot_calibration_distance_m", 1.0);
+    evaluator_parameters_.grid_cot_max_height_m = declare_parameter(
+      "evaluation.grid_cot_max_height_m", 0.11);
+    evaluator_parameters_.grid_comparison_max_event_height_m = declare_parameter(
+      "evaluation.grid_comparison_max_event_height_m", 0.0);
     evaluator_parameters_.inflation_cost_weight = declare_parameter(
       "evaluation.inflation_cost_weight", evaluator_parameters_.inflation_cost_weight);
     evaluator_parameters_.inflation_cost_exponent = declare_parameter(
@@ -453,6 +475,10 @@ private:
       std::lock_guard<std::mutex> lock(snapshot_mutex_);
       const bool content_changed = !heightmap_ ||
         snapshot->contentHash() != heightmap_content_hash_;
+      if (static_heightmap_ && heightmap_ && content_changed) {
+        RCLCPP_ERROR(get_logger(), "Rejected changed frozen heightmap; restart to select another map");
+        return;
+      }
       heightmap_frame_ = message->header.frame_id;
       heightmap_stamp_ = messageTime(*message);
       if (!content_changed) {return;}
@@ -976,6 +1002,45 @@ private:
     pending_heightmap_change_ = false;
   }
 
+  nlohmann::json metricHeader(const bool automatic)
+  {
+    const auto & p = evaluator_parameters_;
+    return {{"schema_version", 1}, {"run_id", experiment_run_id_},
+      {"request_id", experiment_request_id_}, {"stamp_s", now().seconds()},
+      {"planner", "grid_astar"}, {"automatic_replan", automatic},
+      {"cost_mode", p.grid_cot_height_cost_enabled ? "cot" : "vanilla"},
+      {"model_sha256", experiment_model_sha_},
+      {"coefficients_descending_cm", p.grid_cot_polynomial_coefficients_cm},
+      {"flat_CoT", p.grid_cot_flat_baseline},
+      {"calibration_distance_m", p.grid_cot_calibration_distance_m},
+      {"model_max_height_m", p.grid_cot_max_height_m},
+      {"comparison_max_event_height_m", p.grid_comparison_max_event_height_m},
+      {"cost_unit", "weighted_equivalent_m"},
+      {"distance_weight", p.distance_weight}, {"height_weight", p.height_cost_weight},
+      {"inflation_weight", p.inflation_cost_weight},
+      {"height_noise_floor_m", p.height_noise_floor_m},
+      {"max_crossable_height_jump_m", p.max_crossable_height_jump_m},
+      {"frame_id", required_map_frame_}};
+  }
+
+  void publishMetric(const nlohmann::json & data)
+  {
+    if (!plan_metrics_publisher_) {return;}
+    std_msgs::msg::String message;
+    message.data = data.dump();
+    plan_metrics_publisher_->publish(message);
+  }
+
+  void rejectedMetric(const std::string & reason, const bool automatic)
+  {
+    if (!plan_metrics_publisher_) {return;}
+    auto data = metricHeader(automatic);
+    data["success"] = false;
+    data["accepted"] = false;
+    data["reason"] = reason;
+    publishMetric(data);
+  }
+
   void onGoal(const geometry_msgs::msg::PoseStamped::ConstSharedPtr goal)
   {
     executeGoal(goal, false, false);
@@ -986,6 +1051,7 @@ private:
     const bool automatic, const bool hard_replan)
   {
     std::lock_guard<std::mutex> planning_lock(planning_mutex_);
+    ++experiment_request_id_;
     if (!automatic) {
       std::lock_guard<std::mutex> lock(snapshot_mutex_);
       pending_costmap_change_ = false;
@@ -1012,6 +1078,7 @@ private:
     }
     if (!costmap || !heightmap) {
       RCLCPP_WARN(get_logger(), "Comparison rejected: both snapshots are required");
+      rejectedMetric("missing_map_snapshot", automatic);
       return;
     }
     const rclcpp::Time current = now();
@@ -1019,13 +1086,15 @@ private:
     const double heightmap_age = (current - heightmap_stamp).seconds();
     const double skew = std::abs((costmap_stamp - heightmap_stamp).seconds());
     if (costmap_frame != required_map_frame_ || heightmap_frame != required_map_frame_ ||
-      costmap_age < 0.0 || costmap_age > max_costmap_age_s_ || heightmap_age < 0.0 ||
-      heightmap_age > max_heightmap_age_s_ || skew > max_input_stamp_skew_s_)
+      costmap_age < 0.0 || costmap_age > max_costmap_age_s_ ||
+      (!static_heightmap_ && (heightmap_age < 0.0 ||
+      heightmap_age > max_heightmap_age_s_ || skew > max_input_stamp_skew_s_)))
     {
       RCLCPP_WARN(
         get_logger(), "Comparison rejected: frame/age/skew contract frame_cost='%s' "
         "frame_height='%s' cost_age=%.3f height_age=%.3f skew=%.3f",
         costmap_frame.c_str(), heightmap_frame.c_str(), costmap_age, heightmap_age, skew);
+      rejectedMetric("frame_age_or_skew_contract", automatic);
       return;
     }
     try {
@@ -1050,6 +1119,7 @@ private:
         !costmap->inBounds(*goal_cell))
       {
         RCLCPP_WARN(get_logger(), "Comparison endpoint lies outside the costmap");
+        rejectedMetric("endpoint_outside_costmap", automatic);
         return;
       }
       const Point2D start = costmap->cellCenter(*start_cell);
@@ -1149,6 +1219,48 @@ private:
           grid_active_.tracking_path.clear();
           grid_tracking_path_publisher_->publish(pathMessage(
               std::vector<TerrainPoint>{}, goal_in_map.pose.orientation, stamp));
+        }
+        if (plan_metrics_publisher_) {
+          auto data = metricHeader(automatic);
+          const auto & m = grid->path_metrics;
+          data.update({{"success", grid->success && refined.success}, {"accepted", accept},
+            {"reason", grid->message}, {"hard_replan", hard_replan},
+            {"costmap_hash", std::to_string(costmap->contentHash())},
+            {"heightmap_hash", std::to_string(heightmap->contentHash())},
+            {"costmap_generation", costmap_generation}, {"heightmap_generation", heightmap_generation},
+            {"start_xy_m", {start.x, start.y}}, {"goal_xy_m", {target.x, target.y}},
+            {"planned_length_m", m.length_xy_m}, {"height_score_m", m.height_score_m},
+            {"height_cost", m.height_cost}, {"inflation_cost", m.inflation_cost},
+            {"sobel_cost", m.sobel_cost}, {"total_cost", m.total_cost},
+            {"tracking_cost", refined.tracking_cost},
+            {"tracking_raw_fallback", refined.used_raw_fallback},
+            {"max_height_jump_m", m.max_height_jump_m},
+            {"height_edge_event_count", m.height_event_count}, {"expanded_states", grid->expansions},
+            {"astar_time_ms", grid->astar_time_ms}, {"core_time_ms", grid->core_total_time_ms},
+            {"validation_time_ms", grid->path_validation_time_ms},
+            {"total_request_time_ms", grid->total_request_time_ms}});
+          double tracking_length = 0.0;
+          for (std::size_t i = 1; i < refined.path.size(); ++i) {
+            tracking_length += std::hypot(refined.path[i].x - refined.path[i-1].x,
+              refined.path[i].y - refined.path[i-1].y);
+          }
+          data["tracking_length_m"] = tracking_length;
+          double ascent = 0.0, descent = 0.0;
+          for (std::size_t i = 1; i < raw.size(); ++i) {
+            const double dz = raw[i].z - raw[i-1].z;
+            ascent += std::max(dz, 0.0);
+            descent += std::max(-dz, 0.0);
+          }
+          data["planned_cumulative_ascent_m"] = ascent;
+          data["planned_cumulative_descent_m"] = descent;
+          // Capture all active parameters so runs can be audited, including
+          // smoothing, hard feasibility gates and replanning settings.
+          nlohmann::json config = nlohmann::json::object();
+          for (const auto & name : list_parameters({}, 20).names) {
+            config[name] = get_parameter(name).value_to_string();
+          }
+          data["parameters"] = config;
+          publishMetric(data);
         }
         combined.rejected = grid->rejected;
       }
@@ -1261,15 +1373,20 @@ private:
       }
     } catch (const std::exception & error) {
       RCLCPP_ERROR(get_logger(), "Comparison planning failed: %s", error.what());
+      rejectedMetric(error.what(), automatic);
       automatic_plan_processed_ = true;
     }
   }
 
   std::string input_costmap_topic_, input_heightmap_topic_, comparison_goal_topic_;
+  std::string experiment_run_id_, experiment_model_sha_;
+  std::uint64_t experiment_request_id_{0U};
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr plan_metrics_publisher_;
   std::string base_frame_, required_map_frame_;
   std::string run_mode_text_{"both"};
   PlannerRunMode run_mode_{PlannerRunMode::kBoth};
   bool detailed_timing_{false};
+  bool static_heightmap_{false};
   double max_costmap_age_s_{1.0}, max_heightmap_age_s_{2.5};
   double max_input_stamp_skew_s_{2.0}, transform_timeout_s_{0.2};
   HeightmapAdapterParameters heightmap_adapter_parameters_;

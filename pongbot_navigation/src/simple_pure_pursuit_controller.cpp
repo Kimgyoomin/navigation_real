@@ -60,6 +60,10 @@ SimplePurePursuitController::SimplePurePursuitController()
   max_linear_acceleration_mps2_ = declare_parameter("max_linear_acceleration_mps2", 0.50);
   max_angular_acceleration_rps2_ = declare_parameter("max_angular_acceleration_rps2", 1.50);
   goal_tolerance_m_ = declare_parameter("goal_tolerance_m", 0.20);
+  enforce_goal_orientation_ = declare_parameter("enforce_goal_orientation", false);
+  goal_yaw_tolerance_rad_ = declare_parameter("goal_yaw_tolerance_rad", 0.0872664626);
+  goal_yaw_gain_ = declare_parameter("goal_yaw_gain", 1.0);
+  goal_max_angular_velocity_rps_ = declare_parameter("goal_max_angular_velocity_rps", 0.30);
   max_cross_track_error_m_ = declare_parameter("max_cross_track_error_m", 0.40);
   path_timeout_s_ = declare_parameter("path_timeout_s", 0.0);
   const int nearest_search_backtrack_points =
@@ -73,7 +77,11 @@ SimplePurePursuitController::SimplePurePursuitController()
     limits_.max_angular_velocity <= 0.0 || limits_.curvature_velocity_gain < 0.0 ||
     max_linear_acceleration_mps2_ <= 0.0 || max_angular_acceleration_rps2_ <= 0.0 ||
     goal_tolerance_m_ < 0.0 || max_cross_track_error_m_ <= 0.0 ||
-    nearest_search_backtrack_points < 0)
+    nearest_search_backtrack_points < 0 ||
+    !std::isfinite(goal_yaw_tolerance_rad_) || goal_yaw_tolerance_rad_ < 0.0 ||
+    goal_yaw_tolerance_rad_ > std::acos(-1.0) ||
+    !std::isfinite(goal_yaw_gain_) || goal_yaw_gain_ <= 0.0 ||
+    !std::isfinite(goal_max_angular_velocity_rps_) || goal_max_angular_velocity_rps_ <= 0.0)
   {
     throw std::invalid_argument("invalid Simple Pure Pursuit parameter value");
   }
@@ -127,6 +135,14 @@ bool SimplePurePursuitController::pathIsValid(
       !finitePose(pose.pose))
     {
       reason = !finitePose(pose.pose) ? "nonfinite_path" : "pose_frame_mismatch";
+      return false;
+    }
+  }
+  if (enforce_goal_orientation_) {
+    const auto & q = path.poses.back().pose.orientation;
+    const double norm = std::hypot(std::hypot(q.x, q.y), std::hypot(q.z, q.w));
+    if (!std::isfinite(norm) || norm < 1.0e-9) {
+      reason = "invalid_goal_orientation";
       return false;
     }
   }
@@ -216,6 +232,45 @@ void SimplePurePursuitController::controlTimer()
   const double goal_distance = pure_pursuit::distance(robot_point, points.back());
 
   if (pure_pursuit::withinGoalTolerance(robot_point, points.back(), goal_tolerance_m_)) {
+    if (enforce_goal_orientation_) {
+      const double goal_yaw = tf2::getYaw(path->poses.back().pose.orientation);
+      const double yaw_error = std::atan2(
+        std::sin(goal_yaw - robot.yaw), std::cos(goal_yaw - robot.yaw));
+      if (!std::isfinite(yaw_error)) {
+        publishZeroCommand("invalid_goal_orientation", true);
+        return;
+      }
+      if (std::abs(yaw_error) > goal_yaw_tolerance_rad_) {
+        const double cap = std::min(
+          goal_max_angular_velocity_rps_, limits_.max_angular_velocity);
+        const CoreCommand desired{0.0, std::clamp(goal_yaw_gain_ * yaw_error, -cap, cap)};
+        const auto control_time = std::chrono::steady_clock::now();
+        const double dt = std::clamp(
+          std::chrono::duration<double>(control_time - previous_control_time).count(),
+          0.0, 0.25);
+        // As with the historical position stop, do not command forward motion
+        // inside the goal region. Angular acceleration still uses the limiter.
+        auto command = pure_pursuit::rateLimit(
+          {0.0, previous_command.angular}, desired, dt,
+          max_linear_acceleration_mps2_, max_angular_acceleration_rps2_);
+        command.angular = std::clamp(command.angular, -cap, cap);
+        {
+          std::lock_guard<std::mutex> lock(state_mutex_);
+          if (latest_path_ != path || !has_active_path_) {return;}
+          previous_command_ = command;
+          last_control_time_ = control_time;
+        }
+        publishCommand(command);
+        RCLCPP_INFO_THROTTLE(
+          get_logger(), *get_clock(), 1000,
+          "PP aligning goal: position_error=%.3f m yaw_error=%.3f rad cmd_w=%.3f",
+          goal_distance, yaw_error, command.angular);
+        return;
+      }
+      RCLCPP_INFO(
+        get_logger(), "PP goal pose reached: position_error=%.3f m yaw_error=%.3f rad",
+        goal_distance, yaw_error);
+    }
     publishZeroCommand("goal_reached", true);
     return;
   }

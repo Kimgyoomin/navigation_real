@@ -141,7 +141,7 @@ class FastLIOLocalization(Node):
         global_map_in_FOV = o3d.geometry.PointCloud()
         global_map_in_FOV.points = o3d.utility.Vector3dVector(np.squeeze(global_map_in_map[indices, :3]))
 
-        header = self.cur_odom.header
+        header = copy.deepcopy(self.cur_odom.header)
         header.frame_id = "map"
         self.publish_point_cloud(self.pub_submap, header, np.array(global_map_in_FOV.points)[::10])
 
@@ -192,6 +192,7 @@ class FastLIOLocalization(Node):
 
     def cb_initialize_pose(self, msg):
         initial_pose = self.pose_to_mat(msg.pose.pose)
+        self.T_map_to_odom = initial_pose
         self.initialized = True
         self.get_logger().info("Initial pose received.")
         

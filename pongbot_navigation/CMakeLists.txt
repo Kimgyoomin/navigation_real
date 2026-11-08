@@ -103,6 +103,9 @@ if(BUILD_TESTING)
   add_launch_test(test/test_simple_pure_pursuit_launch.py TIMEOUT 60)
   set_tests_properties(test_test_simple_pure_pursuit_launch.py PROPERTIES
     ENVIRONMENT "ROS_DOMAIN_ID=204")
+  add_launch_test(test/test_goal_orientation_launch.py TIMEOUT 60)
+  set_tests_properties(test_test_goal_orientation_launch.py PROPERTIES
+    ENVIRONMENT "ROS_DOMAIN_ID=208;ROS_LOCALHOST_ONLY=1")
 endif()
 
 ament_package()

@@ -14,6 +14,7 @@ find_package(nav2_costmap_2d REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(nlohmann_json REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
@@ -76,8 +77,9 @@ target_compile_features(hybrid_planner_comparison_node PUBLIC cxx_std_17)
 target_link_libraries(hybrid_planner_comparison_node
   ${PROJECT_NAME}_core ${PROJECT_NAME}_visualization ${PROJECT_NAME}_ros_adapter)
 ament_target_dependencies(hybrid_planner_comparison_node
-  geometry_msgs nav2_msgs nav_msgs rclcpp sensor_msgs tf2 tf2_geometry_msgs
+  geometry_msgs nav2_msgs nav_msgs rclcpp sensor_msgs std_msgs tf2 tf2_geometry_msgs
   tf2_ros visualization_msgs)
+target_link_libraries(hybrid_planner_comparison_node nlohmann_json::nlohmann_json)
 
 # Humble's nav2_costmap_2d executable hard-codes /costmap/costmap and ignores
 # launch name/namespace remaps. This thin main selects the required stable FQN
@@ -97,11 +99,18 @@ install(TARGETS ${PROJECT_NAME}_core step_wavefront_planner_node
 install(DIRECTORY config launch maps rviz DESTINATION share/${PROJECT_NAME})
 install(DIRECTORY docs DESTINATION share/${PROJECT_NAME})
 install(PROGRAMS
+  scripts/frozen_experiment_map.py
+  scripts/record_grid_cost_all.sh
+  scripts/navigation_experiment_metrics.py
+  scripts/run_grid_cost_experiment.sh
+  scripts/record_grid_cost_experiment.sh
+  scripts/summarize_navigation_experiments.py
   scripts/run_grid_navigation.sh
   scripts/run_sampling_navigation.sh
   scripts/run_hybrid_comparison.sh
   scripts/check_hybrid_nav_inputs.sh
   DESTINATION lib/${PROJECT_NAME})
+install(FILES scripts/navigation_metrics_core.py scripts/frozen_site.py DESTINATION lib/${PROJECT_NAME})
 ament_export_include_directories(include)
 ament_export_libraries(${PROJECT_NAME}_core)
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
@@ -158,11 +167,16 @@ if(BUILD_TESTING)
   target_link_libraries(test_planner_visualization ${PROJECT_NAME}_visualization)
 
   ament_add_pytest_test(test_config_contract test/test_config_contract.py)
+  ament_add_pytest_test(test_navigation_metrics test/test_navigation_metrics.py)
+  ament_add_pytest_test(test_frozen_site test/test_frozen_site.py)
   ament_add_pytest_test(test_hybrid_map_install test/test_hybrid_map_install.py)
   ament_add_pytest_test(test_hybrid_costmap_config test/test_hybrid_costmap_config.py)
   add_launch_test(test/test_runtime_profile_launch.py TIMEOUT 60)
   add_launch_test(test/test_planner_node_launch.py TIMEOUT 90)
   add_launch_test(test/test_hybrid_comparison_launch.py TIMEOUT 90)
+  add_launch_test(test/test_cost_experiment_launch.py TIMEOUT 60)
+  set_tests_properties(test_test_cost_experiment_launch.py PROPERTIES
+    ENVIRONMENT "ROS_DOMAIN_ID=205")
   add_launch_test(test/test_hybrid_costmap_bringup_launch.py TIMEOUT 120)
   set_tests_properties(test_test_runtime_profile_launch.py PROPERTIES
     ENVIRONMENT "ROS_DOMAIN_ID=201")

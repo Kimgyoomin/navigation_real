@@ -50,6 +50,11 @@ private:
   double max_linear_acceleration_mps2_{0.50};
   double max_angular_acceleration_rps2_{1.50};
   double goal_tolerance_m_{0.20};
+  // Opt-in: historical launches retain their position-only goal condition.
+  bool enforce_goal_orientation_{false};
+  double goal_yaw_tolerance_rad_{0.0872664626};
+  double goal_yaw_gain_{1.0};
+  double goal_max_angular_velocity_rps_{0.30};
   double max_cross_track_error_m_{0.40};
   double path_timeout_s_{0.0};
   std::size_t nearest_search_backtrack_points_{2};

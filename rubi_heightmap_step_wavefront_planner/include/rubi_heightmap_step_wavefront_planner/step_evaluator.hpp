@@ -33,6 +33,7 @@ enum class StepInvalidReason
   kTerrainClearanceViolation,
   kTerrainClearanceEvidenceMissing,
   kTerrainClearanceContextUnavailable,
+  kOutsideCostModelDomain,
 };
 
 enum class StepEvaluationMode {kHeightOnlyStrict, kCostmapHeightHybrid};
@@ -51,6 +52,17 @@ struct StepEvaluatorParameters
   bool grid_cot_height_cost_enabled{false};
   std::vector<double> grid_cot_step_heights_m;
   std::vector<double> grid_cot_equivalent_penalties_m;
+  // Empty preserves the historical lookup mode. Coefficients are descending
+  // powers of height in cm and predict excess absolute mechanical CoT.
+  std::vector<double> grid_cot_polynomial_coefficients_cm;
+  double grid_cot_flat_baseline{0.0};
+  double grid_cot_calibration_distance_m{1.0};
+  double grid_cot_max_height_m{0.11};
+  // Internal Grid post-processing switch; Sampling retains its old objective.
+  bool grid_cot_continuous_edges{false};
+  // Common experiment envelope, applied to BOTH cost modes. Zero disables.
+  double grid_comparison_max_event_height_m{0.0};
+  bool grid_comparison_continuous_edges{false};
   double preferred_clearance_radius_m{0.20};
   double clearance_cost_weight{0.0};
   double clearance_cost_exponent{2.0};
