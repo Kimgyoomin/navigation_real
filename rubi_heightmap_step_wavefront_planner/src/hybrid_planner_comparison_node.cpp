@@ -302,6 +302,14 @@ private:
     evaluator_parameters_.grid_sobel_gradient_cost_weight = declare_parameter(
       "evaluation.grid_sobel_gradient_cost_weight",
       evaluator_parameters_.grid_sobel_gradient_cost_weight);
+    evaluator_parameters_.grid_sobel_footprint_radius_m = declare_parameter(
+      "evaluation.grid_sobel_footprint_radius_m", 0.0);
+    evaluator_parameters_.grid_sobel_footprint_falloff_m = declare_parameter(
+      "evaluation.grid_sobel_footprint_falloff_m", 0.0);
+    RCLCPP_INFO(get_logger(),
+      "Grid Sobel soft envelope: radius=%.3f m, falloff=%.3f m (no additional hard gate)",
+      evaluator_parameters_.grid_sobel_footprint_radius_m,
+      evaluator_parameters_.grid_sobel_footprint_falloff_m);
     evaluator_parameters_.sobel_cost_exponent = declare_parameter(
       "evaluation.sobel_cost_exponent", evaluator_parameters_.sobel_cost_exponent);
     evaluator_parameters_.local_relief_hard_reject_enabled = declare_parameter(

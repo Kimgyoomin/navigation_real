@@ -88,6 +88,10 @@ struct StepEvaluatorParameters
   bool grid_sobel_hard_reject_enabled{false};
   int grid_sobel_kernel_size{3};
   double grid_sobel_gradient_cost_weight{0.0};
+  // Opt-in circular walking-envelope proxy. Both zero preserves point Sobel.
+  // Dilate the SOFT gradient field; never change hard traversability gates.
+  double grid_sobel_footprint_radius_m{0.0};
+  double grid_sobel_footprint_falloff_m{0.0};
   bool grid_terrain_clearance_enabled{false};
   double grid_terrain_clearance_distance_m{0.20};
   bool local_relief_hard_reject_enabled{false};
@@ -221,6 +225,7 @@ private:
   EdgeEvaluation evaluateHybridEdge(Point2D from, Point2D to) const;
   std::optional<double> sobelGradientMagnitude(GridCell center) const;
   std::optional<double> gridSobelGradientMagnitude(GridCell center) const;
+  std::optional<double> gridSobelCostDensity(GridCell center) const;
   double gridCotEquivalentPenalty(double step_height_m) const;
   void accumulateSobelEvidence(GridCell cell, EdgeEvaluation & result) const;
   LocalReliefResult localRelief(GridCell center) const;
@@ -234,6 +239,7 @@ private:
   mutable std::unordered_map<std::size_t, double> clearance_cache_;
   mutable std::unordered_map<std::size_t, double> sobel_gradient_cache_;
   mutable std::unordered_map<std::size_t, double> grid_sobel_gradient_cache_;
+  mutable std::unordered_map<std::size_t, double> grid_sobel_density_cache_;
   mutable std::unordered_map<std::size_t, LocalReliefResult> local_relief_cache_;
   mutable std::unordered_map<std::size_t, SupportedLocalReliefResult>
     supported_local_relief_cache_;

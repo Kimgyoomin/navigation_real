@@ -7,6 +7,20 @@ import yaml
 CONFIG = Path(__file__).resolve().parents[1] / 'config' / 'step_wavefront_v0.yaml'
 
 
+def test_sobel_footprint_pilot_preserves_other_comparison_conditions():
+    base = _parameters(CONFIG.parent / 'grid_cost_experiment.yaml')
+    pilot = _parameters(CONFIG.parent / 'grid_cost_experiment_sobel_footprint.yaml')
+    overrides = {
+        'evaluation.grid_sobel_hard_reject_enabled': False,
+        'evaluation.grid_sobel_kernel_size': 5,
+        'evaluation.grid_sobel_gradient_cost_weight': 2.0,
+        'evaluation.grid_sobel_footprint_radius_m': 0.28,
+        'evaluation.grid_sobel_footprint_falloff_m': 0.10,
+        'evaluation.grid_terrain_clearance_enabled': False,
+    }
+    assert pilot == dict(base, **overrides)
+
+
 def _parameters(path):
     with path.open(encoding='utf-8') as stream:
         document = yaml.safe_load(stream)

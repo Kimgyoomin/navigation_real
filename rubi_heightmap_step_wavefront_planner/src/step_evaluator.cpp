@@ -77,6 +77,12 @@ StepEvaluator::StepEvaluator(
     !std::isfinite(parameters_.sobel_cost_exponent) || parameters_.sobel_cost_exponent < 1.0 ||
     !std::isfinite(parameters_.grid_sobel_gradient_cost_weight) ||
     parameters_.grid_sobel_gradient_cost_weight < 0.0 ||
+    !std::isfinite(parameters_.grid_sobel_footprint_radius_m) ||
+    parameters_.grid_sobel_footprint_radius_m < 0.0 ||
+    !std::isfinite(parameters_.grid_sobel_footprint_falloff_m) ||
+    parameters_.grid_sobel_footprint_falloff_m < 0.0 ||
+    !std::isfinite(parameters_.grid_sobel_footprint_radius_m +
+    parameters_.grid_sobel_footprint_falloff_m) ||
     (parameters_.grid_sobel_kernel_size != 3 && parameters_.grid_sobel_kernel_size != 5) ||
     !std::isfinite(parameters_.grid_terrain_clearance_distance_m) ||
     parameters_.grid_terrain_clearance_distance_m < 0.0 ||
@@ -277,6 +283,45 @@ std::optional<double> StepEvaluator::gridSobelGradientMagnitude(const GridCell c
   return gradient;
 }
 
+std::optional<double> StepEvaluator::gridSobelCostDensity(const GridCell center) const
+{
+  const double radius = parameters_.grid_sobel_footprint_radius_m;
+  const double falloff = parameters_.grid_sobel_footprint_falloff_m;
+  const double support = radius + falloff;
+  if (support == 0.0) {return gridSobelGradientMagnitude(center);}
+  const auto index = snapshot_.index(center);
+  if (!index) {return std::nullopt;}
+  const auto cached = grid_sobel_density_cache_.find(*index);
+  if (cached != grid_sobel_density_cache_.end()) {
+    return std::isfinite(cached->second) ? std::optional<double>(cached->second) : std::nullopt;
+  }
+
+  // A max envelope avoids counting the same edge once per footprint sample.
+  // It is a finite geometric interaction penalty, NOT an energy prediction or
+  // a physical collision guarantee. Unknown gradients are not zero evidence.
+  std::optional<double> maximum;
+  const double resolution = snapshot_.resolution();
+  const int cells = static_cast<int>(std::min(
+      std::ceil(support / resolution),
+      static_cast<double>(std::max(snapshot_.sizeX(), snapshot_.sizeY()))));
+  for (int dy = -cells; dy <= cells; ++dy) {
+    for (int dx = -cells; dx <= cells; ++dx) {
+      const double distance = resolution * std::hypot(dx, dy);
+      if (distance > support + 1.0e-12) {continue;}
+      const double weight = distance <= radius + 1.0e-12 ? 1.0 :
+        (falloff > 0.0 ? std::clamp((support - distance) / falloff, 0.0, 1.0) : 0.0);
+      if (weight <= 0.0) {continue;}
+      const auto gradient = gridSobelGradientMagnitude({center.x + dx, center.y + dy});
+      if (gradient) {
+        maximum = std::max(maximum.value_or(0.0), weight * (*gradient));
+      }
+    }
+  }
+  grid_sobel_density_cache_[*index] =
+    maximum.value_or(std::numeric_limits<double>::quiet_NaN());
+  return maximum;
+}
+
 double StepEvaluator::gridCotEquivalentPenalty(const double step_height_m) const
 {
   if (!parameters_.grid_cot_polynomial_coefficients_cm.empty()) {
@@ -453,7 +498,7 @@ std::optional<double> StepEvaluator::supportedLocalReliefAt(const GridCell cell)
 std::optional<double> StepEvaluator::gridSobelGradientAt(const Point2D point) const
 {
   if (!std::isfinite(point.x) || !std::isfinite(point.y)) {return std::nullopt;}
-  return gridSobelGradientMagnitude(snapshot_.worldToCell(point));
+  return gridSobelCostDensity(snapshot_.worldToCell(point));
 }
 
 double StepEvaluator::nearestHazardDistance(const GridCell center) const
@@ -664,8 +709,8 @@ EdgeEvaluation StepEvaluator::evaluateGridTransition(
     accumulateLocalReliefEvidence(to_evaluation.height_source_cell, result);
   }
 
-  const auto from_gradient = gridSobelGradientMagnitude(from_evaluation.height_source_cell);
-  const auto to_gradient = gridSobelGradientMagnitude(to_evaluation.height_source_cell);
+  const auto from_gradient = gridSobelCostDensity(from_evaluation.height_source_cell);
+  const auto to_gradient = gridSobelCostDensity(to_evaluation.height_source_cell);
   if (from_gradient || to_gradient) {
     const double mean_gradient = from_gradient && to_gradient ?
       0.5 * (*from_gradient + *to_gradient) :

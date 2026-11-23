@@ -135,6 +135,7 @@ if(BUILD_TESTING)
       test_costmap_snapshot
       test_height_evidence
       test_hybrid_step_evaluator
+      test_sobel_footprint
       test_step_grid_astar_planner
       test_trg_sampling_policy
       test_original_trg_construction
